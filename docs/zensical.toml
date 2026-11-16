@@ -1,0 +1,98 @@
+# The docs portal (Zensical), restored from the sgaffald template. Build: uv run task docs
+# Live: uv run task docs_live. Pages live in docs/content and are shared with the Sphinx manual
+# (docs/sphinx); keep `nav` in step with the toctrees in content/manual.md.
+# index.md, about.md and assets/brand/ are copied from brand/ by the docs tasks (git-ignored).
+
+[project]
+site_name = "hackEntry"
+site_description = "Data Volunteer Network: one volunteer account across organisations, matched by a Relate graph"
+site_author = "Cyber Scallywags"
+copyright = "© 2026 Cyber Scallywags"
+docs_dir = "content"
+site_dir = "_build/site"
+# Sphinx-only pages; the manual is built into _build/site/manual after the portal.
+exclude_docs = """
+manual.md
+reference/python-api-sphinx.md
+"""
+
+extra_css = [
+  "assets/stylesheets/brand.css",
+  "assets/stylesheets/template.css",
+  "assets/stylesheets/zensical.css",
+  "assets/stylesheets/brand-extra.css",
+]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Project" = [
+    "project/solution-architecture.md",
+    "project/demo-script.md",
+    "project/verification.md",
+    "project/devpost.md",
+    "project/reuse-and-attribution.md",
+  ] },
+  { "Reference" = [
+    "reference/python-api.md",
+    { "Manual (Sphinx)" = "/manual/" },
+  ] },
+  { "About" = "about.md" },
+]
+
+[project.theme]
+language = "en"
+logo = "assets/brand/mark.svg"
+favicon = "assets/brand/favicon.png"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[project.theme.font]
+text = false
+code = false
+
+# The brand's first scheme ([theme.docs] scheme in brand.toml); readers can switch.
+[[project.theme.palette]]
+scheme = "default"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+def_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["../src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+members_order = "source"
+show_root_heading = true
+show_source = false
+heading_level = 2

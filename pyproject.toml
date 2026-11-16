@@ -33,6 +33,21 @@ dev = [
 ]
 admin = ["hackentry[admin]"]
 aura = ["hackentry[aura]"]
+# Documentation (restored from the sgaffald template): one Markdown source in docs/content, built
+# twice: Zensical (portal, /) and Sphinx + Furo (reference manual, /manual/). Opt-in, so the
+# web image stays lean: uv sync --group docs.
+docs = [
+    "sphinx>=9.2",
+    "furo>=2025.12.19",
+    "myst-parser>=5.1",
+    "sphinx-design>=0.7",
+    "sphinx-copybutton>=0.5.2",
+    "sphinxcontrib-mermaid>=2.1",
+    "sphinx-autobuild>=2025.8.25",
+    "zensical>=0.0.71",
+    "mkdocstrings-python>=2.0.10",
+    "taskipy>=1.14",  # the docs image runs `task docs`, the same build as local
+]
 
 [tool.uv]
 default-groups = ["dev"]
@@ -51,6 +66,15 @@ packages = ["src/app"]
 "data/demo.rl" = "app/demo.rl"
 
 # ---------------------------------------------------------------- taskipy
+[tool.taskipy.settings]
+use_vars = true
+
+[tool.taskipy.variables]
+# The brand's home and about pages and images, copied into the docs (git-ignored copies).
+docs_brand = "mkdir -p docs/content/assets/brand && cp brand/docs/home.md docs/content/index.md && cp brand/docs/about.md docs/content/about.md && cp brand/images/* docs/content/assets/brand/"
+# Portal first (its --clean empties the site dir), then the manual into site/manual.
+docs_build = { var = "{docs_brand} && zensical build --strict --clean -f docs/zensical.toml && sphinx-build -W --keep-going -q -b html -c docs/sphinx docs/content docs/_build/site/manual", recursive = true }
+
 [tool.taskipy.tasks]
 web = { cmd = "python -m app.serve web", help = "Run the web app on http://localhost:8080 (seeds the demo on first start)" }
 admin = { cmd = "python -m app.serve admin", help = "Run the Streamlit admin on http://localhost:8501 (needs uv sync --group admin)" }
@@ -62,6 +86,10 @@ format = { cmd = "ruff format . && ruff check --fix .", help = "Auto-format and 
 test = { cmd = "pytest", help = "All tests: temporary SQLite + real Relate stores" }
 up = { cmd = "docker compose up -d --build --wait", help = "Build + start web, admin and mobile" }
 down = { cmd = "docker compose down -v", help = "Stop the stack and drop its volume" }
+docs = { cmd = "{docs_build}", help = "Build the Zensical portal and the Sphinx manual into docs/_build/site" }
+docs_serve = { cmd = "{docs_build} && python -m http.server 8200 -d docs/_build/site", help = "Build, then serve the portal (/) and manual (/manual/) on http://localhost:8200" }
+docs_live = { cmd = "{docs_brand} && zensical serve -f docs/zensical.toml -a localhost:8201", help = "Live-reload the Zensical portal on :8201 while writing" }
+docs_live_manual = { cmd = "{docs_brand} && sphinx-autobuild -c docs/sphinx docs/content docs/_build/live-manual --port 8202", help = "Live-reload the Sphinx manual on :8202 while writing" }
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]

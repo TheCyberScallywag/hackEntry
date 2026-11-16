@@ -1,5 +1,5 @@
 # Lint, unit/integration tests (temporary SQLite + real embedded Relate stores), the mobile
-# app's lint + tests, and a Compose smoke test. AuraDB tests skip unless a dev instance's
+# app's lint + tests, a strict docs build, and a Compose smoke test. AuraDB tests skip unless a dev instance's
 # secrets are configured. Make "CI / ci-passed" a required check on main.
 name: CI
 
@@ -27,6 +27,15 @@ jobs:
       - run: uv run task lint
       - run: uv run task test
 
+  docs:   # Zensical portal + Sphinx manual, both strict: any docs warning fails the build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with: { enable-cache: true }
+      - run: uv sync --locked --group docs
+      - run: uv run task docs
+
   mobile:   # Ionic app lint + unit tests, inside its Docker build stage (no Node setup needed)
     runs-on: ubuntu-latest
     steps:
@@ -53,7 +62,7 @@ jobs:
         run: docker compose down -v
 
   ci-passed:
-    needs: [python, mobile, compose]
+    needs: [python, mobile, docs, compose]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI stages passed"

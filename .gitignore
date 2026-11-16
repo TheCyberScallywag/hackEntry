@@ -23,3 +23,10 @@ mobile/www/
 mobile/.angular/
 
 .DS_Store
+
+# Docs (task docs): build output, and the copies of brand/docs and brand/images
+docs/_build/
+docs/.cache/
+docs/content/index.md
+docs/content/about.md
+docs/content/assets/brand/

@@ -31,7 +31,7 @@ Run `git diff ecfee3ce58cd966c4ccaf375e5811969da9aece7` to review everything tha
 |---|
 | FastUI web UI, the JWT mock sign-on API, the Pydantic AI agent and the `Item` sample entity |
 | Neo4j server container and Neo4j-backed item store (replaced by embedded Relate) |
-| Docs build pipeline (Zensical, Sphinx), template handbook, generated reference pages |
+| Template handbook and generated reference pages (the Zensical + Sphinx docs pipeline was later restored, adapted to this project's pages) |
 | Brand-sync, TypeScript type generation, `new_entity` and template-smoke scripts, and their tests |
 | Production compose overlay, release, scorecard and issue workflows |
 
@@ -87,8 +87,8 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
   check.
 - Test suite (`tests/`): 83 tests (81 run locally; the AuraDB and Compose tests are gated), using
   temporary SQLite and real Relate stores; 25 mobile specs.
-- Compose stack, CI workflow, and documentation (README, this file, `docs/verification.md`,
-  `docs/devpost.md`, `docs/demo-script.md`).
+- Compose stack, CI workflow, and documentation (README, this file, `docs/content/project/verification.md`,
+  `docs/content/project/devpost.md`, `docs/content/project/demo-script.md`).
 
 ## AI assistance (significant; disclose it)
 
@@ -102,7 +102,7 @@ focus and submission materials. The assistant then:
 - designed the schema, graph model and projection approach;
 - wrote the application, mobile app, tests and docs;
 - ran the tests, the uv path and the Compose stack, and reported the results in
-  `docs/verification.md`.
+  `docs/content/project/verification.md`.
 
 The project owner remains responsible for reviewing, editing and submitting the work.
 
@@ -110,8 +110,8 @@ The project owner remains responsible for reviewing, editing and submitting the 
 
 | Component | Licence |
 |---|---|
-| This repository's code | MIT ([LICENSE](../LICENSE)) |
-| `brand/`, `examples/brands/neutral/` (neutral brand kit) | CC0 1.0 ([brand/LICENSE](../brand/LICENSE)) |
+| This repository's code | MIT ([LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/LICENSE)) |
+| `brand/`, `examples/brands/neutral/` (neutral brand kit) | CC0 1.0 ([brand/LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/brand/LICENSE)) |
 | `data/fixtures/*.json`, `data/demo.rl` (synthetic, fictional data) | MIT, as part of this repository |
 | Relate engine: `relate-db` 1.0.1 (PyPI) and `relate` 1.0.1 CLI | Apache-2.0 according to the package metadata; the CLI prints "Apache 2.0 (binary)". See https://relatedb.ai/docs/ |
 | FastAPI 0.162 | MIT |

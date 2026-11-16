@@ -99,7 +99,7 @@ reports the failing organisation.
 - **AuraDB parity unverified** (no credentials, as above).
 - **Not done in this session, left to the owner:** recording the demo video, checking the current
   Devpost rules (the overview and rules word the extension policy differently), adding the
-  repository and video links to `docs/devpost.md`, committing, publishing and submitting.
+  repository and video links to `docs/content/project/devpost.md`, committing, publishing and submitting.
 - **Git:** nothing has been committed. The repository has no commits yet. The untouched template
   baseline is recorded as tree `ecfee3ce58cd966c4ccaf375e5811969da9aece7`. A reviewable history
   would be: commit the baseline, then commit this work on a `feature/` branch (see "Suggested
