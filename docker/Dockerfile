@@ -1,9 +1,14 @@
-# One image for the web app and the Streamlit admin; SERVICE (web|admin) picks the process.
-# The Relate engine is the embedded relate-db wheel from uv.lock, so no Relate installer runs here.
+# One Dockerfile, two images: the web app and the Streamlit admin console. EXTRAS chooses which
+# optional dependencies go in, so the web image carries no Streamlit or pandas:
+#   web    EXTRAS="--extra aura"    (the default; the Neo4j driver serves `app.cli aura-*`)
+#   admin  EXTRAS="--extra admin"
+# SERVICE (web|admin) picks the process. The Relate engine is the embedded relate-db wheel from
+# uv.lock, so no Relate installer runs here.
 
 ARG PYTHON_VERSION=3.14
 
 FROM python:${PYTHON_VERSION}-slim AS builder
+ARG EXTRAS="--extra aura"
 COPY --from=ghcr.io/astral-sh/uv:0.12.19 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 WORKDIR /app
@@ -11,13 +16,13 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project --extra admin --extra aura
+    uv sync --locked --no-dev --no-install-project ${EXTRAS}
 COPY pyproject.toml uv.lock README.md ./
 COPY brand ./brand
 COPY data ./data
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable --extra admin --extra aura
+    uv sync --locked --no-dev --no-editable ${EXTRAS}
 
 FROM python:${PYTHON_VERSION}-slim AS runtime
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1 HOST=0.0.0.0 DATA_DIR=/data

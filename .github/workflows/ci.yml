@@ -3,9 +3,11 @@
 # secrets are configured. Make "CI / ci-passed" a required check on main.
 name: CI
 
+# Pull requests, plus main itself after a merge. A push to a branch with an open pull request
+# used to run everything twice (once for the push, once for the pull request).
 on:
   push:
-    branches-ignore: [main]
+    branches: [main]
   pull_request:
     branches: [main]
 

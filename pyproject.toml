@@ -83,6 +83,7 @@ bundle = { cmd = "python -m app.cli bundle", help = "Rebuild the committed data/
 inspect = { cmd = "python -m app.cli inspect --store data/demo.rl", help = "Run the sample graph inspection query on the bundled store" }
 lint = { cmd = "ruff check . && ruff format --check .", help = "Ruff lint + format check" }
 format = { cmd = "ruff format . && ruff check --fix .", help = "Auto-format and fix" }
+hooks = { cmd = "pre-commit run --all-files", help = "Run every pre-commit hook on every file" }
 test = { cmd = "pytest", help = "All tests: temporary SQLite + real Relate stores" }
 up = { cmd = "docker compose up -d --build --wait", help = "Build + start web, admin and mobile" }
 down = { cmd = "docker compose down -v", help = "Stop the stack and drop its volume" }
@@ -99,9 +100,6 @@ markers = [
     "compose: needs a Docker daemon and the stack started with task up",
 ]
 addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
-
-[tool.coverage.run]
-omit = ["src/app/admin/*"]
 
 # ---------------------------------------------------------------- ruff
 [tool.ruff]
