@@ -77,10 +77,7 @@ def test_bundled_demo_graph_matches_a_fresh_build(tmp_path):
     bundled_copy = tmp_path / "bundled.rl"
     shutil.copyfile(BUNDLED_GRAPH, bundled_copy)  # never open the committed file for writing
     for statement in (cypher.ALL_NODES, cypher.ALL_RELATIONSHIPS):
-        params = {"limit": 500}
-        assert GraphStore(bundled_copy).read(statement, params) == GraphStore(fresh).read(
-            statement, params
-        )
+        assert GraphStore(bundled_copy).read(statement) == GraphStore(fresh).read(statement)
 
 
 @pytest.mark.skipif(shutil.which("relate") is None, reason="relate CLI not on PATH")
@@ -93,3 +90,26 @@ def test_relate_cli_reads_the_bundled_store():
         capture_output=True, text=True, check=True,
     )  # fmt: skip
     assert '"nodes":35' in result.stdout.replace(" ", "")
+
+
+def test_a_limit_parameter_cannot_hide_truncation(tmp_path):
+    """The store binds $limit itself, so a caller cannot ask for fewer rows and get a short
+    answer that looks complete."""
+    statement = "MATCH (n:N) RETURN n.i AS i ORDER BY i LIMIT $limit"
+    path = tmp_path / "limit.rl"
+    with GraphStore(path).write() as tx:
+        tx.run("UNWIND range(1, 10) AS i CREATE (:N {i: i})")
+    with pytest.raises(GraphTruncated):
+        GraphStore(path, max_rows=5).read(statement)
+    with pytest.raises(GraphTruncated):
+        GraphStore(path, max_rows=5).read(statement, {"limit": 5})  # the caller's value is ignored
+    assert len(GraphStore(path, max_rows=10).read(statement)) == 10  # exactly at the bound is fine
+
+
+def test_every_multi_row_read_statement_is_bounded():
+    bounded = (
+        "MATCH_CANDIDATES", "COVERAGE_GAPS", "EXCLUDED_FOR_VOLUNTEER", "OPTIONAL_SKILLS_EXCLUDED",
+        "BROWSE_PROJECTS", "INSPECT", "ALL_NODES", "ALL_RELATIONSHIPS",
+    )  # fmt: skip
+    for name in bounded:
+        assert getattr(cypher, name).rstrip().endswith("LIMIT $limit"), name

@@ -1,13 +1,15 @@
 """Relate adapter: the embedded `relate-db` engine on a single-file `.rl` store.
 
 Relate takes an exclusive lock on the store for any opener, read-only included, so this
-adapter opens the store per unit of work and closes it straight after (about 8 ms on the demo
-graph). Within a process a lock serialises access, making the app a single writer; across
-processes (the Streamlit admin, the CLI, or `relate --database ... --read-only`) a locked store
-is retried a bounded number of times before giving up with `GraphBusy`.
+adapter opens the store per unit of work and closes it straight after (well under a millisecond
+on the demo graph). Within a process a lock serialises access, making the app a single writer;
+across processes (the Streamlit admin, the CLI, or `relate --database ... --read-only`) a locked
+store is retried a bounded number of times before giving up with `GraphBusy`.
 
 Every statement is parameterised; reads are bounded by `max_rows` and never silently
-truncated.
+truncated. The adapter owns the bound: `Tx.read` binds `$limit` to `max_rows + 1`, so a statement
+ending in `LIMIT $limit` returns one row more than is allowed when there is more to read, and that
+raises `GraphTruncated`. A caller cannot pass a smaller limit and get a short answer by accident.
 """
 
 import threading
@@ -57,9 +59,10 @@ class Tx:
             raise GraphError(str(error)) from error
 
     def read(self, statement: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        bound = {**(params or {}), "limit": self._max_rows + 1}
         try:
             cursor = self._conn.cursor()
-            cursor.execute(statement, params or {})
+            cursor.execute(statement, bound)
             rows = cursor.fetchmany(self._max_rows + 1)
         except relate.Error as error:
             raise GraphError(str(error)) from error

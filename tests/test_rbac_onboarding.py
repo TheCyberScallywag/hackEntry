@@ -77,7 +77,11 @@ def full_profile(c: Client, **skills) -> dict:
 def test_full_volunteer_onboarding_to_team(web: Web):
     r = web.client.post(
         "/api/v1/auth/signup",
-        json={"email": "ffion@example.org", "display_name": "Ffion", "password": "long-enough-pw"},
+        json={
+            "email": "ffion@cyberscallywags.uk",
+            "display_name": "Ffion",
+            "password": "long-enough-pw",
+        },
     )
     assert r.status_code == 201
     ffion = Client(web, r.json()["token"])

@@ -14,33 +14,41 @@ import logging
 import sqlite3
 import threading
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore, Tx
 from app.notify import notify
-from app.sqlstore import Database, now
+from app.sqlstore import Database, now, prune
 
 log = logging.getLogger(__name__)
 
 MAX_BACKOFF_SECONDS = 60
 FAILED_AFTER_ATTEMPTS = 3  # surfaced as "failed" in the UI from here on, still retried
 
-VOLUNTEER_EDGES = (
-    "VOLUNTEERS_WITH",
-    "HAS_SKILL",
-    "OFFERS_SKILL",
-    "EXCLUDES_SKILL",
-    "PREFERS_CAUSE",
-    "EXCLUDES_CAUSE",
-)
-
 
 @dataclass
 class DrainResult:
     done: int = 0
     failed: int = 0
+
+
+@dataclass
+class Changed:
+    """The entities one drain projected, for the post-projection hook."""
+
+    volunteers: set[str] = field(default_factory=set)
+    projects: set[str] = field(default_factory=set)
+    everything: bool = False  # the catalogue or an organisation changed
+
+    def add(self, kind: str, entity_id: str) -> None:
+        if kind == "volunteer":
+            self.volunteers.add(entity_id)
+        elif kind == "project":
+            self.projects.add(entity_id)
+        else:
+            self.everything = True
 
 
 @dataclass
@@ -55,8 +63,9 @@ class Projector:
         self.db = db
         self.graph = graph
         self._drain_lock = threading.Lock()
-        # Called after a drain that projected something (app.runtime wires the placement sweep).
-        self.on_projected: Callable[[], object] | None = None
+        # Called after a drain that projected something, with what changed (app.runtime wires
+        # the placement sweep). `None` means "anything may have changed".
+        self.on_projected: Callable[[Changed | None], object] | None = None
         self._hook_due = False
 
     # ------------------------------------------------------------------ public
@@ -80,6 +89,7 @@ class Projector:
                 groups.setdefault((row["kind"], row["entity_id"]), []).append(row["id"])
             # Catalogue and organisations first so volunteer/project edges have targets.
             order = {"catalogue": 0, "organisation": 1, "volunteer": 2, "project": 3}
+            changed = Changed()
             for (kind, entity_id), ids in sorted(
                 groups.items(), key=lambda g: (order[g[0][0]], min(g[1]))
             ):
@@ -92,13 +102,20 @@ class Projector:
                 else:
                     self._mark_done(ids)
                     result.done += len(ids)
+                    changed.add(kind, entity_id)
             if (result.done or self._hook_due) and self.on_projected:
+                # A replay, a retry after a failed hook, or a catalogue or organisation change
+                # can affect any pair, so those look at everything.
+                everything = ignore_backoff or self._hook_due or changed.everything
                 try:
-                    self.on_projected()
+                    self.on_projected(None if everything else changed)
                     self._hook_due = False
                 except (GraphError, sqlite3.Error) as error:
                     self._hook_due = True  # retried on the next drain, even if nothing is queued
                     log.warning("post-projection hook failed: %s", error)
+            if result.done:
+                with self.db.tx() as conn:
+                    prune(conn)
         finally:
             self._drain_lock.release()
         return result
@@ -210,7 +227,7 @@ class Projector:
         }
         with self.graph.write() as tx:
             tx.run(cypher.VOLUNTEER_UPSERT, {"id": user_id})
-            for rel in VOLUNTEER_EDGES:
+            for rel in cypher.VOLUNTEER_RELS:
                 params = {"id": user_id, "targets": sorted(targets[rel])}
                 tx.run(cypher.VOLUNTEER_EDGE_PRUNE[rel], params)
                 tx.run(cypher.VOLUNTEER_EDGE_MERGE[rel], params)

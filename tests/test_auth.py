@@ -8,18 +8,22 @@ from tests.conftest import Web
 
 
 def _signup(web: Web, **fields):
-    data = {"display_name": "Ffion", "email": "ffion@example.org", "password": "long-enough-pw"}
+    data = {
+        "display_name": "Ffion",
+        "email": "ffion@cyberscallywags.uk",
+        "password": "long-enough-pw",
+    }
     data.update(fields)
     return web.post("/signup", data, csrf_from="/signup")
 
 
 def test_signup_normalises_and_uniquely_constrains_email(web: Web):
-    assert _signup(web, email="  Ffion@Example.ORG ").status_code == 303
+    assert _signup(web, email="  Ffion@CyberScallywags.UK ").status_code == 303
     with web.rt.db.read() as conn:
         row = conn.execute("SELECT email FROM users WHERE display_name = 'Ffion'").fetchone()
-        assert row[0] == "ffion@example.org"
+        assert row[0] == "ffion@cyberscallywags.uk"
     web.client.cookies.clear()
-    r = _signup(web, email="FFION@example.org")
+    r = _signup(web, email="FFION@cyberscallywags.uk")
     assert r.status_code == 400 and "already exists" in r.text
 
 
@@ -27,7 +31,9 @@ def test_signup_never_grants_a_role_or_membership(web: Web):
     r = _signup(web, role="reviewer", org_id="anything", is_admin="1")
     assert r.status_code == 303
     with web.rt.db.read() as conn:
-        uid = conn.execute("SELECT id FROM users WHERE email = 'ffion@example.org'").fetchone()[0]
+        uid = conn.execute(
+            "SELECT id FROM users WHERE email = 'ffion@cyberscallywags.uk'"
+        ).fetchone()[0]
         assert (
             conn.execute("SELECT count(*) FROM org_roles WHERE user_id = ?", (uid,)).fetchone()[0]
             == 0

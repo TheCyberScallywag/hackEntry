@@ -21,6 +21,7 @@ from app.config import BUNDLED_GRAPH, get_settings
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore
 from app.runtime import build_runtime, reset_demo, seed_demo
+from app.sqlstore import now
 
 
 def _table(rows: list[dict]) -> str:
@@ -94,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
                 build_bundle(args.out)
                 print(f"Wrote {args.out}")
             case "inspect":
-                rows = store(args.store).read(cypher.INSPECT, {"limit": 200})
+                rows = store(args.store).read(cypher.INSPECT)
                 if not args.json:  # the graph holds opaque IDs; label known demo IDs for humans
                     names = _demo_names()
                     for row in rows:
@@ -104,10 +105,7 @@ def main(argv: list[str] | None = None) -> int:
                         ] or ["— coverage gap —"]
                 print(json.dumps(rows, indent=2) if args.json else _table(rows))
             case "matches":
-                params = {
-                    "orgs": [stable_id("org", args.org)], "project": "", "volunteer": "",
-                    "preferred_only": False, "limit": 200,
-                }  # fmt: skip
+                params = cypher.match_params(orgs=[stable_id("org", args.org)])
                 rows = store(args.store).read(cypher.MATCH_CANDIDATES, params)
                 names = _demo_names()
                 for row in rows:
@@ -138,8 +136,8 @@ def main(argv: list[str] | None = None) -> int:
                         raise SystemExit("unknown email or organisation key")
                     conn.execute(
                         "INSERT OR IGNORE INTO org_roles (user_id, org_id, role, granted_at) "
-                        "VALUES (?, ?, 'reviewer', datetime('now'))",
-                        (user["id"], org["id"]),
+                        "VALUES (?, ?, 'reviewer', ?)",
+                        (user["id"], org["id"], now()),
                     )
                 print("granted")
             case "aura-push":

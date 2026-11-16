@@ -1,6 +1,7 @@
 """Every Cypher statement the app runs. Labels and relationship types are fixed text; every value
-is a bound parameter. Verified against Relate 1.0.1 (tests/test_graph.py) and written in the
-Neo4j 5 dialect so the same text runs on AuraDB for the parity check.
+is a bound parameter. Verified against Relate 1.0.1 (tests/test_projection.py and
+tests/test_matching.py) and written in the Neo4j 5 dialect so the same text runs on AuraDB for
+the parity check.
 
 Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs):
 
@@ -11,7 +12,55 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
     (:Volunteer)-[:ON_TEAM]->(:Project)              volunteer and project lead both said yes
     (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
     (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
+
+Reads that can return many rows end in `LIMIT $limit`. The store binds `$limit` itself
+(app.graph.store.Tx.read) so that a result larger than the configured bound raises instead of
+being cut short; callers never pass it.
 """
+
+from typing import Any
+
+# ------------------------------------------------------------------ schema
+# The one definition of the graph's shape: relationship type -> (source label, target label).
+# The reconcile statements below, the projector and the AuraDB push are all derived from it.
+LABELS = ("Organisation", "Project", "Cause", "Skill", "Volunteer")
+VOLUNTEER_RELS = {
+    "VOLUNTEERS_WITH": "Organisation",
+    "HAS_SKILL": "Skill",
+    "OFFERS_SKILL": "Skill",
+    "EXCLUDES_SKILL": "Skill",
+    "PREFERS_CAUSE": "Cause",
+    "EXCLUDES_CAUSE": "Cause",
+}
+PROJECT_RELS = {
+    "SERVES_CAUSE": "Cause",
+    "REQUIRES_SKILL": "Skill",
+    "BENEFITS_FROM_SKILL": "Skill",
+}
+RELATIONSHIPS: dict[str, tuple[str, str]] = {
+    **{rel: ("Volunteer", label) for rel, label in VOLUNTEER_RELS.items()},
+    **{rel: ("Project", label) for rel, label in PROJECT_RELS.items()},
+    "OWNS_PROJECT": ("Organisation", "Project"),
+    "ON_TEAM": ("Volunteer", "Project"),
+}
+
+
+def _edge_prune(source: str, rel: str, target: str) -> str:
+    return f"""
+MATCH (n:{source} {{id: $id}})-[r:{rel}]->(t:{target})
+WHERE NOT t.id IN $targets
+DELETE r
+"""
+
+
+def _edge_merge(source: str, rel: str, target: str) -> str:
+    return f"""
+MATCH (n:{source} {{id: $id}})
+UNWIND $targets AS target
+MATCH (t:{target} {{id: target}})
+MERGE (n)-[:{rel}]->(t)
+"""
+
 
 # ------------------------------------------------------------------ catalogue + organisations
 UPSERT_CAUSES = """
@@ -37,36 +86,10 @@ SET o.name = $name
 VOLUNTEER_UPSERT = "MERGE (v:Volunteer {id: $id})"
 
 VOLUNTEER_EDGE_PRUNE = {
-    rel: f"""
-MATCH (v:Volunteer {{id: $id}})-[r:{rel}]->(t:{label})
-WHERE NOT t.id IN $targets
-DELETE r
-"""
-    for rel, label in {
-        "VOLUNTEERS_WITH": "Organisation",
-        "HAS_SKILL": "Skill",
-        "OFFERS_SKILL": "Skill",
-        "EXCLUDES_SKILL": "Skill",
-        "PREFERS_CAUSE": "Cause",
-        "EXCLUDES_CAUSE": "Cause",
-    }.items()
+    rel: _edge_prune("Volunteer", rel, label) for rel, label in VOLUNTEER_RELS.items()
 }
-
 VOLUNTEER_EDGE_MERGE = {
-    rel: f"""
-MATCH (v:Volunteer {{id: $id}})
-UNWIND $targets AS target
-MATCH (t:{label} {{id: target}})
-MERGE (v)-[:{rel}]->(t)
-"""
-    for rel, label in {
-        "VOLUNTEERS_WITH": "Organisation",
-        "HAS_SKILL": "Skill",
-        "OFFERS_SKILL": "Skill",
-        "EXCLUDES_SKILL": "Skill",
-        "PREFERS_CAUSE": "Cause",
-        "EXCLUDES_CAUSE": "Cause",
-    }.items()
+    rel: _edge_merge("Volunteer", rel, label) for rel, label in VOLUNTEER_RELS.items()
 }
 
 # ------------------------------------------------------------------ project reconcile
@@ -78,30 +101,10 @@ MERGE (o)-[:OWNS_PROJECT]->(p)
 """
 
 PROJECT_EDGE_PRUNE = {
-    rel: f"""
-MATCH (p:Project {{id: $id}})-[r:{rel}]->(t:{label})
-WHERE NOT t.id IN $targets
-DELETE r
-"""
-    for rel, label in {
-        "SERVES_CAUSE": "Cause",
-        "REQUIRES_SKILL": "Skill",
-        "BENEFITS_FROM_SKILL": "Skill",
-    }.items()
+    rel: _edge_prune("Project", rel, label) for rel, label in PROJECT_RELS.items()
 }
-
 PROJECT_EDGE_MERGE = {
-    rel: f"""
-MATCH (p:Project {{id: $id}})
-UNWIND $targets AS target
-MATCH (t:{label} {{id: target}})
-MERGE (p)-[:{rel}]->(t)
-"""
-    for rel, label in {
-        "SERVES_CAUSE": "Cause",
-        "REQUIRES_SKILL": "Skill",
-        "BENEFITS_FROM_SKILL": "Skill",
-    }.items()
+    rel: _edge_merge("Project", rel, label) for rel, label in PROJECT_RELS.items()
 }
 
 PROJECT_REMOVE = "MATCH (p:Project {id: $id}) DETACH DELETE p"
@@ -125,6 +128,7 @@ MATCH (:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project {id: $id})
 RETURN count(p) AS n
 """
 
+
 # ------------------------------------------------------------------ matching
 # The matching decision is made here, by graph relationships:
 #   - project in scope:   (o)-[:OWNS_PROJECT]->(p) with p.status 'published'
@@ -135,6 +139,18 @@ RETURN count(p) AS n
 #   - optional skills:    BENEFITS_FROM_SKILL that v has and offers and has not excluded
 #   - preference:         (v)-[:PREFERS_CAUSE]->(cause) ranks ahead; absence is no barrier
 # Rank: preferred cause, required coverage, optional coverage, then stable IDs.
+def match_params(
+    *, orgs: list[str], project: str = "", volunteer: str = "", preferred_only: bool = False
+) -> dict[str, Any]:
+    """Parameters for MATCH_CANDIDATES; an empty project or volunteer means "all of them"."""
+    return {
+        "orgs": orgs,
+        "project": project,
+        "volunteer": volunteer,
+        "preferred_only": preferred_only,
+    }
+
+
 MATCH_CANDIDATES = """
 MATCH (o:Organisation)-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
 WHERE o.id IN $orgs AND p.status = 'published' AND ($project = '' OR p.id = $project)
@@ -210,7 +226,7 @@ LIMIT $limit
 # ------------------------------------------------------------------ browse + inspection
 BROWSE_PROJECTS = """
 MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
-WHERE p.status = 'published'
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
 CALL (p) {
   OPTIONAL MATCH (p)-[:REQUIRES_SKILL]->(r:Skill)
   RETURN collect(r.id) AS required

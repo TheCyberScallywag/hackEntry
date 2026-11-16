@@ -14,7 +14,6 @@ or not visible, 409 stale version or wrong state, 422 invalid input.
 Interactive docs: /api/docs (OpenAPI at /api/openapi.json).
 """
 
-from contextlib import suppress
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -23,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app import auth, matching, notify, placements, profile_view, services
 from app.graph import cypher
+from app.web.deps import drain
 
 router = APIRouter(prefix="/api/v1")
 _bearer = HTTPBearer(auto_error=False)
@@ -46,11 +46,6 @@ def bearer_session(
 
 
 Api = Annotated[auth.Session, Depends(bearer_session)]
-
-
-def _drain(rt) -> None:
-    with suppress(Exception):  # a failure stays queued; the background loop retries
-        rt.projector.drain()
 
 
 # ------------------------------------------------------------------ request bodies
@@ -209,7 +204,7 @@ def _profile(rt, user_id: str) -> dict:
     return profile_view.overview(rt.db, rt.graph, user_id) | {
         "status": actor.status,
         "status_label": services.VOLUNTEER_STATUS_LABELS[actor.status],
-        "can_submit_for_vetting": actor.status in ("draft", "info_requested", "declined"),
+        "can_submit_for_vetting": actor.status in services.SUBMITTABLE,
     }
 
 
@@ -228,7 +223,7 @@ def put_profile(body: ProfileIn, request: Request, session: Api) -> dict:
         display_name=body.display_name, skills=body.skills, causes=body.causes,
         expected_version=body.version,
     )  # fmt: skip
-    _drain(rt)
+    drain(rt)
     return _profile(rt, session.user_id)
 
 
@@ -271,7 +266,7 @@ def join(org_id: str, request: Request, session: Api) -> dict:
     """Opt in as a volunteer. Matching starts once my account is active (vetted)."""
     rt = _rt(request)
     services.set_membership(rt.db, session.user_id, org_id, opted_in=True)
-    _drain(rt)
+    drain(rt)
     return {"opted_in": True}
 
 
@@ -279,7 +274,7 @@ def join(org_id: str, request: Request, session: Api) -> dict:
 def leave(org_id: str, request: Request, session: Api) -> dict:
     rt = _rt(request)
     services.set_membership(rt.db, session.user_id, org_id, opted_in=False)
-    _drain(rt)
+    drain(rt)
     return {"opted_in": False}
 
 
@@ -373,7 +368,7 @@ def remove_volunteer(
     """An org admin removes a volunteer from the organisation and its project teams."""
     rt = _rt(request)
     services.remove_volunteer(rt.db, session.user_id, org_id, user_id, reason=body.reason)
-    _drain(rt)
+    drain(rt)
     return {"removed": True}
 
 
@@ -422,7 +417,7 @@ def decide(org_id: str, sid: str, body: DecisionIn, request: Request, session: A
         action=body.action, reason=body.reason, private_note=body.private_note,
         revision=body.revision, expected_version=body.version,
     )  # fmt: skip
-    _drain(rt)
+    drain(rt)
     return {"state": services.get_submission(rt.db, session.user_id, sid)["state"]}
 
 
@@ -432,7 +427,7 @@ def withdraw(org_id: str, sid: str, body: WithdrawIn, request: Request, session:
     services.withdraw_project(
         rt.db, session.user_id, org_id, sid, reason=body.reason, expected_version=body.version
     )
-    _drain(rt)
+    drain(rt)
     return {"state": "withdrawn"}
 
 
@@ -455,7 +450,7 @@ def answer_as_volunteer(project_id: str, body: AnswerIn, request: Request, sessi
     state = placements.volunteer_respond(
         rt.db, session.user_id, project_id, body.answer, version=body.version
     )
-    _drain(rt)
+    drain(rt)
     return {"state": state}
 
 
@@ -463,7 +458,7 @@ def answer_as_volunteer(project_id: str, body: AnswerIn, request: Request, sessi
 def leave_team(project_id: str, request: Request, session: Api) -> dict:
     rt = _rt(request)
     placements.end_team_membership(rt.db, session.user_id, project_id, session.user_id)
-    _drain(rt)
+    drain(rt)
     return {"state": "left"}
 
 
@@ -481,7 +476,7 @@ def answer_as_lead(
     state = placements.lead_respond(
         rt.db, session.user_id, project_id, volunteer_id, body.answer, version=body.version
     )
-    _drain(rt)
+    drain(rt)
     return {"state": state}
 
 
@@ -493,7 +488,7 @@ def remove_from_team(
     placements.end_team_membership(
         rt.db, session.user_id, project_id, volunteer_id, reason=body.reason
     )
-    _drain(rt)
+    drain(rt)
     return {"state": "removed"}
 
 
@@ -517,7 +512,7 @@ def vet(user_id: str, body: VetIn, request: Request, session: Api) -> dict:
         rt.db, session.user_id, user_id, action=body.action, note=body.note,
         private_note=body.private_note, expected_version=body.version,
     )  # fmt: skip
-    _drain(rt)
+    drain(rt)
     return {"status": status}
 
 
@@ -557,26 +552,21 @@ def create_org(body: OrganisationIn, request: Request, session: Api) -> dict:
     org_id = services.create_organisation(
         rt.db, session.user_id, key=body.key, name=body.name, description=body.description
     )
-    _drain(rt)
+    drain(rt)
     return {"id": org_id}
-
-
-def _require_admin(rt, session: auth.Session) -> None:
-    if not services.get_actor(rt.db, session.user_id).admin:
-        raise services.Forbidden("admin")
 
 
 @router.get("/admin/projection", tags=["admin"])
 def projection_status(request: Request, session: Api) -> dict:
     rt = _rt(request)
-    _require_admin(rt, session)
+    services.require_admin(rt.db, session.user_id)
     return rt.projector.status().__dict__
 
 
 @router.post("/admin/projection/replay", tags=["admin"])
 def projection_replay(request: Request, session: Api) -> dict:
     rt = _rt(request)
-    _require_admin(rt, session)
+    services.require_admin(rt.db, session.user_id)
     result = rt.projector.drain(ignore_backoff=True)
     return {"done": result.done, "failed": result.failed}
 
@@ -585,11 +575,11 @@ def projection_replay(request: Request, session: Api) -> dict:
 def graph_overview(request: Request, session: Api) -> dict:
     """Label and relationship counts plus the org → project → skill → volunteer inspection."""
     rt = _rt(request)
-    _require_admin(rt, session)
+    services.require_admin(rt.db, session.user_id)
     with rt.graph.reader() as tx:
-        labels = tx.read(cypher.COUNT_LABELS, {"limit": 50})
-        rels = tx.read(cypher.COUNT_RELATIONSHIPS, {"limit": 50})
-        inspect = tx.read(cypher.INSPECT, {"limit": 200})
+        labels = tx.read(cypher.COUNT_LABELS)
+        rels = tx.read(cypher.COUNT_RELATIONSHIPS)
+        inspect = tx.read(cypher.INSPECT)
     with rt.db.read() as conn:
         names = dict(conn.execute("SELECT id, display_name FROM users").fetchall())
     for row in inspect:

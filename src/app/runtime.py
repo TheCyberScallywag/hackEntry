@@ -5,13 +5,13 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from app import placements
+from app import placements, services
 from app.auth import hash_password
 from app.catalogue import get_catalogue, load_demo, stable_id
 from app.config import BUNDLED_GRAPH, Settings
-from app.graph.projector import Projector
+from app.graph.projector import Changed, Projector
 from app.graph.store import GraphStore
-from app.sqlstore import Database, enqueue, now
+from app.sqlstore import Database, enqueue, now, prune
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,14 @@ def build_runtime(settings: Settings) -> Runtime:
     db = Database(settings.sqlite_path)
     graph = GraphStore(settings.graph_path, max_rows=settings.graph_max_rows)
     projector = Projector(db, graph)
-    projector.on_projected = lambda: placements.sweep(db, graph)
+
+    def reconcile_placements(changed: Changed | None) -> None:
+        scope = None
+        if changed is not None:
+            scope = placements.Scope(frozenset(changed.volunteers), frozenset(changed.projects))
+        placements.sweep(db, graph, scope)
+
+    projector.on_projected = reconcile_placements
     return Runtime(settings, db, graph, projector)
 
 
@@ -56,6 +63,8 @@ def bootstrap(rt: Runtime) -> None:
         seed_demo(rt, copy_bundle=True)
     else:
         seed_catalogue(rt)
+    with rt.db.tx() as conn:
+        prune(conn)
     result = rt.projector.drain(ignore_backoff=True)
     log.info("startup replay: %s done, %s failed", result.done, result.failed)
 
@@ -139,9 +148,8 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                 conn.execute(
                     "INSERT INTO profile_skills (user_id, skill_id, has, offers, excluded) "
                     "VALUES (?, ?, ?, ?, ?)",
-                    (uid, skill, int(state in ("has", "offers")), int(state == "offers"),
-                     int(state == "exclude")),
-                )  # fmt: skip
+                    (uid, skill, *services.skill_flags(state)),
+                )
             for cause, stance in person["causes"].items():
                 conn.execute(
                     "INSERT INTO profile_causes (user_id, cause_id, stance) VALUES (?, ?, ?)",

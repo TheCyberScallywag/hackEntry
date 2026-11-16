@@ -15,8 +15,10 @@ Every transition notifies the volunteer, so they always know where their applica
 import json
 import logging
 import sqlite3
+from dataclasses import dataclass
 
 from app import services
+from app.catalogue import get_catalogue
 from app.graph import cypher
 from app.graph.store import GraphStore
 from app.notify import notify
@@ -36,38 +38,91 @@ STATE_LABELS = {
 
 def _project_info(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row:
     return conn.execute(
-        "SELECT s.id, s.org_id, s.lead_id, s.state, v.title, o.name AS org_name "
-        "FROM submissions s JOIN submission_revisions v ON v.submission_id = s.id "
-        "AND v.revision = s.current_revision JOIN organisations o ON o.id = s.org_id "
-        "WHERE s.id = ?",
+        "SELECT s.id, s.org_id, s.lead_id, s.state, s.title, o.name AS org_name "
+        "FROM submission_current s JOIN organisations o ON o.id = s.org_id WHERE s.id = ?",
         (project_id,),
     ).fetchone()
 
 
-def sweep(db: Database, graph: GraphStore) -> int:
-    """Create, lapse or revive placements from the current Relate matches. Returns changes."""
+@dataclass(frozen=True)
+class Scope:
+    """What a sweep has to look at: the volunteers and projects whose graph state just changed."""
+
+    volunteers: frozenset[str] = frozenset()
+    projects: frozenset[str] = frozenset()
+
+    def __bool__(self) -> bool:
+        return bool(self.volunteers or self.projects)
+
+
+def _marks(ids: list[str]) -> str:
+    return ",".join("?" * len(ids))
+
+
+def _current_matches(
+    db: Database, graph: GraphStore, scope: Scope | None
+) -> dict[tuple[str, str], list[str]]:
+    """Eligible (project, volunteer) pairs from Relate, each with the skills that matched.
+
+    Every read is for one project or one volunteer, so the store's row bound applies to that one
+    entity and not to an organisation as a whole. Hitting the bound raises GraphTruncated: the
+    sweep fails and is retried, and no placement is lapsed on the strength of a partial answer.
+    """
     with db.read() as conn:
         org_ids = [r[0] for r in conn.execute("SELECT id FROM organisations ORDER BY id")]
+        if scope is None:
+            projects = conn.execute(
+                "SELECT id, org_id FROM submissions WHERE state = 'published' ORDER BY id"
+            ).fetchall()
+        else:
+            ids = sorted(scope.projects)
+            projects = conn.execute(
+                f"SELECT id, org_id FROM submissions WHERE id IN ({_marks(ids)}) ORDER BY id", ids
+            ).fetchall()
+    reads = [cypher.match_params(orgs=[p["org_id"]], project=p["id"]) for p in projects]
+    if scope is not None:
+        reads += [cypher.match_params(orgs=org_ids, volunteer=v) for v in sorted(scope.volunteers)]
     current: dict[tuple[str, str], list[str]] = {}
+    if not reads:
+        return current
     with graph.reader() as tx:
-        for org in org_ids:
-            for row in tx.read(
-                cypher.MATCH_CANDIDATES,
-                {"orgs": [org], "project": "", "volunteer": "", "preferred_only": False,
-                 "limit": graph.max_rows},
-            ):  # fmt: skip
+        for params in reads:
+            for row in tx.read(cypher.MATCH_CANDIDATES, params):
                 current[(row["project"], row["volunteer"])] = sorted(row["matched"])
+    return current
+
+
+def _existing(conn: sqlite3.Connection, scope: Scope | None) -> dict[tuple[str, str], dict]:
+    if scope is None:
+        rows = conn.execute("SELECT * FROM placements")
+    else:
+        projects, volunteers = sorted(scope.projects), sorted(scope.volunteers)
+        rows = conn.execute(
+            f"SELECT * FROM placements WHERE project_id IN ({_marks(projects)}) "
+            f"OR volunteer_id IN ({_marks(volunteers)})",
+            (*projects, *volunteers),
+        )
+    return {(r["project_id"], r["volunteer_id"]): dict(r) for r in rows}
+
+
+def sweep(db: Database, graph: GraphStore, scope: Scope | None = None) -> int:
+    """Create, lapse or revive placements from the current Relate matches. Returns changes.
+
+    With a `scope`, only pairs that involve one of its volunteers or projects are reconciled:
+    the cost follows the size of the change, not the size of the system. Without one, every
+    published project is reconciled (start-up, `cli drain`, an admin replay).
+    """
+    if scope is not None and not scope:
+        return 0
+    current = _current_matches(db, graph, scope)  # before the transaction: no lock held meanwhile
     changes = 0
     stamp = now()
     with db.tx() as conn:
+        existing = _existing(conn, scope)
         live = {
             r["id"] for r in conn.execute("SELECT id FROM submissions WHERE state = 'published'")
         }
         active = {r["id"] for r in conn.execute("SELECT id FROM users WHERE status = 'active'")}
-        existing = {
-            (r["project_id"], r["volunteer_id"]): dict(r)
-            for r in conn.execute("SELECT * FROM placements")
-        }
         for (pid, vid), skills in sorted(current.items()):
             if pid not in live or vid not in active:
                 continue  # SQL freshness: only active projects and vetted volunteers
@@ -184,17 +239,21 @@ def volunteer_respond(
     return _respond(db, project_id, user_id, "volunteer", answer, version)
 
 
-def _require_lead(db: Database, actor_id: str, project_id: str) -> sqlite3.Row:
-    with db.read() as conn:
-        info = _project_info(conn, project_id)
-        if info is None:
-            raise services.NotFound("project")
-        access = services.org_access(conn, actor_id, info["org_id"])
+def _check_lead(conn: sqlite3.Connection, actor_id: str, project_id: str) -> sqlite3.Row:
+    info = _project_info(conn, project_id)
+    if info is None:
+        raise services.NotFound("project")
+    access = services.org_access(conn, actor_id, info["org_id"])
     if not (info["lead_id"] == actor_id or access.org_admin):
         if access.any:
             raise services.Forbidden("Only the project lead or an org admin can do that.")
         raise services.NotFound("project")
     return info
+
+
+def _require_lead(db: Database, actor_id: str, project_id: str) -> sqlite3.Row:
+    with db.read() as conn:
+        return _check_lead(conn, actor_id, project_id)
 
 
 def lead_respond(
@@ -212,8 +271,7 @@ def end_team_membership(
     leaving = actor_id == volunteer_id
     if not leaving:
         _require_lead(db, actor_id, project_id)
-        if not 3 <= len(reason.strip()) <= services.REASON_MAX:
-            raise services.Invalid("Give the volunteer a reason (3–1000 characters).")
+        reason = services.require_reason(reason)
     with db.tx() as conn:
         updated = conn.execute(
             "UPDATE placements SET state = ?, version = version + 1, updated_at = ? "
@@ -232,7 +290,7 @@ def end_team_membership(
                        f"/o/{info['org_id']}/projects/{project_id}")  # fmt: skip
         else:
             notify(conn, volunteer_id, "placement",
-                   f"You were removed from the team for “{info['title']}”: {reason.strip()}",
+                   f"You were removed from the team for “{info['title']}”: {reason}",
                    "/opportunities")  # fmt: skip
         enqueue(conn, "project", project_id)
 
@@ -240,10 +298,9 @@ def end_team_membership(
 def for_volunteer(db: Database, user_id: str) -> list[dict]:
     with db.read() as conn:
         rows = conn.execute(
-            "SELECT p.*, v.title, o.name AS org_name, s.org_id FROM placements p "
-            "JOIN submissions s ON s.id = p.project_id JOIN organisations o ON o.id = s.org_id "
-            "JOIN submission_revisions v ON v.submission_id = s.id "
-            "AND v.revision = s.current_revision WHERE p.volunteer_id = ? "
+            "SELECT p.*, s.title, o.name AS org_name, s.org_id FROM placements p "
+            "JOIN submission_current s ON s.id = p.project_id "
+            "JOIN organisations o ON o.id = s.org_id WHERE p.volunteer_id = ? "
             "ORDER BY CASE p.state WHEN 'eligible' THEN 0 WHEN 'team' THEN 1 ELSE 2 END, "
             "p.updated_at DESC",
             (user_id,),
@@ -253,8 +310,8 @@ def for_volunteer(db: Database, user_id: str) -> list[dict]:
 
 def for_project(db: Database, actor_id: str, project_id: str) -> list[dict]:
     """Candidates and team for the project lead and org admins (display names, no emails)."""
-    _require_lead(db, actor_id, project_id)
     with db.read() as conn:
+        _check_lead(conn, actor_id, project_id)
         rows = conn.execute(
             "SELECT p.*, u.display_name FROM placements p JOIN users u ON u.id = p.volunteer_id "
             "WHERE p.project_id = ? ORDER BY CASE p.state WHEN 'eligible' THEN 0 "
@@ -265,11 +322,8 @@ def for_project(db: Database, actor_id: str, project_id: str) -> list[dict]:
 
 
 def _shape(row: sqlite3.Row) -> dict:
-    from app.catalogue import get_catalogue
-
     data = dict(row)
-    data["matched_skills"] = [
-        get_catalogue().skill_name(s) for s in json.loads(row["matched_skills"])
-    ]
+    names = get_catalogue()
+    data["matched_skills"] = [names.skill_name(s) for s in json.loads(row["matched_skills"])]
     data["state_label"] = STATE_LABELS[row["state"]]
     return data

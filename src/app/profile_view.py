@@ -8,7 +8,7 @@
     Past projects     own suggestions that were rejected or withdrawn
 
 There is no "volunteer joined a project" record, so active/past are derived from suggestions and
-current matches. The mobile app mirrors these labels in mobile/src/app/pages/profile.
+current matches. The labels are sent with the data, so the mobile app does not keep a copy.
 """
 
 from app import matching, services
@@ -16,21 +16,10 @@ from app.catalogue import get_catalogue
 from app.graph.store import GraphStore
 from app.sqlstore import Database
 
-SKILL_STATES = {
-    "none": "Not set",
-    "has": "Have (not offering)",
-    "offers": "Have and offer",
-    "exclude": "Exclude from matching",
-}
-CAUSE_STANCES = {"neutral": "No preference", "prefer": "Prefer", "exclude": "Exclude"}
-PROJECT_STATES = {
-    "submitted": "In review",
-    "changes_requested": "Scoping: more detail requested",
-    "rejected": "Rejected",
-    "approved": "Approved (activating…)",
-    "published": "Active",
-    "withdrawn": "Withdrawn",
-}
+# The labels live with the rules they describe (app.services); re-exported for the templates.
+SKILL_STATES = services.SKILL_STATES
+CAUSE_STANCES = services.CAUSE_STANCES
+PROJECT_STATES = services.PROJECT_STATES
 ACTIVE_STATES = ("submitted", "changes_requested", "approved", "published")
 PAST_STATES = ("rejected", "withdrawn")
 
@@ -45,7 +34,8 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
     def suggestion(s: dict) -> dict:
         return {
             "id": s["id"], "title": s["title"], "organisation": s["org_name"],
-            "org_id": s["org_id"], "relation": "suggested", "state": s["state"], "detail": None,
+            "org_id": s["org_id"], "relation": "suggested", "state": s["state"],
+            "state_label": PROJECT_STATES[s["state"]], "detail": None,
         }  # fmt: skip
 
     active = [suggestion(s) for s in suggestions if s["state"] in ACTIVE_STATES]
@@ -58,6 +48,7 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
             "org_id": m["org"],
             "relation": "matched",
             "state": "published",
+            "state_label": PROJECT_STATES["published"],
             "detail": "You match: " + ", ".join(m["matched_names"]),
         }  # fmt: skip
         for m in matches.matches
@@ -69,7 +60,7 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
             "name": s.name,
             "category": s.category,
             "state": profile.skills.get(s.id, "none"),
-        }  # fmt: skip
+        }
         for s in cat.skills
     ]
     by_category: dict[str, list[dict]] = {}  # catalogue order, grouped by category
@@ -81,6 +72,8 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
         "version": profile.version,
         "skills": skills,
         "skill_groups": groups,
+        "skill_states": SKILL_STATES,
+        "cause_stances": CAUSE_STANCES,
         "causes": [
             {"id": c.id, "name": c.name, "stance": profile.causes.get(c.id, "neutral")}
             for c in cat.causes
