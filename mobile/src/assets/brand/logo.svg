@@ -1,5 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 128" role="img" aria-label="Example Project">
-  <rect width="128" height="128" rx="28" fill="#264653"/>
-  <rect x="36" y="36" width="56" height="56" rx="6" fill="none" stroke="#2a9d8f" stroke-width="12"/>
-  <text x="152" y="80" font-family="system-ui, sans-serif" font-size="40" font-weight="700" fill="#264653">Example Project</text>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="title description">
+<title id="title">Volunteer Network logo</title>
+<desc id="description">Three teal volunteers gather around a golden heart inside an illuminated network. Relate Hackathon.</desc>
+<defs>
+<radialGradient id="navy" cx="85%" cy="0%" r="100%"><stop stop-color="#10244c"/><stop offset=".65" stop-color="#0b1730"/><stop offset="1" stop-color="#090f22"/></radialGradient>
+<radialGradient id="jade" cx="54%" cy="12%" r="90%"><stop stop-color="#a5fff0"/><stop offset=".32" stop-color="#49e7d5"/><stop offset=".75" stop-color="#05ab94"/><stop offset="1" stop-color="#006653"/></radialGradient>
+<linearGradient id="body" x1="30%" x2="60%" y1="0%" y2="100%"><stop stop-color="#88ffec"/><stop offset=".4" stop-color="#13cdb5"/><stop offset="1" stop-color="#007765"/></linearGradient>
+<radialGradient id="honey" cx="40%" cy="17%" r="86%"><stop stop-color="#fff9ce"/><stop offset=".45" stop-color="#ffdd65"/><stop offset=".82" stop-color="#ffb21c"/><stop offset="1" stop-color="#ffe38a"/></radialGradient>
+<linearGradient id="cream" x2="0" y2="100%"><stop stop-color="#fff9e8"/><stop offset=".65" stop-color="#f8efd4"/><stop offset="1" stop-color="#cca16a"/></linearGradient>
+<radialGradient id="eye" cx="65%" cy="25%" r="80%"><stop stop-color="#e1fff7"/><stop offset=".17" stop-color="#52665f"/><stop offset=".45" stop-color="#080d0e"/><stop offset="1" stop-color="#000"/></radialGradient>
+<radialGradient id="gold-halo"><stop stop-color="#ffb843" stop-opacity=".64"/><stop offset="1" stop-color="#ffac38" stop-opacity="0"/></radialGradient>
+<filter id="gold-glow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="10"/><feFlood flood-color="#ffac3b" flood-opacity=".9"/><feComposite in2="SourceAlpha" operator="in"/><feGaussianBlur stdDeviation="8"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="shade" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#00251d" flood-opacity=".55"/></filter>
+<path id="heart" d="M0 19C-42-27-92 22-55 69C-37 92-13 106 0 113C13 106 37 92 55 69C92 22 42-27 0 19Z"/>
+<path id="star" d="M0-20C4-6 6-4 20 0C6 4 4 6 0 20C-4 6-6 4-20 0C-6-4-4-6 0-20Z"/>
+<g id="face"><ellipse cx="-42" cy="6" rx="14" ry="22" fill="url(#eye)"/><ellipse cx="49" cy="1" rx="13" ry="21" fill="url(#eye)"/><path d="M-9 20Q7 38 22 18" fill="none" stroke="#091b18" stroke-width="8" stroke-linecap="round"/></g>
+<g id="side">
+  <ellipse cx="418" cy="458" rx="98" ry="100" fill="url(#jade)" stroke="#b1faea" stroke-opacity=".35" stroke-width="2"/>
+  <use href="#face" transform="translate(463 436) rotate(-29) scale(.78)"/>
+  <path d="M336 515C365 526 390 513 439 514C480 517 516 510 551 480C575 459 596 469 604 488C623 528 551 575 514 587L481 598C446 612 441 641 445 676C447 706 421 722 384 715C319 705 295 664 304 601C309 566 323 539 336 515Z" fill="url(#body)" filter="url(#shade)"/>
+</g>
+<g id="volunteers">
+  <ellipse cx="627" cy="437" rx="320" ry="255" fill="url(#gold-halo)" opacity=".2"/>
+  <path d="M325 434C321 318 451 212 626 209C797 208 921 321 920 434M402 523C461 617 541 668 627 669C712 668 792 618 852 523" fill="none" stroke="#fff0ae" stroke-width="5" filter="url(#gold-glow)"/>
+  <g fill="#fff2c6" filter="url(#gold-glow)"><circle cx="392" cy="290" r="25"/><circle cx="860" cy="290" r="25"/><circle cx="627" cy="669" r="25"/></g>
+  <path d="M548 226C508 251 476 287 480 334C482 372 512 416 552 425C579 429 593 407 582 381C572 362 561 342 572 325C593 300 661 300 682 324C695 342 682 363 673 382C661 409 675 429 702 425C742 418 770 374 773 332C776 284 745 249 705 225Z" fill="url(#body)" filter="url(#shade)"/>
+  <ellipse cx="626" cy="199" rx="105" ry="99" fill="url(#jade)" filter="url(#shade)" stroke="#b8fff3" stroke-width="2" stroke-opacity=".58"/>
+  <use href="#face" transform="translate(631 201)"/>
+  <circle cx="627" cy="444" r="103" fill="url(#gold-halo)"/>
+  <use href="#heart" transform="translate(627 391)" fill="url(#honey)" stroke="#fff2ab" stroke-width="2" filter="url(#gold-glow)"/>
+  <use href="#side"/>
+  <use href="#side" transform="translate(1254 0) scale(-1 1)"/>
+  <g fill="#fff2b9" filter="url(#gold-glow)">
+    <use href="#star" transform="translate(430 141)"/>
+    <use href="#star" transform="translate(382 178) scale(.66)"/>
+    <use href="#star" transform="translate(987 638) scale(.8)"/>
+    <use href="#star" transform="translate(959 672) scale(.58)"/>
+  </g>
+</g>
+</defs>
+<rect width="1254" height="1254" fill="url(#navy)"/>
+<use href="#volunteers"/>
+<g font-family="Montserrat, Avenir Next, Arial, sans-serif" text-anchor="middle" fill="#fff7e3">
+  <g font-weight="800">
+    <text x="627" y="856" font-size="135" textLength="844" lengthAdjust="spacingAndGlyphs" >VOLUNTEER</text>
+    <text x="627" y="982" font-size="135" textLength="716" lengthAdjust="spacingAndGlyphs" >NETWORK</text>
+  </g>
+  <rect x="525" y="1021" width="204" height="17" rx="8.5" fill="#31d8c5"/>
+  <text x="627" y="1106" font-size="41" textLength="431" lengthAdjust="spacingAndGlyphs" >Relate Hackathon</text>
+</g>
 </svg>

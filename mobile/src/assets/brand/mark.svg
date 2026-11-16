@@ -1,4 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Example Project mark">
-  <rect width="128" height="128" rx="28" fill="#264653"/>
-  <rect x="36" y="36" width="56" height="56" rx="6" fill="none" stroke="#2a9d8f" stroke-width="12"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+<title id="title">Volunteer Network mark</title>
+<desc id="description">Three teal volunteers connected around a golden heart.</desc>
+<defs>
+<radialGradient id="navy" cx="85%" cy="0%" r="100%"><stop stop-color="#10244c"/><stop offset=".65" stop-color="#0b1730"/><stop offset="1" stop-color="#090f22"/></radialGradient>
+<radialGradient id="jade" cx="54%" cy="12%" r="90%"><stop stop-color="#a5fff0"/><stop offset=".32" stop-color="#49e7d5"/><stop offset=".75" stop-color="#05ab94"/><stop offset="1" stop-color="#006653"/></radialGradient>
+<radialGradient id="honey" cx="40%" cy="17%" r="86%"><stop stop-color="#fff9ce"/><stop offset=".45" stop-color="#ffdd65"/><stop offset=".82" stop-color="#ffb21c"/><stop offset="1" stop-color="#ffe38a"/></radialGradient>
+<radialGradient id="gold-halo"><stop stop-color="#ffb843" stop-opacity=".64"/><stop offset="1" stop-color="#ffac38" stop-opacity="0"/></radialGradient>
+<filter id="gold-glow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/><feFlood flood-color="#ffac3b" flood-opacity=".9"/><feComposite in2="SourceAlpha" operator="in"/><feGaussianBlur stdDeviation="1.2"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="shade" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="1.2" stdDeviation="1.2" flood-color="#00251d" flood-opacity=".55"/></filter>
+<path id="heart" d="M0 19C-42-27-92 22-55 69C-37 92-13 106 0 113C13 106 37 92 55 69C92 22 42-27 0 19Z"/>
+</defs>
+<rect width="128" height="128" rx="28" fill="url(#navy)"/>
+<circle cx="64" cy="68" r="34" fill="url(#gold-halo)" opacity=".35"/>
+<!-- network ring linking the three volunteers -->
+<circle cx="64" cy="68" r="34" fill="none" stroke="#fff0ae" stroke-width="3" filter="url(#gold-glow)"/>
+<!-- volunteers -->
+<g fill="url(#jade)" stroke="#b8fff3" stroke-width="1" stroke-opacity=".5" filter="url(#shade)">
+  <circle cx="64" cy="31" r="15"/>
+  <circle cx="32" cy="86" r="13.5"/>
+  <circle cx="96" cy="86" r="13.5"/>
+</g>
+<!-- heart -->
+<circle cx="64" cy="70" r="20" fill="url(#gold-halo)"/>
+<use href="#heart" transform="translate(64 55) scale(.3)" fill="url(#honey)" stroke="#fff2ab" stroke-width="5" filter="url(#gold-glow)"/>
 </svg>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2048" height="682" viewBox="0 0 2048 682" role="img" aria-labelledby="title description">
+<title id="title">Volunteer Network banner</title>
+<desc id="description">Connect people, skills and causes. Built with Relate by Neo4j for Hackathon 2026 by Cyber Scallywags.</desc>
+<defs>
+<radialGradient id="navy" cx="85%" cy="0%" r="100%"><stop stop-color="#10244c"/><stop offset=".65" stop-color="#0b1730"/><stop offset="1" stop-color="#090f22"/></radialGradient>
+<radialGradient id="jade" cx="54%" cy="12%" r="90%"><stop stop-color="#a5fff0"/><stop offset=".32" stop-color="#49e7d5"/><stop offset=".75" stop-color="#05ab94"/><stop offset="1" stop-color="#006653"/></radialGradient>
+<linearGradient id="body" x1="30%" x2="60%" y1="0%" y2="100%"><stop stop-color="#88ffec"/><stop offset=".4" stop-color="#13cdb5"/><stop offset="1" stop-color="#007765"/></linearGradient>
+<radialGradient id="honey" cx="40%" cy="17%" r="86%"><stop stop-color="#fff9ce"/><stop offset=".45" stop-color="#ffdd65"/><stop offset=".82" stop-color="#ffb21c"/><stop offset="1" stop-color="#ffe38a"/></radialGradient>
+<linearGradient id="cream" x2="0" y2="100%"><stop stop-color="#fff9e8"/><stop offset=".65" stop-color="#f8efd4"/><stop offset="1" stop-color="#cca16a"/></linearGradient>
+<radialGradient id="eye" cx="65%" cy="25%" r="80%"><stop stop-color="#e1fff7"/><stop offset=".17" stop-color="#52665f"/><stop offset=".45" stop-color="#080d0e"/><stop offset="1" stop-color="#000"/></radialGradient>
+<radialGradient id="gold-halo"><stop stop-color="#ffb843" stop-opacity=".64"/><stop offset="1" stop-color="#ffac38" stop-opacity="0"/></radialGradient>
+<filter id="gold-glow" x="-70%" y="-70%" width="240%" height="240%" color-interpolation-filters="sRGB"><feGaussianBlur in="SourceAlpha" stdDeviation="10"/><feFlood flood-color="#ffac3b" flood-opacity=".9"/><feComposite in2="SourceAlpha" operator="in"/><feGaussianBlur stdDeviation="8"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+<filter id="shade" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="7" stdDeviation="7" flood-color="#00251d" flood-opacity=".55"/></filter>
+<path id="heart" d="M0 19C-42-27-92 22-55 69C-37 92-13 106 0 113C13 106 37 92 55 69C92 22 42-27 0 19Z"/>
+<path id="star" d="M0-20C4-6 6-4 20 0C6 4 4 6 0 20C-4 6-6 4-20 0C-6-4-4-6 0-20Z"/>
+<g id="face"><ellipse cx="-42" cy="6" rx="14" ry="22" fill="url(#eye)"/><ellipse cx="49" cy="1" rx="13" ry="21" fill="url(#eye)"/><path d="M-9 20Q7 38 22 18" fill="none" stroke="#091b18" stroke-width="8" stroke-linecap="round"/></g>
+<g id="side">
+  <ellipse cx="418" cy="458" rx="98" ry="100" fill="url(#jade)" stroke="#b1faea" stroke-opacity=".35" stroke-width="2"/>
+  <use href="#face" transform="translate(463 436) rotate(-29) scale(.78)"/>
+  <path d="M336 515C365 526 390 513 439 514C480 517 516 510 551 480C575 459 596 469 604 488C623 528 551 575 514 587L481 598C446 612 441 641 445 676C447 706 421 722 384 715C319 705 295 664 304 601C309 566 323 539 336 515Z" fill="url(#body)" filter="url(#shade)"/>
+</g>
+<g id="volunteers">
+  <ellipse cx="627" cy="437" rx="320" ry="255" fill="url(#gold-halo)" opacity=".2"/>
+  <path d="M325 434C321 318 451 212 626 209C797 208 921 321 920 434M402 523C461 617 541 668 627 669C712 668 792 618 852 523" fill="none" stroke="#fff0ae" stroke-width="5" filter="url(#gold-glow)"/>
+  <g fill="#fff2c6" filter="url(#gold-glow)"><circle cx="392" cy="290" r="25"/><circle cx="860" cy="290" r="25"/><circle cx="627" cy="669" r="25"/></g>
+  <path d="M548 226C508 251 476 287 480 334C482 372 512 416 552 425C579 429 593 407 582 381C572 362 561 342 572 325C593 300 661 300 682 324C695 342 682 363 673 382C661 409 675 429 702 425C742 418 770 374 773 332C776 284 745 249 705 225Z" fill="url(#body)" filter="url(#shade)"/>
+  <ellipse cx="626" cy="199" rx="105" ry="99" fill="url(#jade)" filter="url(#shade)" stroke="#b8fff3" stroke-width="2" stroke-opacity=".58"/>
+  <use href="#face" transform="translate(631 201)"/>
+  <circle cx="627" cy="444" r="103" fill="url(#gold-halo)"/>
+  <use href="#heart" transform="translate(627 391)" fill="url(#honey)" stroke="#fff2ab" stroke-width="2" filter="url(#gold-glow)"/>
+  <use href="#side"/>
+  <use href="#side" transform="translate(1254 0) scale(-1 1)"/>
+  <g fill="#fff2b9" filter="url(#gold-glow)">
+    <use href="#star" transform="translate(430 141)"/>
+    <use href="#star" transform="translate(382 178) scale(.66)"/>
+    <use href="#star" transform="translate(987 638) scale(.8)"/>
+    <use href="#star" transform="translate(959 672) scale(.58)"/>
+  </g>
+</g>
+</defs>
+<rect width="2048" height="682" fill="url(#navy)"/>
+<use href="#volunteers" transform="translate(-135 -6) scale(.752)"/>
+<g font-family="Montserrat, Avenir Next, Arial, sans-serif" text-anchor="middle" fill="#fff7e3">
+  <g font-weight="800">
+    <text x="1028" y="225" font-size="133" textLength="855" lengthAdjust="spacingAndGlyphs" >VOLUNTEER</text>
+    <path d="M805 274C889 374 951 333 1030 289C1115 239 1170 172 1264 248" fill="none" stroke="url(#body)" stroke-width="26" stroke-linecap="round"/>
+    <text x="1047" y="350" font-size="139" textLength="766" lengthAdjust="spacingAndGlyphs" >NETWORK</text>
+  </g>
+  <rect x="941" y="386" width="184" height="18" rx="9" fill="#00d4b3"/>
+  <text x="1055" y="466" font-size="46" textLength="760" lengthAdjust="spacingAndGlyphs" >Connect people, skills and causes</text>
+  <text x="710" y="604" font-size="31" textLength="377" lengthAdjust="spacingAndGlyphs" >Built with Relate by Neo4j</text>
+  <circle cx="938" cy="594" r="7" fill="#00d4b3"/>
+  <text x="1108" y="604" font-size="31" textLength="259" lengthAdjust="spacingAndGlyphs" >Hackathon 2026</text>
+  <path d="M1285 573V615" stroke="#fff7e3" stroke-opacity=".55" stroke-width="1.5"/>
+  <text x="1446" y="602" font-size="27" textLength="233" lengthAdjust="spacingAndGlyphs" font-style="italic">by Cyber Scallywags</text>
+</g>
+<g id="cause-network">
+  <g filter="url(#gold-glow)" stroke="#fff0b3" stroke-width="4" fill="none">
+    <path d="M1641 205C1750 162 1845 202 1906 250C1999 297 1980 378 1902 421C1775 484 1651 473 1565 409M1651 222C1679 310 1740 340 1853 361M1570 445C1647 421 1663 370 1744 330"/>
+    <g fill="#fff4cb" stroke="none"><circle cx="1784" cy="194" r="14"/><circle cx="1744" cy="330" r="15"/><circle cx="1705" cy="459" r="15"/></g>
+  </g>
+  <g id="volunteer-with-backpack" transform="translate(1623 173)">
+    <rect x="-81" y="18" width="59" height="72" rx="21" fill="url(#cream)" stroke="#e8bd76" stroke-width="3"/>
+    <path d="M-49 25Q0 1 49 25L53 87Q50 105 1 103Q-48 104-50 90Z" fill="url(#body)" filter="url(#shade)"/>
+    <ellipse cx="3" cy="-20" rx="50" ry="50" fill="url(#jade)" filter="url(#shade)"/>
+    <use href="#face" transform="translate(19 -20) scale(.43)"/>
+    <path d="M-51 -13C-58-42-41-72-12-74C5-77 21-73 29-65C47-73 64-67 67-54C71-44 59-36 48-32C41-51 19-54 0-51C-19-47-38-35-51-13Z" fill="url(#cream)" stroke="#fff2cd" stroke-width="2" filter="url(#shade)"/>
+    <path d="M-42 33Q-28 54-18 74M41 31Q53 48 55 71" stroke="#eed19a" stroke-width="15" fill="none" stroke-linecap="round"/>
+    <path d="M-48 72Q-31 80-17 63M53 73Q53 59 48 57" stroke="#fff0c9" stroke-width="25" fill="none" stroke-linecap="round"/>
+  </g>
+  <g id="idea" transform="translate(1914 201)">
+    <path d="M-27 52C-31 36-50 24-50-1A50 50 0 1 1 50-1C50 24 31 36 27 52Z" fill="url(#honey)" stroke="#fff2bf" stroke-width="3" filter="url(#gold-glow)"/>
+    <path d="M-9 51V14C-31 15-28-9-16-3C-10 0-9 7-9 14H9C29 14 28-8 17-3C10 0 9 8 9 14V51" fill="none" stroke="#ffb926" stroke-width="5" stroke-linecap="round"/>
+    <rect x="-28" y="49" width="56" height="14" rx="7" fill="url(#cream)"/><rect x="-25" y="62" width="50" height="13" rx="6.5" fill="url(#cream)"/><rect x="-17" y="74" width="34" height="12" rx="6" fill="#c89a5c"/>
+  </g>
+  <g id="giving" transform="translate(1558 402)">
+    <use href="#heart" transform="translate(0 -50) scale(.66)" fill="url(#honey)" stroke="#fff2ad" stroke-width="3" filter="url(#gold-glow)"/>
+    <path d="M-12 60C-19 36-42 33-53 15C-64-4-63-15-69-12C-74 17-49 42-36 49L-32 61M12 60C19 36 42 33 53 15C64-4 63-15 69-12C74 17 49 42 36 49L32 61" fill="none" stroke="url(#cream)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-35 64H-10M10 64H35" stroke="url(#body)" stroke-width="17" stroke-linecap="round"/>
+  </g>
+  <g id="checklist" transform="translate(1850 417) rotate(11)">
+    <rect x="-61" y="-67" width="125" height="142" rx="18" fill="#b28856"/>
+    <rect x="-59" y="-68" width="116" height="138" rx="15" fill="url(#cream)" stroke="#fff1c8" stroke-width="3"/>
+    <path d="M-30-78Q-30-86-14-86A15 15 0 0 1 16-86Q32-86 32-78V-60H-30Z" fill="url(#body)"/>
+    <circle cy="-84" r="4" fill="#0b7063"/>
+    <path d="m-38-29 8 8 14-16M-38 1l8 8 14-16m-22 38 8 8 14-16" fill="none" stroke="#0cb69e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M0-27H34M0 3H34M0 33H34" stroke="#c1975b" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <g fill="#fff1bc" stroke="#fff1bc" stroke-width="7" stroke-linecap="round" filter="url(#gold-glow)">
+    <path d="m1694 94 5-15m8 23 14-11m-10 25 16-1m158 29-10-14m39 7v-21m29 28 10-14m-416 208-9-15m29 10v-16m20 21 9-15" fill="none"/>
+    <use href="#star" transform="translate(1970 477) scale(.65)"/>
+    <use href="#star" transform="translate(1940 502) scale(.44)"/>
+  </g>
+</g>
+</svg>
