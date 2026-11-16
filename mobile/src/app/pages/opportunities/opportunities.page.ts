@@ -54,7 +54,10 @@ export class OpportunitiesPage {
   }
 
   load(): void {
-    this.api.placements().subscribe((items) => this.items.set(items));
+    this.api.placements().subscribe({
+      next: (items) => this.items.set(items),
+      error: () => this.message.set('Could not load your opportunities.'),
+    });
   }
 
   answer(p: Placement, answer: 'yes' | 'no'): void {
@@ -74,9 +77,15 @@ export class OpportunitiesPage {
   }
 
   leave(p: Placement): void {
-    this.api.leaveTeam(p.project_id).subscribe(() => {
-      this.message.set('You left the team.');
-      this.load();
+    this.api.leaveTeam(p.project_id).subscribe({
+      next: () => {
+        this.message.set('You left the team.');
+        this.load();
+      },
+      error: () => {
+        this.message.set('Could not leave the team; reloaded.');
+        this.load();
+      },
     });
   }
 }

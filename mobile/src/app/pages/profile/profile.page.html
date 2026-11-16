@@ -62,7 +62,7 @@
                         (ionChange)="setSkill(skill.id, $event.detail.value)"
                         [attr.data-skill]="skill.id"
                       >
-                        @for (option of skillStates; track option.value) {
+                        @for (option of skillStates(); track option.value) {
                           <ion-select-option [value]="option.value">{{ option.label }}</ion-select-option>
                         }
                       </ion-select>
@@ -88,7 +88,7 @@
                   [value]="causes()[cause.id]"
                   (ionChange)="setCause(cause.id, $event.detail.value)"
                 >
-                  @for (option of causeStances; track option.value) {
+                  @for (option of causeStances(); track option.value) {
                     <ion-select-option [value]="option.value">{{ option.label }}</ion-select-option>
                   }
                 </ion-select>
@@ -115,7 +115,7 @@
                   <p>{{ project.organisation }} · {{ project.relation === 'suggested' ? 'You suggested this' : 'You match this' }}</p>
                   @if (project.detail) { <p>{{ project.detail }}</p> }
                 </ion-label>
-                <ion-note slot="end">{{ stateLabel(project.state) }}</ion-note>
+                <ion-note slot="end">{{ project.state_label }}</ion-note>
               </ion-item>
             } @empty {
               <ion-item><ion-label>No active projects yet. Offer some skills above.</ion-label></ion-item>
@@ -137,7 +137,7 @@
                   <h3>{{ project.title }}</h3>
                   <p>{{ project.organisation }} · You suggested this</p>
                 </ion-label>
-                <ion-note slot="end">{{ stateLabel(project.state) }}</ion-note>
+                <ion-note slot="end">{{ project.state_label }}</ion-note>
               </ion-item>
             } @empty {
               <ion-item><ion-label>No past projects.</ion-label></ion-item>

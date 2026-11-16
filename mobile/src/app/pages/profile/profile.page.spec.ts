@@ -90,6 +90,21 @@ describe('ProfilePage', () => {
     http.expectOne('/api/v1/profile').flush({ ...PROFILE, status: 'screening', status_label: 'In screening' });
   });
 
+  it('offers the states and labels the server sent', () => {
+    const { fixture } = render();
+    const options = [...fixture.nativeElement.querySelectorAll('[data-skill="cooking"] ion-select-option')];
+    expect(options.map((o) => o.textContent.trim())).toEqual([
+      'Not set',
+      'Have (not offering)',
+      'Have and offer',
+      'Exclude from matching',
+    ]);
+    expect(options.map((o) => o.value)).toEqual(['none', 'has', 'offers', 'exclude']);
+    const active = fixture.nativeElement.querySelector('[data-testid="active-projects"]').textContent;
+    expect(active).toContain('In review');
+    expect(active).toContain('Active');
+  });
+
   it('shows the server validation message', () => {
     const { page, http } = render();
     page.displayName.set('');

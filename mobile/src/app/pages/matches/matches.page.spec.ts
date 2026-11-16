@@ -40,6 +40,37 @@ describe('MatchesPage', () => {
     http.expectOne('/api/v1/orgs/org_a/matches?preferred_only=true').flush({ ...MATCHES, matches: [] });
   });
 
+  it('cancels the request in flight when the filter changes, so a late answer cannot win', () => {
+    const { fixture, http } = render();
+    const first = http.expectOne('/api/v1/orgs/org_a/matches?preferred_only=false');
+    fixture.componentInstance.preferredOnly.set(true);
+    fixture.detectChanges();
+    expect(first.cancelled).toBe(true);
+    http.expectOne('/api/v1/orgs/org_a/matches?preferred_only=true').flush({ ...MATCHES, matches: [] });
+    expect(fixture.componentInstance.result()?.matches).toEqual([]);
+  });
+
+  it('reloads for the newly active organisation', () => {
+    const { fixture, http } = render();
+    http.expectOne('/api/v1/orgs/org_a/matches?preferred_only=false').flush(MATCHES);
+    TestBed.inject(OrgStore).me.set({ ...ME, active_org_id: 'org_b' });
+    fixture.detectChanges();
+    http.expectOne('/api/v1/orgs/org_b/matches?preferred_only=false').flush(MATCHES);
+  });
+
+  it('explains a refusal and keeps working afterwards', () => {
+    const { fixture, http } = render();
+    http
+      .expectOne('/api/v1/orgs/org_a/matches?preferred_only=false')
+      .flush({ detail: 'Join this organisation as a volunteer first.' }, { status: 403, statusText: '' });
+    expect(fixture.componentInstance.error()).toContain('Join this organisation');
+    fixture.componentInstance.preferredOnly.set(true);
+    fixture.detectChanges();
+    http.expectOne('/api/v1/orgs/org_a/matches?preferred_only=true').flush(MATCHES);
+    expect(fixture.componentInstance.error()).toBeNull();
+    expect(fixture.componentInstance.result()).toEqual(MATCHES);
+  });
+
   it('says when results are withheld while the graph catches up', () => {
     const { fixture, http } = render();
     http

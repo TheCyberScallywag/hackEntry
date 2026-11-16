@@ -5,6 +5,9 @@
   </ion-toolbar>
 </ion-header>
 <ion-content [fullscreen]="true">
+  @if (error(); as message) {
+    <ion-text color="danger" role="alert"><p class="ion-padding-horizontal">{{ message }}</p></ion-text>
+  }
   <ion-list>
     @for (s of items(); track s.id) {
       <ion-item>
@@ -12,7 +15,7 @@
           <h3>{{ s.title }}</h3>
           <p>{{ s.org_name }} · revision {{ s.current_revision }}</p>
         </ion-label>
-        <ion-note slot="end">{{ label(s.state) }}</ion-note>
+        <ion-note slot="end">{{ s.state_label }}</ion-note>
       </ion-item>
     } @empty {
       <ion-item><ion-label>No suggestions yet.</ion-label></ion-item>

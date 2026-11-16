@@ -6,6 +6,7 @@ inspect [--store P]   the sample graph inspection query (org -> project -> skill
 matches --org KEY     ranked candidates for one organisation, straight from Relate
 status | drain        projection outbox status / project pending items now
 grant-reviewer        give an existing account the reviewer role (operator only)
+openapi [--out PATH]  write the JSON API's OpenAPI document (the mobile types are generated from it)
 aura-push | aura-parity   optional, explicit AuraDB push and match parity check
 """
 
@@ -53,6 +54,14 @@ def build_bundle(out: Path) -> None:
         out.chmod(0o444)  # read-only: the app always works on a writable copy
 
 
+def openapi_document() -> str:
+    """The API contract as stable, diff-friendly JSON. Needs no database: nothing is started."""
+    from app.web.main import create_app
+
+    schema = create_app(get_settings(), background=False).openapi()
+    return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
@@ -75,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     grant = sub.add_parser("grant-reviewer")
     grant.add_argument("--email", required=True)
     grant.add_argument("--org", required=True, help="organisation key")
+    openapi = sub.add_parser("openapi")
+    openapi.add_argument("--out", type=Path)
     sub.add_parser("aura-push")
     sub.add_parser("aura-parity")
     args = parser.parse_args(argv)
@@ -140,6 +151,13 @@ def main(argv: list[str] | None = None) -> int:
                         (user["id"], org["id"], now()),
                     )
                 print("granted")
+            case "openapi":
+                text = openapi_document()
+                if args.out:
+                    args.out.write_text(text, encoding="utf-8")
+                    print(f"Wrote {args.out}")
+                else:
+                    print(text, end="")
             case "aura-push":
                 from app.graph import aura
 

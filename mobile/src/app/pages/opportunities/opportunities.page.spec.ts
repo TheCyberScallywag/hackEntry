@@ -46,4 +46,26 @@ describe('OpportunitiesPage', () => {
     expect(page.message()).toContain('changed');
     http.expectOne('/api/v1/placements').flush(PLACEMENTS);
   });
+
+  it('says so when the list cannot be loaded', () => {
+    TestBed.configureTestingModule({
+      imports: [OpportunitiesPage],
+      providers: [provideIonicAngular(), provideHttpClient(), provideHttpClientTesting()],
+    });
+    const fixture = TestBed.createComponent(OpportunitiesPage);
+    TestBed.inject(HttpTestingController).expectOne('/api/v1/placements').flush('down', { status: 503, statusText: '' });
+    expect(fixture.componentInstance.message()).toBe('Could not load your opportunities.');
+  });
+
+  it('leaves a team, and reloads with a message when that fails', () => {
+    const { page, http } = render();
+    page.leave(PLACEMENTS[1]);
+    http.expectOne('/api/v1/placements/p_4/leave').flush({ state: 'left' });
+    expect(page.message()).toBe('You left the team.');
+    http.expectOne('/api/v1/placements').flush(PLACEMENTS);
+    page.leave(PLACEMENTS[1]);
+    http.expectOne('/api/v1/placements/p_4/leave').flush({ detail: 'Not found' }, { status: 404, statusText: '' });
+    expect(page.message()).toContain('Could not leave');
+    http.expectOne('/api/v1/placements').flush(PLACEMENTS);
+  });
 });

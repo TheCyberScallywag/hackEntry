@@ -22,33 +22,17 @@ import {
   IonToolbar,
 } from '@ionic/angular';
 
-import { ApiService, CauseStance, Profile, ProfileProject, SkillState } from '../../core/api.service';
+import { ApiService, CauseStance, Profile, SkillGroup, SkillState } from '../../core/api.service';
 
-export const SKILL_STATES: { value: SkillState; label: string }[] = [
-  { value: 'none', label: 'Not set' },
-  { value: 'has', label: 'Have (not offering)' },
-  { value: 'offers', label: 'Have and offer' },
-  { value: 'exclude', label: 'Exclude from matching' },
-];
-
-export const CAUSE_STANCES: { value: CauseStance; label: string }[] = [
-  { value: 'neutral', label: 'No preference' },
-  { value: 'prefer', label: 'Prefer' },
-  { value: 'exclude', label: 'Exclude' },
-];
-
-const STATE_LABELS: Record<ProfileProject['state'], string> = {
-  submitted: 'In review',
-  changes_requested: 'Scoping: more detail requested',
-  rejected: 'Rejected',
-  approved: 'Approved (activating…)',
-  published: 'Active',
-  withdrawn: 'Withdrawn',
-};
+/** A `{state: label}` map from the API as the options of a select, in the server's order. */
+function options<T extends string>(labels: Record<T, string> | undefined): { value: T; label: string }[] {
+  return Object.entries(labels ?? {}).map(([value, label]) => ({ value: value as T, label: label as string }));
+}
 
 /**
  * The signed-in user's own profile: one skill set shared by every organisation they join.
- * Same sections, order and labels as the web Profile page (src/app/profile_view.py): display
+ * Same sections, order and labels as the web Profile page: the server (src/app/profile_view.py)
+ * sends the grouping and every label, so nothing is defined twice. Sections: display
  * name, Skills (one sub-accordion per skill type), Causes, Active projects, Past projects.
  * Edits go to PUT /api/v1/profile, which is checked against the profile version so an edit
  * made elsewhere is never silently overwritten.
@@ -68,7 +52,7 @@ const STATE_LABELS: Record<ProfileProject['state'], string> = {
     IonHeader,
     IonInput,
     IonItem,
-      IonLabel,
+    IonLabel,
     IonList,
     IonMenuButton,
     IonNote,
@@ -81,10 +65,6 @@ const STATE_LABELS: Record<ProfileProject['state'], string> = {
 })
 export class ProfilePage {
   private readonly api = inject(ApiService);
-  protected readonly skillStates = SKILL_STATES;
-  protected readonly causeStances = CAUSE_STANCES;
-  protected readonly stateLabel = (s: ProfileProject['state']) => STATE_LABELS[s];
-
   readonly profile = signal<Profile | null>(null);
   readonly displayName = signal('');
   readonly skills = signal<Record<string, SkillState>>({});
@@ -92,16 +72,10 @@ export class ProfilePage {
   readonly busy = signal(false);
   readonly message = signal<{ text: string; color: 'success' | 'danger' | 'warning' } | null>(null);
 
-  /** Skills grouped by catalogue category, in catalogue order. */
-  readonly groups = computed(() => {
-    const groups: { category: string; skills: Profile['skills'] }[] = [];
-    for (const skill of this.profile()?.skills ?? []) {
-      let group = groups.find((g) => g.category === skill.category);
-      if (!group) groups.push((group = { category: skill.category, skills: [] }));
-      group.skills.push(skill);
-    }
-    return groups;
-  });
+  /** Skills grouped by catalogue category, in catalogue order (grouped by the server). */
+  readonly groups = computed<SkillGroup[]>(() => this.profile()?.skill_groups ?? []);
+  protected readonly skillStates = computed(() => options(this.profile()?.skill_states));
+  protected readonly causeStances = computed(() => options(this.profile()?.cause_stances));
 
   readonly offeredCount = computed(() => Object.values(this.skills()).filter((s) => s === 'offers').length);
   readonly excludedCount = computed(() => Object.values(this.skills()).filter((s) => s === 'exclude').length);
@@ -128,7 +102,7 @@ export class ProfilePage {
   }
 
   /** How many skills of one type are in a given state (for the sub-accordion header). */
-  count(group: { skills: Profile['skills'] }, state: SkillState): number {
+  count(group: SkillGroup, state: SkillState): number {
     const current = this.skills();
     return group.skills.filter((s) => current[s.id] === state).length;
   }

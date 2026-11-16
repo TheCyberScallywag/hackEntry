@@ -15,9 +15,12 @@ export class OrgStore {
   }
 
   switchTo(orgId: string): void {
-    this.api.setActiveOrg(orgId).subscribe(({ active_org_id }) => {
-      const me = this.me();
-      if (me) this.me.set({ ...me, active_org_id });
+    this.api.setActiveOrg(orgId).subscribe({
+      next: ({ active_org_id }) => {
+        const me = this.me();
+        if (me) this.me.set({ ...me, active_org_id });
+      },
+      error: () => this.load(), // not switched (e.g. access was removed): show what the server has
     });
   }
 
