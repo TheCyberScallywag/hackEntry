@@ -1,9 +1,25 @@
 # git-cliff: CHANGELOG.md and the GitHub release notes, grouped by the commit prefixes in
 # Ways of working. Regenerate with: uv run task changelog
 [changelog]
-header = """# Changelog
+header = """<p align="center">
+  <img src="brand/images/logo.svg" width="112" alt="Volunteer Network logo: three teal volunteers around a golden heart">
+</p>
+
+<h1 align="center">Changelog</h1>
+
+<p align="center">
+  <em>Data Volunteer Network · what changed, release by release</em>
+</p>
+
+<p align="center">
+  <a href="README.md">README</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="CODE_OF_CONDUCT.md">Code of conduct</a>
+</p>
 
 Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.toml).
+
+---
 """
 body = """
 {% if version %}\

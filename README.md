@@ -22,6 +22,7 @@ notified in the app, and the volunteer joins the team once both say yes.
 | Web app (volunteers, project leads, org admins) | FastAPI + Jinja2, server-rendered forms, responsive | http://localhost:8080 |
 | Mobile companion (matches, opportunities, notifications, profile, suggestion status) | Ionic + Angular, JSON API only | http://localhost:8100 (Compose) |
 | Admin console (screening, org management, users and roles, projection, graph) | Streamlit, JSON API only | http://localhost:8501 |
+| Docs portal and reference manual | Zensical (portal) + Sphinx/Furo (manual at `/manual/`) | http://localhost:8200 |
 | Matching graph | Relate 1.0.1, embedded single-file `.rl` store | `data/demo.rl` (bundled, read-only) |
 | Transactional store | SQLite (WAL) | `var/dvn.sqlite3` (runtime, ignored) |
 
@@ -67,17 +68,25 @@ uv sync --locked --group admin
 uv run task admin                # http://localhost:8501; sign in as sam@, mo@, kofi@ or rhiannon@
 ```
 
+To build and serve the docs (portal at `/`, manual at `/manual/`; pages in `docs/content`):
+
+```sh
+uv sync --locked --group docs
+uv run task docs_serve           # http://localhost:8200 (task docs_live: live reload on :8201)
+```
+
 ## Clean start with Docker Compose
 
 ```sh
 docker compose up -d --build --wait     # or: uv run task up
 # web http://localhost:8080 · mobile http://localhost:8100 · admin http://localhost:8501
+# docs http://localhost:8200
 docker compose exec web python -m app.cli inspect
 docker compose down -v                  # removes the demo volume
 ```
 
 If those ports are already in use, run
-`WEB_PORT=18080 ADMIN_PORT=18501 MOBILE_PORT=18100 docker compose up -d --build --wait`.
+`WEB_PORT=18080 ADMIN_PORT=18501 MOBILE_PORT=18100 DOCS_PORT=18200 docker compose up -d --build --wait`.
 The web container copies the bundled `data/demo.rl` into the `dvn-data` volume on its first start
 and seeds the demo accounts. The admin container shares that volume. The mobile image runs the
 Ionic lint and unit tests while it builds. Its nginx then proxies `/api/` to the web app.
@@ -107,7 +116,7 @@ team, overlapping project skills, one hard exclusion (Gwen), one unfilled skill
 (*First aid* for Winter Outreach Kitchen), one approved project per organisation, one suggestion
 awaiting review (*Outreach Data Audit*) and one rejected suggestion.
 
-Walkthrough (also in [docs/demo-script.md](docs/demo-script.md)):
+Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/demo-script.md)):
 
 1. Sign in as **Asha** and switch between DataKind UK and Cyber Scallywags with the header
    switcher. Switching does not sign you in again, and it is a separate action from joining.
@@ -316,8 +325,8 @@ concerned. Reviewers see eligible candidates and gaps.
 ## Architecture
 
 The full write-up, with tools, components, data model, RBAC, workflows and decisions, is in
-[docs/solution-architecture.md](docs/solution-architecture.md) (PDF:
-[docs/solution-architecture.pdf](docs/solution-architecture.pdf)).
+[docs/content/project/solution-architecture.md](docs/content/project/solution-architecture.md) (PDF:
+[docs/content/project/solution-architecture.pdf](docs/content/project/solution-architecture.pdf)).
 
 ```mermaid
 flowchart LR
@@ -411,7 +420,7 @@ uv run --env-file .env pytest -m aura --no-cov
 relationship from the writable Relate store. `aura-parity` compares normalised result rows for
 each organisation and exits with a non-zero status on any difference. **Status: not yet run.** No
 dev instance or credentials were available while this was built. See
-[docs/verification.md](docs/verification.md).
+[docs/content/project/verification.md](docs/content/project/verification.md).
 
 ## Tests
 
@@ -441,11 +450,11 @@ The suite covers:
   `ON_TEAM` in Relate), info requests, suspension, lapsed and revived offers, and removals
 - project onboarding notifications at each phase, JSON errors, and OpenAPI coverage of every tag
 
-Latest results are in [docs/verification.md](docs/verification.md).
+Latest results are in [docs/content/project/verification.md](docs/content/project/verification.md).
 
 ## Reuse, AI assistance and licences
 
-See [docs/reuse-and-attribution.md](docs/reuse-and-attribution.md) for what came from the earlier
+See [docs/content/project/reuse-and-attribution.md](docs/content/project/reuse-and-attribution.md) for what came from the earlier
 template and the earlier PoC, what was built for this entry, the AI-assistance disclosure, and the
 licences of dependencies. The code is MIT ([LICENSE](LICENSE)). `brand/` is the template's CC0
 neutral brand kit ([TRADEMARKS.md](TRADEMARKS.md)). Relate is distributed by its authors under

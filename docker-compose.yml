@@ -1,6 +1,6 @@
 # Local demo stack:  docker compose up -d --build --wait   (or: uv run task up)
-# Host ports default to 8080 (web), 8501 (admin), 8100 (mobile); override with WEB_PORT,
-# ADMIN_PORT and MOBILE_PORT if those are taken.
+# Host ports default to 8080 (web), 8501 (admin), 8100 (mobile), 8200 (docs); override with
+# WEB_PORT, ADMIN_PORT, MOBILE_PORT and DOCS_PORT if those are taken.
 # web and admin share one named volume holding the SQLite database and the writable Relate store.
 # On first start the web app copies the bundled read-only data/demo.rl into it and seeds the
 # disposable demo accounts. `docker compose down -v` throws it all away.
@@ -53,6 +53,14 @@ services:
       API_URL: http://web:8080
     ports: ["127.0.0.1:${MOBILE_PORT:-8100}:8080"]
     depends_on: { web: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      <<: *health
+
+  docs:   # static docs: Zensical portal at /, Sphinx manual at /manual/
+    image: dvn/docs:local
+    build: { context: ., dockerfile: docker/docs.Dockerfile }   # fails on any docs warning
+    ports: ["127.0.0.1:${DOCS_PORT:-8200}:8080"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       <<: *health

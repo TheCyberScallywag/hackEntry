@@ -11,7 +11,11 @@ var
 .env
 .env.*
 *.sqlite3*
-docs
+docs/_build
+docs/.cache
+docs/content/index.md
+docs/content/about.md
+docs/content/assets/brand
 examples
 mobile/node_modules
 mobile/www

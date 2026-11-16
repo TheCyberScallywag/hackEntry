@@ -6,7 +6,7 @@
 | **Scope** | Web app, JSON API, Ionic mobile app, Streamlit admin console, Relate graph, optional AuraDB |
 | **Status** | Working build, verified locally and under Docker Compose |
 | **Engines** | Python 3.14, Relate 1.0.1 (embedded `relate-db`), SQLite (WAL) |
-| **Companion docs** | [README](../README.md), [verification record](verification.md), [demo script](demo-script.md), [reuse and attribution](reuse-and-attribution.md) |
+| **Companion docs** | [README](https://github.com/TheCyberScallywag/hackEntry/blob/main/README.md), [verification record](verification.md), [demo script](demo-script.md), [reuse and attribution](reuse-and-attribution.md) |
 
 ---
 

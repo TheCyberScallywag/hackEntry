@@ -1,8 +1,12 @@
-# About Example Organisation
+# About Cyber Scallywags
 
-Describe the organisation behind the project: who you are, why the project exists, and how
-people can take part. This page comes from `brand/docs/about.md`.
+hackEntry (the Data Volunteer Network) is Cyber Scallywags' entry for the Neo4j Hackathon. It is
+MIT licensed; `brand/` is the template's CC0 brand kit. This page comes from `brand/docs/about.md`.
+
+All people, projects and accounts in the demo are fictional. *DataKind UK* and *Cyber
+Scallywags* are used as illustrative organisation names only; their use implies no endorsement or
+live partnership.
 
 ## Get in touch
 
-- Website: [example.org](https://example.org)
+- Repository: [TheCyberScallywag/hackEntry](https://github.com/TheCyberScallywag/hackEntry)

@@ -9,13 +9,14 @@ hide:
 
 <div class="brand-hero__text" markdown>
 
-<p class="brand-kicker">Example Organisation · Docs portal</p>
+<p class="brand-kicker">Cyber Scallywags · Docs portal</p>
 
-# Example Project
+# Data Volunteer Network
 
-Say what the project does and who it is for. This page comes from `brand/docs/home.md`.
+One volunteer account for helping several organisations, with graph-backed explanations of why
+people and projects fit. This page comes from `brand/docs/home.md`.
 
-[Get started](handbook/getting-started.md){ .md-button .md-button--primary }
+[Solution architecture](project/solution-architecture.md){ .md-button .md-button--primary }
 [Reference manual](/manual/){ .md-button }
 
 </div>
@@ -24,29 +25,30 @@ Say what the project does and who it is for. This page comes from `brand/docs/ho
 
 <div class="grid cards" markdown>
 
--   **Get started**
+-   **Solution architecture**
 
     ---
 
-    Install the tools, start the stack and find every service.
+    How the web app, JSON API, admin console, mobile app, SQLite and the Relate graph fit
+    together.
 
-    [Getting started →](handbook/getting-started.md)
+    [Architecture →](project/solution-architecture.md)
 
--   **Architecture**
-
-    ---
-
-    How the API, UI, admin, mobile app and Neo4j fit together.
-
-    [Architecture →](handbook/architecture.md)
-
--   **HTTP API**
+-   **Demo walkthrough**
 
     ---
 
-    Every endpoint with parameters, bodies and `curl` examples, generated from the code.
+    The demo accounts and the step-by-step script for the hackathon demo.
 
-    [HTTP API →](reference/http-api.md)
+    [Demo script →](project/demo-script.md)
+
+-   **Python API**
+
+    ---
+
+    Every module of the `app` package, generated from the docstrings.
+
+    [Python API →](reference/python-api.md)
 
 -   **About**
 
