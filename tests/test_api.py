@@ -6,7 +6,7 @@ from tests.conftest import CS, DK, USERS, WINTER, Web
 
 def _token(web: Web, key: str) -> dict:
     r = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@demo.invalid", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
     )
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['token']}"}
@@ -47,7 +47,7 @@ def test_api_sign_out_revokes(web: Web):
     assert web.get("/api/v1/me", headers=h).status_code == 401
     assert (
         web.client.post(
-            "/api/v1/session", json={"email": "gwen@demo.invalid", "password": "wrong-wrong"}
+            "/api/v1/session", json={"email": "gwen@cyberscallywags.uk", "password": "wrong-wrong"}
         ).status_code
         == 401
     )

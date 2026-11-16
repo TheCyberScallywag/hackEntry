@@ -45,10 +45,12 @@ def bootstrap(rt: Runtime) -> None:
     rt.db.init()
     if not rt.settings.demo_allowed:
         with rt.db.read() as conn:
-            if conn.execute("SELECT 1 FROM users WHERE email LIKE '%@demo.invalid'").fetchone():
+            if conn.execute(
+                "SELECT 1 FROM users WHERE email LIKE '%@cyberscallywags.uk'"
+            ).fetchone():
                 raise RuntimeError(
-                    "APP_ENV=production but the database holds demo accounts (@demo.invalid). "
-                    "Start from an empty DATA_DIR."
+                    "APP_ENV=production but the database holds demo accounts "
+                    "(@cyberscallywags.uk). Start from an empty DATA_DIR."
                 )
     if fresh and rt.settings.seed_demo_on_start and rt.settings.demo_allowed:
         seed_demo(rt, copy_bundle=True)

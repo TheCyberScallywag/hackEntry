@@ -52,7 +52,7 @@ class Web:
         token = self.csrf("/signin")
         r = self.client.post(
             "/signin",
-            data={"email": f"{key}@demo.invalid", "password": password, "csrf_token": token},
+            data={"email": f"{key}@cyberscallywags.uk", "password": password, "csrf_token": token},
             follow_redirects=False,
         )
         assert r.status_code == 303, r.text

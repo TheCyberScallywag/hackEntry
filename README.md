@@ -99,16 +99,16 @@ never when `APP_ENV=production`.
 
 | Email | Role | Volunteers with | Shows |
 |---|---|---|---|
-| `sam@demo.invalid` | **System admin** | — | access to everything: users and roles, every organisation, projection, graph |
-| `mo@demo.invalid` | **Moderator** | — | the volunteer screening queue |
-| `rhiannon@demo.invalid` | **Org admin**, DataKind UK | — | the right reviewer for the pending suggestion; manages DataKind UK volunteers |
-| `kofi@demo.invalid` | **Org admin**, Cyber Scallywags | DataKind UK | admin in one organisation and volunteer in another |
-| `nia@demo.invalid` | volunteer, **in screening** | Cyber Scallywags | not matchable until vetted; her first aid fills a gap once Mo approves her |
-| `asha@demo.invalid` | volunteer; lead of Winter Outreach Kitchen | DataKind UK, Cyber Scallywags | one profile across two organisations; author of the pending suggestion |
-| `bryn@demo.invalid` | volunteer | Cyber Scallywags | already on the Winter Outreach team; author of a rejected suggestion |
-| `cerys@demo.invalid` | volunteer; lead of Food Bank Demand Dashboard | DataKind UK | no cause preference, so matched on skills alone |
-| `gwen@demo.invalid` | volunteer | Cyber Scallywags | a hard exclusion: offers cooking and driving but excludes *active listening* |
-| `dev@demo.invalid`, `farah@demo.invalid` | volunteers | DataKind UK | preferred-cause ranking; Farah's first aid is outside Cyber Scallywags |
+| `sam@cyberscallywags.uk` | **System admin** | — | access to everything: users and roles, every organisation, projection, graph |
+| `mo@cyberscallywags.uk` | **Moderator** | — | the volunteer screening queue |
+| `rhiannon@cyberscallywags.uk` | **Org admin**, DataKind UK | — | the right reviewer for the pending suggestion; manages DataKind UK volunteers |
+| `kofi@cyberscallywags.uk` | **Org admin**, Cyber Scallywags | DataKind UK | admin in one organisation and volunteer in another |
+| `nia@cyberscallywags.uk` | volunteer, **in screening** | Cyber Scallywags | not matchable until vetted; her first aid fills a gap once Mo approves her |
+| `asha@cyberscallywags.uk` | volunteer; lead of Winter Outreach Kitchen | DataKind UK, Cyber Scallywags | one profile across two organisations; author of the pending suggestion |
+| `bryn@cyberscallywags.uk` | volunteer | Cyber Scallywags | already on the Winter Outreach team; author of a rejected suggestion |
+| `cerys@cyberscallywags.uk` | volunteer; lead of Food Bank Demand Dashboard | DataKind UK | no cause preference, so matched on skills alone |
+| `gwen@cyberscallywags.uk` | volunteer | Cyber Scallywags | a hard exclusion: offers cooking and driving but excludes *active listening* |
+| `dev@cyberscallywags.uk`, `farah@cyberscallywags.uk` | volunteers | DataKind UK | preferred-cause ranking; Farah's first aid is outside Cyber Scallywags |
 
 The fixture (`data/fixtures/demo.json`) contains two organisations with separate org admins, a
 system admin, a moderator, a volunteer in screening, a volunteer in both organisations, a formed
@@ -196,7 +196,7 @@ in-process, so roles, states and version checks are enforced in one place
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8080/api/v1/session -H 'content-type: application/json' \
-  -d '{"email":"mo@demo.invalid","password":"demo-password-1"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+  -d '{"email":"mo@cyberscallywags.uk","password":"demo-password-1"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 curl -s localhost:8080/api/v1/moderation/volunteers -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -400,7 +400,7 @@ Code map:
 - Responses carry a CSP without inline scripts, `X-Frame-Options: DENY`, `nosniff` and
   `no-store` on dynamic pages.
 - `APP_ENV=production` disables demo seeding and refuses to start on a database that holds demo
-  (`@demo.invalid`) accounts.
+  (`@cyberscallywags.uk`) accounts.
 
 ## Optional AuraDB
 

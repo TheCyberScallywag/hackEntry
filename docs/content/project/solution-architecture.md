@@ -332,7 +332,7 @@ the cap raises `GraphTruncated` rather than silently returning partial results.
 | Headers | Strict CSP on pages, with a narrow relaxation for `/api/docs` only |
 | Concurrency | Optimistic versions on profiles, statuses, submissions and placements, so stale writes get 409 |
 | Graph privacy | No PII in Relate or AuraDB; volunteers are uuid5 opaque IDs |
-| Production guards | Demo seeding refuses `APP_ENV=production`; the app refuses to start on a DB holding `@demo.invalid` accounts |
+| Production guards | Demo seeding refuses `APP_ENV=production`; the app refuses to start on a DB holding `@cyberscallywags.uk` accounts |
 
 ### 6.2 Roles (RBAC)
 

@@ -33,7 +33,7 @@ class Client:
 
 def as_(web: Web, key: str) -> Client:
     r = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@demo.invalid", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
     )
     assert r.status_code == 200, r.text
     return Client(web, r.json()["token"])

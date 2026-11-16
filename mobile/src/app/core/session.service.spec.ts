@@ -17,9 +17,9 @@ describe('SessionService', () => {
 
   it('signs in and keeps the token across restarts', () => {
     const { session, http } = setup();
-    session.signIn('asha@demo.invalid', 'pw').subscribe();
+    session.signIn('asha@cyberscallywags.uk', 'pw').subscribe();
     const req = http.expectOne('/api/v1/session');
-    expect(req.request.body).toEqual({ email: 'asha@demo.invalid', password: 'pw' });
+    expect(req.request.body).toEqual({ email: 'asha@cyberscallywags.uk', password: 'pw' });
     req.flush({ token: 'tok' });
     expect(session.token()).toBe('tok');
     TestBed.resetTestingModule();

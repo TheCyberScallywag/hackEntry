@@ -43,7 +43,7 @@ def test_passwords_are_argon2_hashed_and_tokens_stored_hashed(web: Web):
     token = web.client.cookies.get("dvn_session")
     with web.rt.db.read() as conn:
         hashed = conn.execute(
-            "SELECT password_hash FROM users WHERE email = 'asha@demo.invalid'"
+            "SELECT password_hash FROM users WHERE email = 'asha@cyberscallywags.uk'"
         ).fetchone()[0]
         assert hashed.startswith("$argon2id$")
         assert (
@@ -63,7 +63,11 @@ def test_passwords_are_argon2_hashed_and_tokens_stored_hashed(web: Web):
 def test_wrong_password_is_rejected(web: Web):
     r = web.client.post(
         "/signin",
-        data={"email": "asha@demo.invalid", "password": "nope-nope-nope", "csrf_token": web.csrf()},
+        data={
+            "email": "asha@cyberscallywags.uk",
+            "password": "nope-nope-nope",
+            "csrf_token": web.csrf(),
+        },
     )
     assert r.status_code == 400 and "Wrong email or password" in r.text
 
@@ -76,7 +80,7 @@ def test_session_cookie_flags_on_localhost_and_https(settings):
             r = client.post(
                 "/signin",
                 data={
-                    "email": "asha@demo.invalid",
+                    "email": "asha@cyberscallywags.uk",
                     "password": "demo-password-1",
                     "csrf_token": csrf,
                 },
@@ -96,7 +100,7 @@ def test_state_changing_forms_require_csrf(web: Web):
     # anonymous forms use a double-submit cookie
     web.client.cookies.clear()
     r = web.client.post(
-        "/signin", data={"email": "asha@demo.invalid", "password": "demo-password-1"}
+        "/signin", data={"email": "asha@cyberscallywags.uk", "password": "demo-password-1"}
     )
     assert r.status_code == 403
 

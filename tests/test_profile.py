@@ -11,7 +11,7 @@ from tests.test_matching import save_profile
 
 def _api_profile(web: Web, key: str) -> dict:
     token = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@demo.invalid", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
     ).json()["token"]
     return web.get("/api/v1/profile", headers={"Authorization": f"Bearer {token}"}).json()
 

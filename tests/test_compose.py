@@ -20,14 +20,18 @@ def test_stack_signs_in_and_matches():
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', client.get("/signin").text).group(1)
         r = client.post(
             "/signin",
-            data={"email": "asha@demo.invalid", "password": "demo-password-1", "csrf_token": csrf},
+            data={
+                "email": "asha@cyberscallywags.uk",
+                "password": "demo-password-1",
+                "csrf_token": csrf,
+            },
         )
         assert "Winter Outreach Kitchen" in r.text
     mobile = os.environ.get("COMPOSE_MOBILE_URL")
     if mobile:
         r = httpx.post(
             f"{mobile}/api/v1/session",
-            json={"email": "asha@demo.invalid", "password": "demo-password-1"},
+            json={"email": "asha@cyberscallywags.uk", "password": "demo-password-1"},
         )
         assert r.status_code == 200 and r.json()["token"]
     admin = os.environ.get("COMPOSE_ADMIN_URL")

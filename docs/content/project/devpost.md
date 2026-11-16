@@ -116,6 +116,6 @@ what was built for this entry.
 
 ```sh
 uv sync --locked && uv run task web        # http://localhost:8080
-# demo login: asha@demo.invalid / demo-password-1 (reviewers: rhiannon@…, kofi@…)
+# demo login: asha@cyberscallywags.uk / demo-password-1 (reviewers: rhiannon@…, kofi@…)
 uv run task inspect                        # inspect the bundled Relate graph
 ```
