@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Branch names: feature/, bug/, task/, docs/ or refactor/ + a lower-case name, e.g. feature/add-login.
-# Used by CI (the branch-name job) and the pre-push hook (.pre-commit-config.yaml).
-# main passes only in CI (release.yml re-runs CI there); locally, work on a branch and open a PR.
+# Used by the pre-push hook (.pre-commit-config.yaml).
+# main passes only under GitHub Actions; locally, work on a branch and open a PR.
 #
 #     scripts/check_branch_name.sh feature/add-login        # or refs/heads/feature/add-login
 set -euo pipefail

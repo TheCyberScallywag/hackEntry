@@ -27,6 +27,8 @@ nav = [
   { "Home" = "index.md" },
   { "Project" = [
     "project/solution-architecture.md",
+    "project/relate.md",
+    "project/tooling.md",
     "project/demo-script.md",
     "project/verification.md",
     "project/devpost.md",

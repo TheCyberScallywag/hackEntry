@@ -6,7 +6,7 @@
 | **Scope** | Web app, JSON API, Ionic mobile app, Streamlit admin console, Relate graph, optional AuraDB |
 | **Status** | Working build, verified locally and under Docker Compose |
 | **Engines** | Python 3.14, Relate 1.0.1 (embedded `relate-db`), SQLite (WAL) |
-| **Companion docs** | [README](https://github.com/TheCyberScallywag/hackEntry/blob/main/README.md), [verification record](verification.md), [demo script](demo-script.md), [reuse and attribution](reuse-and-attribution.md) |
+| **Companion docs** | [README](https://github.com/TheCyberScallywag/hackEntry/blob/main/README.md), [Relate in this application](relate.md), [tooling](tooling.md), [verification record](verification.md), [demo script](demo-script.md), [reuse and attribution](reuse-and-attribution.md) |
 
 ---
 
@@ -107,6 +107,9 @@ flowchart LR
 
 ## 3. Tools and technology
 
+This section is the summary. [Tooling](tooling.md) lists every tool with its configuration and
+commands, including the tasks, the pre-commit hooks, CI and the docs toolchain.
+
 ### 3.1 Runtime stack
 
 | Layer | Tool | Version | Role |
@@ -114,12 +117,13 @@ flowchart LR
 | Language | CPython | 3.14 | Application runtime |
 | Packaging | uv + `uv.lock` | latest | Reproducible environments, task runner via taskipy |
 | Web framework | FastAPI | 0.162 | JSON API, HTML routes, OpenAPI docs at `/api/docs` |
+| Data models | Pydantic | 2.14 | Request bodies and response models: the API contract |
 | ASGI server | Uvicorn | 0.54 | HTTP server (`python -m app.serve web`) |
 | Templates | Jinja2 | 3.1 | Server-rendered pages, no client JavaScript needed |
 | Forms | python-multipart | locked | Form parsing |
 | Config | pydantic-settings | 2.16 | Typed settings from env and `.env` |
 | Passwords | argon2-cffi | 25.1 | Argon2id hashing |
-| Graph engine | **Relate** (`relate-db`) | **1.0.1** | Embedded, single-file `.rl` graph; Cypher; PEP 249 driver |
+| Graph engine | **Relate** (`relate-db`), a Neo4j Labs project | **1.0.1** | Embedded, single-file `.rl` graph; Cypher; PEP 249 driver. See [Relate in this application](relate.md). |
 | Transactional store | SQLite (stdlib) | bundled | WAL mode, `BEGIN IMMEDIATE`, schema version 2 |
 | Optional graph | Neo4j Python driver → AuraDB | 6.4 | `aura-push` and `aura-parity` only |
 | Admin console | Streamlit + httpx + pandas | 1.67 / 0.28 / 3.1 | Staff UI, a client of the JSON API only |
@@ -132,7 +136,7 @@ flowchart LR
 | Ionic | 9 | Mobile UI components (accordions, lists, menu, badges) |
 | Capacitor | 8.5 | Native shell (optional, for packaging later) |
 | TypeScript | 6.0 | Language |
-| Vitest | 5.0 | Unit tests (25 tests in 10 spec files) |
+| Vitest | 5.0 | Unit tests (39 tests in 11 spec files) |
 | nginx | stable | Serves the built app and proxies `/api/` to the web service in Compose |
 
 ### 3.3 Engineering tooling
@@ -143,12 +147,18 @@ flowchart LR
 | Admin console tests | `tests/test_admin_console.py` drives the console for each role through a small stand-in for Streamlit, against the real API |
 | Ruff 0.17 | Lint and format (line length 100) |
 | ESLint + Angular CLI | Mobile lint and production build |
-| Docker + Docker Compose | Two-command clean start: services `web`, `admin`, `mobile`; volume `dvn-data` |
-| GitHub Actions | CI: Python lint and tests, lockfile check, mobile lint and tests (in Docker), Compose smoke test |
-| pre-commit | Local lint hooks |
+| Docker + Docker Compose | Two-command clean start: services `web`, `admin`, `mobile` and `docs`; volume `dvn-data` |
+| GitHub Actions | CI: Python lint and tests against the locked environment, a strict docs build, mobile lint and tests (in Docker), Compose smoke test. CodeQL runs separately. |
+| Dependabot | Weekly grouped updates for uv, npm, GitHub Actions and Docker base images |
+| pre-commit | Hooks for file hygiene, Ruff, the lock file, workflow syntax, branch names and commit prefixes |
+| Zensical, and Sphinx with Furo | The docs portal and the reference manual, built from the same pages, warnings as errors |
+| taskipy | The `uv run task ...` commands |
 | Relate CLI 1.0.1 | Optional inspection of the same `.rl` files (`relate ...`) |
 
 ### 3.4 Why Relate
+
+[Relate in this application](relate.md) describes the integration in full: the files, the
+adapter, the projector, each query and how to inspect the graph.
 
 - **Embedded and single-file.** It needs no server and is opened in-process. A demo graph
   (`data/demo.rl`) is bundled with the package and copied for each reset.
@@ -629,9 +639,10 @@ flowchart LR
     web["web<br/>uvicorn :8080<br/>API + pages + projector"]
     admin["admin<br/>streamlit :8501"]
     mobile["mobile<br/>nginx :8100<br/>/api/ → web:8080"]
+    docs["docs<br/>nginx :8200<br/>portal + manual"]
     vol[("volume dvn-data<br/>/data/dvn.sqlite3<br/>/data/graph.rl")]
   end
-  user((Browser / phone)) --> web & admin & mobile
+  user((Browser / phone)) --> web & admin & mobile & docs
   admin -- "API_URL=http://web:8080" --> web
   mobile --> web
   web --- vol
@@ -640,15 +651,16 @@ flowchart LR
 | Path | Commands |
 |---|---|
 | **Clean start with uv** | `uv sync --locked` → `uv run task reset` → `uv run task web` (+ `uv run task admin`) |
-| **Clean start with Compose** | `docker compose up --build` (ports configurable with `WEB_PORT`, `ADMIN_PORT`, `MOBILE_PORT`) |
+| **Clean start with Compose** | `docker compose up --build` (ports configurable with `WEB_PORT`, `ADMIN_PORT`, `MOBILE_PORT`, `DOCS_PORT`) |
 | **Reset demo** | `uv run task reset` or `docker compose down -v` |
-| **Inspect graph** | `uv run task inspect`, `relate ...` on `var/graph.rl` |
+| **Inspect graph** | `uv run task inspect`, `relate ...` on `var/graph.rl`; see [Relate in this application](relate.md) |
 | **Projection health** | `python -m app.cli status` / `drain`, or the console's *System* tab |
 | **AuraDB** | `python -m app.cli aura-push` then `aura-parity` (needs `AURA_*` credentials) |
 
 **Configuration** (env or `.env`): `DATA_DIR`, `ORG_NAMES`, `SESSION_TTL_HOURS`,
 `COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `API_URL`, `PROJECTOR_INTERVAL_SECONDS`,
-`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USER` / `AURA_PASSWORD`, `APP_ENV`.
+`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`. [Tooling](tooling.md) gives the
+default and meaning of each.
 
 **Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (2), or the app stops with
 a `SchemaOutdated` message pointing to the reset commands. The demo data is disposable, so there
@@ -660,7 +672,7 @@ are no migrations.
 
 | Check | Result |
 |---|---|
-| `ruff check` / `ruff format --check` | Clean, 54 files |
+| `ruff check` / `ruff format --check` | Clean, 83 files |
 | `pytest` | **154 passed, 2 skipped** (AuraDB without credentials; Compose gated); 95% coverage |
 | RBAC and onboarding suite | 15 tests (`tests/test_rbac_onboarding.py`) |
 | Relate persistence | Write, close, reopen and assert (`tests/test_relate_store.py`) |

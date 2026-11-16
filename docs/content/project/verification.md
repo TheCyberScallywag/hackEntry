@@ -124,20 +124,21 @@ reports the failing organisation.
 - **Not done in this session, left to the owner:** recording the demo video, checking the current
   Devpost rules (the overview and rules word the extension policy differently), adding the
   repository and video links to `docs/content/project/devpost.md`, committing, publishing and submitting.
-- **Git:** nothing has been committed. The repository has no commits yet. The untouched template
-  baseline is recorded as tree `ecfee3ce58cd966c4ccaf375e5811969da9aece7`. A reviewable history
-  would be: commit the baseline, then commit this work on a `feature/` branch (see "Suggested
-  commits" below).
+- **Git:** when this record was first written nothing had been committed. The work has since
+  been committed; the untouched template baseline is recorded as tree
+  `ecfee3ce58cd966c4ccaf375e5811969da9aece7`. The "Suggested commits" below are kept for the
+  record only.
 - **Not built (out of scope for the slice):** availability and scheduling; reviewer invitations
   from the UI (roles are granted by the seed or `app.cli grant-reviewer`); account deletion and
   data export; rate limiting on sign-in; email verification; a native Capacitor build of the
   companion (only the web build was tested).
 - `examples/brands/neutral/` is a leftover from the template and is unused. It is harmless and
   can be deleted.
-- Coverage gaps in the tests: `serve.py` and the AuraDB module are untested, and the CLI's
-  `status`, `drain` and `grant-reviewer` commands are exercised only manually.
+- Coverage gaps in the tests: `serve.py` is untested, and the AuraDB module is tested against a
+  stand-in driver only. The CLI's `status`, `drain` and `grant-reviewer` commands, untested when
+  this record was first written, are covered since the November 2026 refactor.
 
-## Suggested commits (for the owner; not run)
+## Suggested commits (historical; the work has since been committed)
 
 ```sh
 git checkout -b feature/data-volunteer-network

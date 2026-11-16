@@ -8,7 +8,7 @@ skills they have, which they offer, and which they never want to be matched on, 
 or exclude causes. A moderator vets each new volunteer before they can be matched. Active
 volunteers can suggest projects to an organisation, and that organisation's admins scope and
 approve them before they go live. A [Relate](https://relatedb.ai/docs/) graph decides who matches
-what. Each result says which skills matched, whether the volunteer prefers the cause, and what is
+what (Relate is the embedded graph engine from Neo4j Labs). Each result says which skills matched, whether the volunteer prefers the cause, and what is
 still needed. When a volunteer is eligible for a project, they and the project lead are both
 notified in the app, and the volunteer joins the team once both say yes.
 
@@ -37,6 +37,7 @@ notified in the app, and the volunteer joins the team once both say yes.
 - [How are you using Relate, and why?](#how-are-you-using-relate-and-why)
 - [Matching rules](#matching-rules)
 - [Architecture](#architecture)
+- [Tooling](#tooling)
 - [Security and privacy](#security-and-privacy)
 - [Optional AuraDB](#optional-auradb)
 - [Tests](#tests)
@@ -247,6 +248,15 @@ server is running.
 
 ## How are you using Relate, and why?
 
+This section is the summary. The full account is in
+[docs/content/project/relate.md](docs/content/project/relate.md): the store files, the adapter,
+how each change is projected into the graph, a table of every query with the screens and
+endpoints it serves, the matching query explained line by line, and how to inspect the graph.
+
+Relate is an embedded graph database queried in Cypher, published by Neo4j Labs as an
+experimental project (not a supported Neo4j product). It runs inside the application's process
+through the `relate-db` Python package, and the graph is one `.rl` file.
+
 **What Relate does here.** Relate is the matching engine and the main demo graph. It stores
 organisations, opaque volunteer IDs, the shared skill and cause catalogue, each volunteer's skill
 offers, exclusions and cause preferences, approved projects and their requirements. One Cypher
@@ -326,8 +336,9 @@ concerned. Reviewers see eligible candidates and gaps.
 ## Architecture
 
 The full write-up, with tools, components, data model, RBAC, workflows and decisions, is in
-[docs/content/project/solution-architecture.md](docs/content/project/solution-architecture.md) (PDF:
-[docs/content/project/solution-architecture.pdf](docs/content/project/solution-architecture.pdf)).
+[docs/content/project/solution-architecture.md](docs/content/project/solution-architecture.md). The
+[PDF](docs/content/project/solution-architecture.pdf) is an earlier snapshot of that page and
+does not include later changes.
 
 ```mermaid
 flowchart LR
@@ -381,6 +392,26 @@ Code map:
 | `src/app/admin/main.py` | Streamlit admin console (an API client) |
 | `mobile/` | Ionic app |
 
+## Tooling
+
+[docs/content/project/tooling.md](docs/content/project/tooling.md) lists every tool with its
+version, configuration file and commands. In short:
+
+| Area | Tools |
+|---|---|
+| Graph and data | Relate 1.0.1 (`relate-db`, embedded) and the optional Relate CLI; SQLite; optionally the Neo4j Python driver and AuraDB |
+| Backend | Python 3.14, FastAPI, Pydantic, Uvicorn, Jinja2, argon2-cffi; Streamlit for the admin console |
+| Mobile | Angular 22, Ionic 9, Capacitor 8, TypeScript, Vitest, ESLint; nginx in the container |
+| Quality | pytest with coverage, Ruff, pre-commit (file hygiene, lock file, workflow syntax, branch names, commit prefixes) |
+| Packaging | uv with `uv.lock`, taskipy (`uv run task ...`), Hatchling |
+| Containers | Docker and Docker Compose: `web`, `admin`, `mobile` and `docs` images |
+| Docs | Zensical (portal) and Sphinx with Furo (manual), from the same Markdown, warnings as errors |
+| Automation | GitHub Actions (CI and CodeQL), Dependabot |
+
+`uv run task --list` prints the tasks: `web`, `admin`, `reset`, `bundle`, `inspect`, `lint`,
+`format`, `hooks`, `test`, `up`, `down`, `docs`, `docs_serve`, `docs_live` and
+`docs_live_manual`.
+
 ## Security and privacy
 
 - Passwords are hashed with Argon2id (`argon2-cffi`). Emails are normalised and unique. Sign-in
@@ -429,6 +460,7 @@ dev instance or credentials were available while this was built. See
 ```sh
 uv run task test                # pytest: temporary SQLite + real Relate stores per test
 uv run task lint
+uv run task hooks               # every pre-commit hook on every file
 docker build -f docker/mobile.Dockerfile --target test .     # Ionic lint + unit tests
 COMPOSE_WEB_URL=http://localhost:8080 COMPOSE_MOBILE_URL=http://localhost:8100 \
   COMPOSE_ADMIN_URL=http://localhost:8501 uv run pytest -m compose --no-cov
@@ -451,6 +483,11 @@ The suite covers:
 - volunteer onboarding end to end (draft → screening → active → eligible → both yes → team, with
   `ON_TEAM` in Relate), info requests, suspension, lapsed and revived offers, and removals
 - project onboarding notifications at each phase, JSON errors, and OpenAPI coverage of every tag
+- the API contract: every route answers in the shape it declares, and the mobile app's types
+  match the OpenAPI document
+- the graph schema against the bundled store, the AuraDB push and parity check against a
+  stand-in driver, and the placement sweep beyond the row bound
+- the admin console for each role, and the operator CLI
 
 Latest results are in [docs/content/project/verification.md](docs/content/project/verification.md).
 

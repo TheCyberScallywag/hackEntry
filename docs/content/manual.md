@@ -11,6 +11,8 @@ The Sphinx edition of these docs: the same pages as the [portal](/), plus the
 :maxdepth: 1
 
 project/solution-architecture
+project/relate
+project/tooling
 project/demo-script
 project/verification
 project/devpost
