@@ -139,8 +139,8 @@ flowchart LR
 
 | Tool | Use |
 |---|---|
-| pytest 9 + coverage | 81 backend tests, 89% line coverage; `aura` and `compose` markers for gated tests |
-| Streamlit `AppTest` | Headless tests of the admin console for each role |
+| pytest 9 + coverage | 154 backend tests, 95% line coverage; `aura` and `compose` markers for gated tests |
+| Admin console tests | `tests/test_admin_console.py` drives the console for each role through a small stand-in for Streamlit, against the real API |
 | Ruff 0.17 | Lint and format (line length 100) |
 | ESLint + Angular CLI | Mobile lint and production build |
 | Docker + Docker Compose | Two-command clean start: services `web`, `admin`, `mobile`; volume `dvn-data` |
@@ -157,7 +157,7 @@ flowchart LR
   the parity check possible.
 - **Persistent.** Data survives a restart, and the tests reopen the store to prove it.
 - **Constraint handled:** Relate locks the store exclusively, even for reads. The adapter
-  therefore opens one connection per unit of work (about 8 ms), serialises access with a
+  therefore opens one connection per unit of work (well under a millisecond on the demo graph), serialises access with a
   per-path lock and retries a bounded number of times before raising `GraphBusy` (a 503 response).
 
 ---
@@ -168,12 +168,12 @@ flowchart LR
 flowchart LR
   subgraph Interface
     api["web/api.py<br/>JSON API (about 45 endpoints)"]
-    main["web/main.py<br/>HTML routes, error handlers, CSP"]
+    main["web/main.py · web/pages/<br/>app factory, CSP, HTML routes, error pages"]
     admin["admin/main.py<br/>Streamlit console"]
     cli["cli.py<br/>reset · bundle · inspect · drain · aura-*"]
   end
   subgraph Domain
-    services["services.py<br/>roles, vetting, orgs, profiles, submissions"]
+    services["services/<br/>access, roles, vetting, orgs, profiles, submissions"]
     placements["placements.py<br/>eligibility sweep, two-sided yes, teams"]
     matching["matching.py<br/>access + freshness around Relate reads"]
     profile["profile_view.py<br/>Profile screen model"]
@@ -204,17 +204,20 @@ flowchart LR
 
 | Component | Responsibility | Size (lines) |
 |---|---|---|
-| `web/api.py` | Every action as a typed JSON endpoint, grouped by tag | 597 |
-| `web/main.py` | App factory, HTML pages, CSP, JSON error mapping, docs mount | 759 |
-| `services.py` | Domain operations and **all authorisation decisions** | 896 |
-| `placements.py` | Onboarding step 2: eligible, then both say yes, then on the team | 275 |
-| `matching.py` | Org access, account status, pending-update withholding, explanations | 261 |
-| `graph/projector.py` | Outbox drain, reconcile per entity, backoff, hook into the sweep | 304 |
-| `graph/cypher.py` | All Cypher, with fixed labels and parameter-bound values | 270 |
-| `graph/store.py` | Relate connection per unit of work, lock, retry, row cap | 131 |
-| `sqlstore.py` | Schema (18 tables), transactions, outbox enqueue | 288 |
+| `web/api.py` | Every action as a typed JSON endpoint, grouped by tag | 517 |
+| `web/schemas.py` | Every request body and response model: the API contract | 495 |
+| `web/main.py` | App factory, CSP, docs mount, health check | 100 |
+| `web/pages/` | The HTML pages, one router per area (account, organisations, projects, suggestions) | 431 |
+| `web/deps.py`, `web/errors.py` | Session, CSRF-checked forms, rendering; one table of error responses for pages and API | 357 |
+| `services/` | Domain operations and **all authorisation decisions**, one module per area | 1,005 |
+| `placements.py` | Onboarding step 2: eligible, then both say yes, then on the team | 329 |
+| `matching.py` | Org access, account status, pending-update withholding, explanations | 262 |
+| `graph/projector.py` | Outbox drain, reconcile per entity, backoff, hook into the sweep | 321 |
+| `graph/cypher.py` | The graph schema and all Cypher, with fixed labels and parameter-bound values | 286 |
+| `graph/store.py` | Relate connection per unit of work, lock, retry, row cap | 134 |
+| `sqlstore.py` | Schema (18 tables), transactions, outbox enqueue, pruning | 341 |
 | `auth.py` | Argon2id, opaque sessions, CSRF comparison | 152 |
-| `admin/main.py` | Role-based staff console over the API | 262 |
+| `admin/main.py` | Role-based staff console over the API, one function per tab | 345 |
 | `mobile/src/app` | Ionic pages: sign-in, matches, suggestions, profile, opportunities, notifications | n/a |
 
 ---
@@ -315,7 +318,10 @@ The bundled demo graph has **35 nodes and 67 relationships**: 2 organisations, 5
 
 Ranking is deterministic: preferred cause first, then required skills covered, then optional
 skills offered, then stable IDs. Reads are capped at `GRAPH_MAX_ROWS` (500 by default); hitting
-the cap raises `GraphTruncated` rather than silently returning partial results.
+the cap raises `GraphTruncated` rather than silently returning partial results. The store binds
+the query's `LIMIT` itself, so no caller can ask for fewer rows and mistake them for all of them.
+The placement sweep reads one project or one volunteer at a time, so the cap applies to each of
+those and not to an organisation as a whole.
 
 ---
 
@@ -566,25 +572,29 @@ Active projects and Past projects.
 `normalise_email`, `hash_password`, `token_hash`, `signup`, `authenticate`, `create_session`,
 `load_session`, `revoke_session`, `set_active_org`, `csrf_matches`.
 
-### `services.py`
-- **Errors:** `NotFound`, `Forbidden`, `Conflict`, `Invalid`.
-- **Access:** `Actor`, `load_actor`, `get_actor`, `Access`, `org_access`, `require_access`,
-  `require_active`.
-- **Organisations:** `directory`, `accessible_orgs`, `set_membership`, `org_volunteers`,
-  `remove_volunteer`, `create_organisation`.
-- **Vetting:** `submit_for_vetting`, `vetting_queue`, `vetting_record`, `vet_volunteer`.
-- **Roles:** `set_system_role`, `set_org_role`, `list_users`.
-- **Profile:** `get_profile`, `update_profile`.
-- **Submissions:** `create_submission`, `revise_submission`, `get_submission`, `my_submissions`,
-  `review_queue`, `review_submission`, `withdraw_project`, `set_project_lead`,
-  `published_state`.
+### `services/`
+A package with one module per area. Callers import every name from the package itself.
+
+- **`errors.py`:** `NotFound`, `Forbidden`, `Conflict`, `Invalid`, `require_reason`.
+- **`access.py`:** `Actor`, `load_actor`, `get_actor`, `Access`, `org_access` (one query),
+  `check_access`, `require_access`, `require_active`, `require_admin`, `require_vetter`,
+  `directory`, `load_directory`, `accessible_orgs`.
+- **`orgs.py`:** `set_membership`, `org_volunteers`, `remove_volunteer`, `create_organisation`.
+- **`vetting.py`:** `submit_for_vetting`, `vetting_queue`, `vetting_record`, `vet_volunteer`.
+- **`roles.py`:** `set_system_role`, `set_org_role`, `list_users`.
+- **`profile.py`:** `get_profile`, `update_profile`, `skill_flags`, `skill_state`, and the
+  skill-state and cause-stance labels.
+- **`submissions.py`:** `create_submission`, `revise_submission`, `get_submission`,
+  `my_submissions`, `review_queue`, `review_counts`, `review_submission`, `withdraw_project`,
+  `set_project_lead`, `published_state`, and the project-state labels.
 
 ### `placements.py`
-`sweep` (Relate matches to placements), `volunteer_respond`, `lead_respond`,
+`sweep` (Relate matches to placements; given a `Scope`, only the volunteers and projects that
+changed), `volunteer_respond`, `lead_respond`,
 `end_team_membership`, `for_volunteer`, `for_project`.
 
 ### `matching.py`
-`volunteer_matches`, `project_coverage`, `browse`, plus helpers that check for pending updates
+`volunteer_matches`, `project_coverage`, `browse`, `project`, plus helpers that check for pending updates
 and build explanations.
 
 ### `notify.py`
@@ -596,16 +606,18 @@ and build explanations.
 ### `graph/`
 - **`store.py`:** `GraphStore.write()`, `.reader()`, `.read()`; errors `GraphError`, `GraphBusy`,
   `GraphTruncated`.
-- **`projector.py`:** `Projector.drain()`, `.status()`, the `on_projected` hook, `pending_for`.
+- **`projector.py`:** `Projector.drain()`, `.status()`, the `on_projected` hook (told what
+  changed), `pending_for`.
 - **`cypher.py`:** `MATCH_CANDIDATES`, `COVERAGE_GAPS`, `EXCLUDED_FOR_VOLUNTEER`,
-  `OPTIONAL_SKILLS_EXCLUDED`, `BROWSE_PROJECTS`, `INSPECT`, and the reconcile statements.
+  `OPTIONAL_SKILLS_EXCLUDED`, `BROWSE_PROJECTS`, `INSPECT`, the relationship schema
+  (`RELATIONSHIPS`) and the reconcile statements generated from it.
 - **`aura.py`:** `push` (scoped to `dvn-demo-v1`) and `parity`.
 
 ### `runtime.py` and `cli.py`
 - **`runtime.py`:** `build_runtime`, `bootstrap`, `seed_catalogue`, `seed_demo` (which forms the
   team through the real accept flow), `reset_demo`.
 - **`cli.py` commands:** `reset`, `bundle`, `inspect`, `matches`, `status`, `drain`,
-  `grant-reviewer`, `aura-push`, `aura-parity`.
+  `grant-reviewer`, `openapi`, `aura-push`, `aura-parity`.
 
 ---
 
@@ -649,11 +661,11 @@ are no migrations.
 | Check | Result |
 |---|---|
 | `ruff check` / `ruff format --check` | Clean, 54 files |
-| `pytest` | **81 passed, 2 skipped** (AuraDB without credentials; Compose gated); 89% coverage |
+| `pytest` | **154 passed, 2 skipped** (AuraDB without credentials; Compose gated); 95% coverage |
 | RBAC and onboarding suite | 15 tests (`tests/test_rbac_onboarding.py`) |
 | Relate persistence | Write, close, reopen and assert (`tests/test_relate_store.py`) |
-| Mobile | Lint OK, **25 tests**, production build OK |
-| Admin console | `AppTest` as system admin, moderator and org admin: correct tabs, no exceptions |
+| Mobile | Lint OK, **39 tests**, production build OK |
+| Admin console | 10 tests as system admin, moderator, org admin and volunteer: correct tabs, decisions recorded, errors shown |
 | Compose | Built and smoke-tested on alternate ports; `/api/docs` returns 200 |
 | Lockfile | `uv lock --check` OK |
 | AuraDB | **Not verified**: no credentials available |

@@ -59,8 +59,8 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
 
 - Multi-organisation identity: signup, sign-in and sign-out with Argon2id, opaque revocable
   sessions, CSRF, active-organisation switching kept separate from opting in or out, and
-  server-side role and tenant checks (`src/app/auth.py`, `src/app/services.py`,
-  `src/app/web/main.py`).
+  server-side role and tenant checks (`src/app/auth.py`, `src/app/services/`,
+  `src/app/web/`).
 - SQLite transactional model: users, sessions, memberships, roles, profile, submissions,
   revisions, reviews and outbox (`src/app/sqlstore.py`).
 - Suggestion workflow: submit, request changes, revise, reject, approve, publish and withdraw,
@@ -78,15 +78,15 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
   and causes and for active and past projects, suggestion status) with new specs.
 - RBAC (system admin, moderator, org admin, reviewer, project lead), volunteer vetting
   workflow, eligibility sweep with two-sided acceptance and `ON_TEAM` teams, in-app
-  notifications (`src/app/services.py`, `src/app/placements.py`, `src/app/notify.py`).
+  notifications (`src/app/services/`, `src/app/placements.py`, `src/app/notify.py`).
 - A JSON API covering every action, with OpenAPI docs (`src/app/web/api.py`).
 - Streamlit admin console as a pure API client: screening, organisation management, users and
   roles, projection health and graph inspection.
 - Operator CLI (reset, bundle, inspect, matches, status, drain, grant-reviewer, aura-push,
   aura-parity), the demo fixture, the bundled `data/demo.rl`, and the AuraDB push and parity
   check.
-- Test suite (`tests/`): 83 tests (81 run locally; the AuraDB and Compose tests are gated), using
-  temporary SQLite and real Relate stores; 25 mobile specs.
+- Test suite (`tests/`): 156 tests (154 run locally; the AuraDB and Compose tests are gated), using
+  temporary SQLite and real Relate stores; 39 mobile specs.
 - Compose stack, CI workflow, and documentation (README, this file, `docs/content/project/verification.md`,
   `docs/content/project/devpost.md`, `docs/content/project/demo-script.md`).
 

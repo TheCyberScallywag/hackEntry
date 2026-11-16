@@ -182,7 +182,7 @@ the Profile page shows the onboarding status on both.
 `/api/docs`. The mobile app and the Streamlit admin console use nothing else: neither touches
 SQLite or Relate directly. The server-rendered web pages call the same service functions
 in-process, so roles, states and version checks are enforced in one place
-(`src/app/services.py`, `src/app/placements.py`).
+(`src/app/services/`, `src/app/placements.py`).
 
 | Group | Endpoints |
 |---|---|
@@ -289,7 +289,8 @@ the earlier PoC's subprocess CLI adapter. The pin matches the tested CLI version
 **Engineering details.**
 
 - **Single writer.** Relate locks the store exclusively for every opener, read-only openers
-  included. The adapter therefore opens the store per unit of work (about 8 ms on the demo graph)
+  included. The adapter therefore opens the store per unit of work (well under a millisecond on
+  the demo graph)
   and serialises access inside the process. If another process holds the lock, it retries a
   bounded number of times and then reports `GraphBusy`. Examples of such processes are the CLI
   or `relate --read-only`. The admin console goes through the API, so it never opens the store.
@@ -365,8 +366,9 @@ Code map:
 | Path | Purpose |
 |---|---|
 | `src/app/web/api.py` | the JSON API: every action, under `/api/v1` |
-| `src/app/web/main.py`, `templates/` | server-rendered pages |
-| `src/app/services.py` | domain operations with server-side authorisation: roles, vetting, organisations, submissions |
+| `src/app/web/main.py`, `web/pages/`, `templates/` | the app factory and the server-rendered pages |
+| `src/app/web/schemas.py` | the API contract: every request body and response model |
+| `src/app/services/` | domain operations with server-side authorisation: access, roles, vetting, organisations, profiles, submissions |
 | `src/app/placements.py` | eligibility sweep from Relate matches, two-sided acceptance, teams |
 | `src/app/notify.py` | in-app notifications, written in the same transaction as the change |
 | `src/app/profile_view.py` | the Profile screen (sections, skill types, labels, active and past projects), shared by the web page and the mobile API |
