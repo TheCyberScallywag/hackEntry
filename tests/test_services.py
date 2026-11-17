@@ -3,7 +3,7 @@
 import pytest
 
 from app import services
-from tests.conftest import AUDIT, CS, DK, USERS, Web
+from tests.conftest import AUDIT, CS, DK, IL, USERS, Web
 from tests.test_rbac_onboarding import MO, SAM
 from tests.test_submissions import DRAFT, _review, _state
 
@@ -96,7 +96,7 @@ def test_review_counts_per_organisation_the_user_reviews_for(web: Web):
     assert services.review_counts(db, USERS["rhiannon"]) == {DK: 1}  # the seeded audit suggestion
     assert services.review_counts(db, USERS["kofi"]) == {CS: 0}
     assert services.review_counts(db, USERS["asha"]) == {}
-    assert services.review_counts(db, SAM) == {DK: 1, CS: 0}
+    assert services.review_counts(db, SAM) == {DK: 1, CS: 0, IL: 0}
     for user in ("rhiannon", "kofi"):  # the same numbers the full queues give
         for org, waiting in services.review_counts(db, USERS[user]).items():
             queue = services.review_queue(db, USERS[user], org)

@@ -39,6 +39,7 @@ from app.services.orgs import (
     org_volunteers,
     remove_volunteer,
     set_membership,
+    showcase,
 )
 from app.services.profile import (
     CAUSE_STANCES,
@@ -128,6 +129,7 @@ __all__ = [
     "set_org_role",
     "set_project_lead",
     "set_system_role",
+    "showcase",
     "skill_flags",
     "skill_state",
     "submit_for_vetting",

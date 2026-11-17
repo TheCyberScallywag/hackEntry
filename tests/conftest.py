@@ -17,6 +17,7 @@ CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 DK = stable_id("org", "datakind-uk")
 CS = stable_id("org", "cyber-scallywags")
+IL = stable_id("org", "interlinkrct")
 USERS = {
     k: stable_id("u", k)
     for k in ("asha", "bryn", "cerys", "dev", "gwen", "farah", "kofi", "rhiannon")

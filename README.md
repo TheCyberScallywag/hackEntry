@@ -12,9 +12,11 @@ what (Relate is the embedded graph engine from Neo4j Labs). Each result says whi
 still needed. When a volunteer is eligible for a project, they and the project lead are both
 notified in the app, and the volunteer joins the team once both say yes.
 
-> All people, projects and accounts in this repository are fictional. *DataKind UK* and
-> *Cyber Scallywags* are used as illustrative organisation names only. Their use implies no
-> endorsement or live partnership. Both names can be changed with `ORG_NAMES`.
+> All people, projects and accounts in this repository are fictional. *DataKind UK*,
+> *Cyber Scallywags* and *InterLinkRCT* are used as illustrative organisations only. Their use
+> implies no endorsement or live partnership. The names can be changed with `ORG_NAMES`, which
+> also removes their logos and photographs (see [`data/orgs/`](data/orgs/README.md)) from the
+> `/showcase` page.
 
 | Surface | Tech | Local URL |
 |---|---|---|
@@ -409,7 +411,7 @@ version, configuration file and commands. In short:
 | Automation | GitHub Actions (CI and CodeQL), Dependabot |
 
 `uv run task --list` prints the tasks: `web`, `admin`, `reset`, `bundle`, `inspect`, `lint`,
-`format`, `hooks`, `test`, `up`, `down`, `docs`, `docs_serve`, `docs_live` and
+`format`, `hooks`, `changelog`, `changelog_preview`, `test`, `up`, `down`, `docs`, `docs_serve`, `docs_live` and
 `docs_live_manual`.
 
 ## Security and privacy

@@ -1,0 +1,54 @@
+{
+  "_comment": "Showcase profiles for the demo organisations, keyed by organisation key. Text is summarised from each organisation's own public website (see `source` and README.md, retrieved 2026-11-17). A profile is shown only while the organisation still carries the `name` given here, so renaming one with ORG_NAMES also removes its logo, photo and description. Image files live in a folder named after the key.",
+  "datakind-uk": {
+    "name": "DataKind UK",
+    "tagline": "Supercharging community-driven, change-making organisations by boosting their use of data.",
+    "about": "DataKind UK is a small charity that helps other third sector organisations achieve their missions through data analysis and data science. Its founders started the UK's 'data for good' movement in 2013. It matches charities, voluntary groups and social enterprises with skilled data professionals who donate their time, free of charge, across the UK.",
+    "highlights": [
+      {"title": "Advising", "text": "A one-month match with expert volunteers: around ten hours of help with a specific task, such as a first dashboard or a short survey analysis."},
+      {"title": "Exploring", "text": "Teams of data volunteers tackle a tough organisational question, from understanding demand to finding who a service is missing."},
+      {"title": "Training and resources", "text": "Webinars, workshops and guides on data strategy, responsible data use and what data science and AI can do for a charity."}
+    ],
+    "website": "https://www.datakind.org.uk",
+    "source": "https://www.datakind.org.uk/all-about",
+    "logo": "logo.png",
+    "logo_shape": "wide",
+    "hero": "hero.jpg",
+    "hero_alt": "Volunteers and charity staff seated at tables, watching a team present a data project on a screen.",
+    "credit": "Logo and photograph © DataKind UK, from datakind.org.uk."
+  },
+  "cyber-scallywags": {
+    "name": "Cyber Scallywags",
+    "tagline": "Working in packs, hacking for the common good.",
+    "about": "Cyber Scallywags is a friendly community of ethical hackers, data scientists and civic technologists, rooted in Wales. It runs training and mentoring in Python, data science and ethical tech, and builds open-source tools for social good, so that people can play, learn, share and grow together.",
+    "highlights": [
+      {"title": "Graphinista Social Club", "text": "Exploring the art and science of graphs."},
+      {"title": "DataMining.Wales", "text": "Data for the people: empowering Welsh communities."},
+      {"title": "Practical Python Club", "text": "Learning by doing, together."}
+    ],
+    "website": "https://cyberscallywags.uk",
+    "source": "https://cyberscallywags.uk/about",
+    "logo": "logo.png",
+    "logo_shape": "square",
+    "hero": "hero.svg",
+    "hero_alt": "A graph of connected pink, teal and lime nodes on deep purple.",
+    "credit": "Logo © Cyber Scallywags, from cyberscallywags.uk. Banner drawn for this demo in the logo's colours."
+  },
+  "interlinkrct": {
+    "name": "InterLinkRCT",
+    "tagline": "Connected, resourceful, sustainable communities.",
+    "about": "Interlink RCT is the County Voluntary Council for Rhondda Cynon Taf: a members-led charity of more than 700 community and voluntary organisations, based in Pontypridd. It helps groups build on what their community already has (its people, buildings and land) so they can act on what matters to them.",
+    "highlights": [
+      {"title": "Community advice", "text": "Free support for community and voluntary groups: funding, training, networks and specialist help."},
+      {"title": "Volunteering", "text": "Helping people find volunteering opportunities and helping groups recruit and manage volunteers."},
+      {"title": "Wellbeing", "text": "Wellbeing Coordinators connect people aged 16 and over with local activities, groups and services."}
+    ],
+    "website": "https://interlinkrct.org.uk",
+    "source": "https://interlinkrct.org.uk/about/",
+    "logo": "logo.png",
+    "logo_shape": "square",
+    "hero": "hero.jpg",
+    "hero_alt": "Three volunteers building and lining raised wooden beds in a community garden.",
+    "credit": "Logo and photograph © Interlink RCT, from interlinkrct.org.uk."
+  }
+}

@@ -52,7 +52,7 @@ def test_org_names_are_configurable(monkeypatch, tmp_path):
     rt = reset_demo(settings)
     with rt.db.read() as conn:
         names = [r[0] for r in conn.execute("SELECT name FROM organisations ORDER BY name")]
-    assert names == ["Cyber Scallywags", "Organisation A"]
+    assert names == ["Cyber Scallywags", "InterLinkRCT", "Organisation A"]
     graph_names = rt.graph.read("MATCH (o:Organisation) RETURN o.name AS name")
     assert {"name": "Organisation A"} in graph_names
 
@@ -129,7 +129,11 @@ def test_reset_and_json_inspect(seeded, capsys):
     assert "0 pending" in capsys.readouterr().out
     assert cli.main(["inspect", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    assert {r["organisation"] for r in rows} == {"DataKind UK", "Cyber Scallywags"}
+    assert {r["organisation"] for r in rows} == {
+        "DataKind UK",
+        "Cyber Scallywags",
+        "InterLinkRCT",
+    }
 
 
 def test_graph_errors_become_a_message_and_exit_code(tmp_path, capsys):

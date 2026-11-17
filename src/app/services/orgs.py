@@ -4,7 +4,13 @@ import re
 import sqlite3
 
 from app.notify import notify
-from app.services.access import get_org, load_actor, require_access, require_admin
+from app.services.access import (
+    get_org,
+    load_actor,
+    load_directory,
+    require_access,
+    require_admin,
+)
 from app.services.errors import Conflict, Invalid, NotFound, require_reason
 from app.sqlstore import Database, enqueue, new_id, now
 
@@ -98,3 +104,35 @@ def create_organisation(
     except sqlite3.IntegrityError as error:
         raise Conflict("An organisation with that key already exists.") from error
     return org_id
+
+
+def _ids(joined: str | None) -> list[str]:
+    return sorted(joined.split(",")) if joined else []
+
+
+def showcase(db: Database, user_id: str) -> list[dict]:
+    """Every organisation with its published projects, to promote them to prospective volunteers.
+
+    Any signed-in user may read this, member or not, so each project carries only what a
+    recruitment notice would: title, summary, cause and skills. Leads, teams, candidates and
+    matches stay behind `require_access`. `opted_in` and `reviewer` say whether this user may
+    open the project pages.
+    """
+    with db.read() as conn:
+        orgs = load_directory(conn, user_id, admin=load_actor(conn, user_id).admin)
+        projects = conn.execute(
+            "SELECT s.id, s.org_id, v.title, v.summary, v.cause_id, "
+            "(SELECT group_concat(k.skill_id) FROM revision_skills k WHERE k.submission_id = s.id "
+            " AND k.revision = v.revision AND k.required = 1) AS required, "
+            "(SELECT group_concat(k.skill_id) FROM revision_skills k WHERE k.submission_id = s.id "
+            " AND k.revision = v.revision AND k.required = 0) AS optional "
+            "FROM submissions s JOIN submission_revisions v "
+            "  ON v.submission_id = s.id AND v.revision = s.approved_revision "
+            "WHERE s.state = 'published' ORDER BY v.title, s.id"
+        ).fetchall()
+    by_org: dict[str, list[dict]] = {o["id"]: [] for o in orgs}
+    for row in projects:
+        by_org[row["org_id"]].append(
+            {**dict(row), "required": _ids(row["required"]), "optional": _ids(row["optional"])}
+        )
+    return [{**o, "projects": by_org[o["id"]]} for o in orgs]

@@ -76,7 +76,11 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
 
     # ---- me
     me = ok(asha.get("/me"), "GET", "/me")
-    assert {o["key"] for o in me["organisations"]} == {"datakind-uk", "cyber-scallywags"}
+    assert {o["key"] for o in me["organisations"]} == {
+        "datakind-uk",
+        "cyber-scallywags",
+        "interlinkrct",
+    }
     ok(asha.put("/me/active-org", {"org_id": CS}), "PUT", "/me/active-org")
     profile = ok(asha.get("/profile"), "GET", "/profile")
     assert list(profile["skill_states"]) == ["none", "has", "offers", "exclude"]

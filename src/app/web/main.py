@@ -17,7 +17,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from app.config import BRAND_DIR, Settings, get_settings
+from app.config import BRAND_DIR, ORG_ASSETS_DIR, Settings, get_settings
 from app.runtime import Runtime, bootstrap, build_runtime
 from app.web import api, pages
 from app.web.deps import HERE, RT
@@ -73,6 +73,7 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
     )
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.mount("/brand", StaticFiles(directory=BRAND_DIR / "images"), name="brand")
+    app.mount("/org-assets", StaticFiles(directory=ORG_ASSETS_DIR), name="org-assets")
     app.include_router(api.router)
     for router in pages.routers:
         app.include_router(router)
@@ -92,7 +93,7 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
-        if path != "/healthz" and not path.startswith("/static"):
+        if path != "/healthz" and not path.startswith(("/static", "/org-assets")):
             response.headers.setdefault("Cache-Control", "no-store")
         return response
 

@@ -274,3 +274,33 @@ def test_inline_projection_failures_are_logged_not_raised(web: Web, monkeypatch,
         assert web.post(f"/orgs/{DK}/join").status_code == 303
     logged = [r for r in caplog.records if "inline projection failed" in r.getMessage()]
     assert len(logged) == 2  # the API path used to swallow this silently
+
+
+def test_showcase_promotes_every_organisation_and_its_published_projects(web: Web):
+    page = web.sign_in("cerys").get("/showcase").text  # Cerys volunteers with DataKind UK only
+    for key, name in (("datakind-uk", "DataKind UK"), ("cyber-scallywags", "Cyber Scallywags"),
+                      ("interlinkrct", "InterLinkRCT")):  # fmt: skip
+        assert f'id="{key}"' in page and f'alt="{name} logo"' in page
+        assert f'src="/org-assets/{key}/logo.png"' in page
+        assert web.get(f"/org-assets/{key}/logo.png").headers["content-type"] == "image/png"
+    assert web.get("/org-assets/cyber-scallywags/hero.svg").status_code == 200
+    # published projects only, and a link to the project page only where she has access
+    assert "Food Bank Demand Dashboard" in page and "Community Garden Raised Beds" in page
+    assert "Outreach Data Audit" not in page and "Phishing Awareness Pop-up" not in page
+    assert f'href="/o/{DK}/projects/{FOOD_BANK}"' in page
+    assert f"/o/{CS}/projects/" not in page and "Winter Outreach Kitchen" in page
+    assert f'action="/orgs/{CS}/join"' in page and f'action="/orgs/{DK}/join"' not in page
+    assert "Asha" not in page and "Bryn" not in page  # never who suggested or leads a project
+    assert 'href="/showcase#interlinkrct"' in web.get("/orgs").text
+    web.client.cookies.clear()
+    assert web.client.get("/showcase", follow_redirects=False).status_code == 303
+
+
+def test_a_renamed_organisation_loses_its_branding():
+    from app.org_profiles import profile_for
+
+    org = {"key": "datakind-uk", "name": "DataKind UK", "description": "Fallback."}
+    assert profile_for(org)["logo"] == "/org-assets/datakind-uk/logo.png"
+    renamed = profile_for({**org, "name": "Organisation A"})
+    assert (renamed["logo"], renamed["hero"], renamed["about"]) == (None, None, "Fallback.")
+    assert renamed["initials"] == "OA" and not renamed["tagline"]

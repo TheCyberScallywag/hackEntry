@@ -10,6 +10,11 @@
       "key": "cyber-scallywags",
       "name": "Cyber Scallywags",
       "description": "Illustrative community tech collective used for this demo only."
+    },
+    {
+      "key": "interlinkrct",
+      "name": "InterLinkRCT",
+      "description": "Illustrative community charity collective used for this demo only."
     }
   ],
   "people": [
@@ -36,7 +41,8 @@
       "display_name": "Bryn",
       "email": "bryn@cyberscallywags.uk",
       "volunteers_with": [
-        "cyber-scallywags"
+        "cyber-scallywags",
+        "interlinkrct"
       ],
       "skills": {
         "van-driving": "offers",
@@ -233,6 +239,42 @@
         "data-visualisation"
       ],
       "outcome": "submitted"
+    },
+    {
+      "key": "community-garden-beds",
+      "org": "interlinkrct",
+      "author": "bryn",
+      "title": "Community Garden Raised Beds",
+      "summary": "Build and plant raised beds so a fictional valleys community group can grow its own veg.",
+      "cause": "environment",
+      "required": [
+        "carpentry",
+        "gardening"
+      ],
+      "optional": [
+        "van-driving"
+      ],
+      "outcome": "approved",
+      "reviewer": "sam",
+      "reason": "A practical, well-scoped project for a member group."
+    },
+    {
+      "key": "digital-drop-in",
+      "org": "interlinkrct",
+      "author": "bryn",
+      "title": "Community Group Digital Drop-in",
+      "summary": "Monthly drop-in where a fictional member group gets help with its website and staying safe online.",
+      "cause": "digital-inclusion",
+      "required": [
+        "web-development",
+        "security-awareness"
+      ],
+      "optional": [
+        "welsh-translation"
+      ],
+      "outcome": "approved",
+      "reviewer": "sam",
+      "reason": "Meets a need several member groups have raised."
     },
     {
       "key": "phishing-workshop",

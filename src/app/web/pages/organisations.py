@@ -4,6 +4,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app import auth, matching, services
+from app.catalogue import get_catalogue
+from app.org_profiles import profile_for
 from app.web.deps import RT, Org, User, UserForm, drain, nav_for, redirect, render, safe_next
 
 router = APIRouter(include_in_schema=False, default_response_class=HTMLResponse)
@@ -22,9 +24,34 @@ def home(request: Request, rt: RT, session: User):
 
 @router.get("/orgs")
 def orgs_page(request: Request, rt: RT, session: User):
+    directory = services.directory(rt.db, session.user_id)
     return render(
-        request, "orgs.html", session, directory=services.directory(rt.db, session.user_id)
-    )
+        request, "orgs.html", session,
+        directory=[{**o, "profile": profile_for(o)} for o in directory],
+    )  # fmt: skip
+
+
+@router.get("/showcase")
+def showcase(request: Request, rt: RT, session: User):
+    """Every organisation's story and the published projects it wants volunteers for."""
+    cat = get_catalogue()
+    featured = [
+        {
+            **o,
+            "profile": profile_for(o),
+            "projects": [
+                {
+                    **p,
+                    "cause_name": cat.cause_name(p["cause_id"]),
+                    "required_names": [cat.skill_name(s) for s in p["required"]],
+                    "optional_names": [cat.skill_name(s) for s in p["optional"]],
+                }
+                for p in o["projects"]
+            ],
+        }
+        for o in services.showcase(rt.db, session.user_id)
+    ]
+    return render(request, "showcase.html", session, featured=featured)
 
 
 @router.post("/orgs/switch")

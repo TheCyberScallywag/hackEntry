@@ -24,6 +24,7 @@ def _resource(packaged: str, checkout: str) -> Path:
 FIXTURES_DIR = _resource("fixtures", "data/fixtures")
 BUNDLED_GRAPH = _resource("demo.rl", "data/demo.rl")
 BRAND_DIR = _resource("brand", "brand")
+ORG_ASSETS_DIR = _resource("orgs", "data/orgs")  # logos, hero images and profiles.json
 
 
 class Settings(BaseSettings):

@@ -1,13 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Organisations{% endblock %}
+{% from "macros.html" import org_logo %}
 {% block content %}
 <h1>Organisations</h1>
+<p>See what each organisation does and the projects it is recruiting for in the <a href="/showcase">showcase</a>.</p>
 <p>Joining (opting in) lets an organisation consider you as a candidate. Switching only changes which organisation you are looking at.</p>
 <section class="grid">
 {% for o in directory %}
   <article class="card">
-    <h3>{{ o.name }}</h3>
-    <p>{{ o.description }}</p>
+    <div class="org-head">{{ org_logo(o) }}<h3><a href="/showcase#{{ o.key }}">{{ o.name }}</a></h3></div>
+    <p>{{ o.profile.tagline or o.description }}</p>
     <p class="meta">{% if o.opted_in %}<span class="chip ok">You volunteer here</span>{% endif %}{% if o.org_admin %}<span class="chip pref">Org admin</span>{% elif o.reviewer %}<span class="chip pref">Reviewer</span>{% endif %}</p>
     <div class="actions">
     {% if o.opted_in %}

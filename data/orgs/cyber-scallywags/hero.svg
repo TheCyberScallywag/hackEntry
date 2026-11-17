@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="665" viewBox="0 0 1500 665" role="img" aria-labelledby="t d">
+<title id="t">Cyber Scallywags banner</title>
+<desc id="d">A graph of connected nodes in pink, teal and lime on deep purple: working in packs.</desc>
+<defs>
+<radialGradient id="bg" cx="78%" cy="18%" r="105%"><stop stop-color="#5a1fd6"/><stop offset=".55" stop-color="#3a0ca3"/><stop offset="1" stop-color="#1f0660"/></radialGradient>
+<radialGradient id="glow"><stop stop-color="#e6177f" stop-opacity=".55"/><stop offset="1" stop-color="#e6177f" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1500" height="665" fill="url(#bg)"/>
+<circle cx="1120" cy="300" r="330" fill="url(#glow)"/>
+<g fill="none" stroke="#2ec4b6" stroke-width="3" stroke-opacity=".7" stroke-linecap="round">
+<path d="M120 520L330 400L560 470L760 300L980 380L1180 210L1390 300"/>
+<path d="M330 400L420 190L760 300L900 110L1180 210"/>
+<path d="M560 470L800 580L980 380L1250 520L1390 300"/>
+<path d="M120 520L60 300L420 190M800 580L1250 520"/>
+</g>
+<g fill="none" stroke="#d9f23a" stroke-width="2" stroke-opacity=".35" stroke-dasharray="4 10">
+<path d="M60 300L330 400M420 190L900 110M980 380L1180 210M560 470L760 300"/>
+</g>
+<g stroke="#1f0660" stroke-width="5">
+<circle cx="120" cy="520" r="20" fill="#2ec4b6"/><circle cx="60" cy="300" r="14" fill="#e6177f"/>
+<circle cx="330" cy="400" r="26" fill="#e6177f"/><circle cx="420" cy="190" r="18" fill="#d9f23a"/>
+<circle cx="560" cy="470" r="18" fill="#d9f23a"/><circle cx="760" cy="300" r="30" fill="#2ec4b6"/>
+<circle cx="800" cy="580" r="16" fill="#e6177f"/><circle cx="900" cy="110" r="20" fill="#e6177f"/>
+<circle cx="980" cy="380" r="24" fill="#d9f23a"/><circle cx="1180" cy="210" r="34" fill="#e6177f"/>
+<circle cx="1250" cy="520" r="20" fill="#2ec4b6"/><circle cx="1390" cy="300" r="22" fill="#d9f23a"/>
+</g>
+</svg>

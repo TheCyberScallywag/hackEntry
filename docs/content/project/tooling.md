@@ -28,6 +28,8 @@ Tasks are defined in `pyproject.toml` under `[tool.taskipy.tasks]` and run with
 | `lint` | `ruff check` and `ruff format --check` |
 | `format` | `ruff format` and `ruff check --fix` |
 | `hooks` | Runs every pre-commit hook on every file |
+| `changelog_preview` | Prints the unreleased changelog section from the commit messages |
+| `changelog` | Regenerates `CHANGELOG.md` with git-cliff (replaces the file) |
 | `test` | `pytest`, with coverage |
 | `up` / `down` | Builds and starts, or stops and removes, the Compose stack |
 | `docs` | Builds the docs portal and the reference manual into `docs/_build/site` |
@@ -133,7 +135,7 @@ Optional Python dependencies are grouped so each environment installs only what 
 
 | Group or extra | Adds | Install |
 |---|---|---|
-| `dev` (default) | pytest, Ruff, pre-commit, taskipy, httpx | `uv sync --locked` |
+| `dev` (default) | pytest, Ruff, pre-commit, taskipy, httpx, git-cliff | `uv sync --locked` |
 | `admin` | Streamlit, httpx | `uv sync --locked --group admin` |
 | `aura` | The Neo4j Python driver | `uv sync --locked --group aura` |
 | `docs` | Sphinx, Furo, Zensical and their plugins | `uv sync --locked --group docs` |
@@ -181,7 +183,7 @@ new page must be added in two places: `nav` in `docs/zensical.toml` and a `toctr
 | Dependabot | Weekly grouped updates for uv, npm, GitHub Actions and the Docker base images | `.github/dependabot.yml` |
 | Issue and pull-request templates | — | `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md` |
 | Copier | Records the template this repository was generated from (`sgaffald`) | `.copier-answers.yml` |
-| git-cliff | Configuration for generating `CHANGELOG.md` from commit prefixes. git-cliff is not a project dependency and there is no task for it yet, so the changelog is edited by hand. | `cliff.toml` |
+| git-cliff | Generates `CHANGELOG.md` from the commit prefixes. `uv run task changelog_preview` prints the unreleased section; `uv run task changelog` rewrites the file. | `cliff.toml`, dev group |
 
 ## 11. Configuration
 
