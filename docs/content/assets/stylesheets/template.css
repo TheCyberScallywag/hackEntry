@@ -1,7 +1,8 @@
 /*
  * Shared by both docs sites: engine-neutral pieces (hero, crest, kicker). Colours come only
- * from the --brand-* tokens in brand.css, generated from brand/brand.toml by `task sync`;
- * zensical.css and sphinx/_static/furo.css map the same tokens onto each theme.
+ * from the --brand-* tokens in brand.css, generated from brand/brand.toml by `task sync`
+ * (the web app serves the same tokens at /theme.css); zensical.css and sphinx/_static/furo.css
+ * map them onto each theme.
  */
 
 /* Every image scales with its column and never overflows a phone screen. */
@@ -17,7 +18,7 @@ img.brand-crest {
   width: min(100%, 18rem);
   height: auto;
   margin: 1.5rem auto;
-  filter: drop-shadow(0 0 1.25rem rgba(var(--brand-accent-rgb), 0.25));
+  border-radius: 1.25rem;
 }
 
 /* Small mono capitals with wide tracking, like the site's labels. */
@@ -38,31 +39,38 @@ img.brand-crest {
   align-items: center;
   margin: 0 0 2rem;
   padding: clamp(1.25rem, 4vw, 2.5rem);
-  border: 1px solid var(--brand-border);
-  border-radius: 0.75rem;
+  /* A navy panel in both schemes, like the logo's field, closed by the jade-to-honey rule. */
+  border-bottom: 3px solid transparent;
+  border-image: var(--brand-rule) 1;
+  border-radius: 0.75rem 0.75rem 0 0;
   background:
-    radial-gradient(circle at 85% 20%, rgba(var(--brand-accent-2-rgb), 0.18), transparent 55%),
-    radial-gradient(circle at 10% 90%, rgba(var(--brand-accent-rgb), 0.16), transparent 50%),
-    linear-gradient(180deg, var(--brand-background-2), var(--brand-background));
-  color: #fff;
+    radial-gradient(circle at 85% 0%, rgba(var(--brand-tertiary-rgb), 0.14), transparent 55%),
+    radial-gradient(circle at 10% 100%, rgba(var(--brand-secondary-rgb), 0.14), transparent 50%),
+    var(--brand-bar);
+  color: var(--brand-bar-text);
 }
 
 .brand-hero h1 {
   margin: 0.25rem 0 0.75rem;
-  font-weight: 900;
+  font-family: var(--brand-font-display);
+  font-weight: 800;
   font-size: clamp(2.2rem, 7vw, 3.6rem);
   letter-spacing: -0.02em;
 }
 
 .brand-hero p {
-  color: var(--brand-text-muted);
+  color: var(--brand-bar-text);
+}
+
+.brand-hero .brand-kicker {
+  color: var(--brand-secondary);
 }
 
 .brand-hero__crest img {
   display: block;
   width: clamp(9rem, 22vw, 18rem);
   height: auto;
-  filter: drop-shadow(0 0 1.5rem rgba(var(--brand-accent-rgb), 0.3));
+  border-radius: 1.25rem;
 }
 
 @media (max-width: 44em) {
@@ -81,11 +89,23 @@ img.brand-crest {
   }
 }
 
-/* Gradient title text, as on the site's headline. */
-.brand-gradient-text,
+/* The hero title is cream on navy, like the wordmark. */
 .brand-hero h1 {
+  color: var(--brand-bar-text);
+}
+
+/* Gradient text for a headline on the page background. */
+.brand-gradient-text {
   background: var(--brand-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* The full-width banner (brand/images/hero). */
+img.brand-banner {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  margin: 0 0 1.5rem;
 }

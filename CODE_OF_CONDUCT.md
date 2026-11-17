@@ -5,7 +5,7 @@
 <h1 align="center">Code of conduct</h1>
 
 <p align="center">
-  <em>Data Volunteer Network · a welcoming space for everyone who helps</em>
+  <em>Volunteer Network · a welcoming space for everyone who helps</em>
 </p>
 
 <p align="center">
@@ -58,5 +58,5 @@ depending on the impact:
 ---
 
 <p align="center">
-  <sub>Cyber Scallywags · Data Volunteer Network</sub>
+  <sub>Cyber Scallywags · Volunteer Network</sub>
 </p>

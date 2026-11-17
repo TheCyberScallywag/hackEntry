@@ -1,46 +1,60 @@
-/* Zensical: maps the --brand-* tokens (brand.css) onto the theme. */
+/* Zensical: maps the --brand-* tokens (brand.css) onto the theme. The tokens already follow
+   the light/dark toggle, so one mapping serves both schemes. */
 
-[data-md-color-scheme="slate"] {
-  --md-hue: 215;
+body[data-md-color-scheme="default"],
+body[data-md-color-scheme="slate"] {
   --md-default-bg-color: var(--brand-background);
   --md-default-fg-color: var(--brand-text);
   --md-default-fg-color--light: var(--brand-text-muted);
-  --md-default-fg-color--lighter: var(--brand-text-subtle);
-  --md-primary-fg-color: var(--brand-surface);
-  --md-primary-bg-color: #ffffff;
-  --md-accent-fg-color: var(--brand-accent-2);
+  --md-default-fg-color--lighter: var(--brand-text-muted);
+  --md-default-fg-color--lightest: var(--brand-border);
+  --md-primary-fg-color: var(--brand-bar);
+  --md-primary-bg-color: var(--brand-bar-text);
+  --md-accent-fg-color: var(--brand-highlight);
+  --md-typeset-color: var(--brand-text);
   --md-typeset-a-color: var(--brand-accent);
   --md-code-bg-color: var(--brand-card);
-  --md-footer-bg-color: var(--brand-surface);
-  --md-footer-bg-color--dark: var(--brand-background);
+  --md-code-fg-color: var(--brand-text);
+  --md-typeset-table-color: var(--brand-border);
+  --md-footer-bg-color: var(--brand-bar);
+  --md-footer-bg-color--dark: var(--brand-bar);
+  --md-footer-fg-color: var(--brand-bar-text);
+  --md-text-font-family: var(--brand-font);
+  --md-code-font-family: var(--brand-mono);
 }
 
-[data-md-color-scheme="default"] {
-  --md-primary-fg-color: var(--brand-surface);
-  --md-primary-bg-color: #ffffff;
-  --md-accent-fg-color: var(--brand-accent-2-ink);
-  --md-typeset-a-color: var(--brand-accent-ink);
+[data-md-color-scheme="slate"] {
+  --md-hue: 225;
 }
 
-/* Header + tabs: a dark bar with the accent gradient as a rule underneath. */
+/* Header + tabs: the navy bar with the jade-to-honey rule, as on every surface. */
 .md-header,
 .md-tabs {
-  background-color: var(--brand-surface);
+  background-color: var(--brand-bar);
+  color: var(--brand-bar-text);
 }
 
 .md-header {
-  border-bottom: 2px solid transparent;
-  border-image: var(--brand-gradient) 1;
+  border-bottom: 3px solid transparent;
+  border-image: var(--brand-rule) 1;
 }
 
 .md-header__topic:first-child {
-  font-family: var(--brand-mono);
+  font-family: var(--brand-font-display);
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-/* Headings: gradient h1, accent h2 in dark. */
+.md-header__button.md-logo img {
+  border-radius: 0.35rem;
+}
+
+/* Headings in the wordmark's face; the page title carries the jade-to-honey gradient. */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-family: var(--brand-font-display);
+}
+
 .md-typeset h1 {
   font-weight: 800;
   background: var(--brand-gradient);
@@ -54,13 +68,14 @@
   display: none;
 }
 
-[data-md-color-scheme="slate"] .md-typeset h2 {
-  color: var(--brand-accent);
+.md-typeset h2 {
+  font-weight: 700;
+  color: var(--brand-text);
 }
 
-/* Cards and tables on dark surfaces, glowing on hover. */
-[data-md-color-scheme="slate"] .md-typeset .grid.cards > ul > li,
-[data-md-color-scheme="slate"] .md-typeset table:not([class]) {
+/* Cards and tables on the brand's surface, glowing on hover. */
+.md-typeset .grid.cards > ul > li,
+.md-typeset table:not([class]) {
   background: var(--brand-surface);
   border-color: var(--brand-border);
 }
@@ -76,23 +91,48 @@
 }
 
 .md-typeset .md-button {
+  border: 1px solid var(--brand-accent);
   border-radius: 0.5rem;
   font-weight: 700;
+  background: transparent;
+  color: var(--brand-accent);
 }
 
-.md-typeset .md-button--primary {
+.md-typeset .md-button--primary,
+.md-typeset .md-button:hover {
   background: var(--brand-accent);
   border-color: var(--brand-accent);
-  color: #000;
+  color: var(--brand-on-accent);
 }
 
-.md-typeset .md-button--primary:hover {
-  background: var(--brand-accent-2);
-  border-color: var(--brand-accent-2);
-  color: #fff;
+/* The footer is the navy bar again. */
+.md-footer,
+.md-footer-meta {
+  background-color: var(--brand-bar);
+  color: var(--brand-bar-text);
 }
 
-/* The hero keeps its own h1 size and spacing. */
+.md-footer a,
+html .md-footer-meta.md-typeset a:not(:focus, :hover) {
+  color: var(--brand-bar-text);
+}
+
+/* On the navy hero the buttons are the logo's jade, with cream outlines. */
+.md-typeset .brand-hero .md-button {
+  color: var(--brand-bar-text);
+  border-color: var(--brand-bar-text);
+}
+
+.md-typeset .brand-hero .md-button--primary,
+.md-typeset .brand-hero .md-button:hover {
+  background: var(--brand-secondary);
+  border-color: var(--brand-secondary);
+  color: var(--brand-primary);
+}
+
+/* The hero keeps its own h1 size, spacing and cream colour. */
 .md-typeset .brand-hero h1 {
   margin: 0.25rem 0 0.75rem;
+  background: none;
+  color: var(--brand-bar-text);
 }

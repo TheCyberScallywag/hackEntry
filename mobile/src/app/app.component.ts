@@ -21,6 +21,7 @@ import {
   IonToolbar,
 } from '@ionic/angular';
 
+import meta from './core/meta.json'; // name and tagline, written by `uv run task sync`
 import { OrgStore } from './core/org.store';
 import { SessionService } from './core/session.service';
 
@@ -52,6 +53,7 @@ import { SessionService } from './core/session.service';
   ],
 })
 export class AppComponent {
+  protected readonly brand = meta;
   protected readonly session = inject(SessionService);
   protected readonly orgs = inject(OrgStore);
   private readonly router = inject(Router);

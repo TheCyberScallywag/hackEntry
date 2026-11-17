@@ -1,6 +1,7 @@
 {
-  "name": "Data Volunteer Network",
+  "name": "Volunteer Network",
   "slug": "dvn",
   "version": "0.2.0",
-  "appId": "org.example.datavolunteernetwork"
+  "appId": "org.example.datavolunteernetwork",
+  "tagline": "Connect people, skills and causes"
 }

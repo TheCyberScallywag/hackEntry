@@ -47,7 +47,7 @@ class FakeStreamlit:
         return lambda *args, **_kw: self.drawn.append((name, args))
 
     def __getattr__(self, name: str):
-        if name in {"set_page_config", "title", "subheader", "write", "caption", "markdown",
+        if name in {"set_page_config", "logo", "title", "subheader", "write", "caption", "markdown",
                     "error", "warning", "success", "dataframe", "metric"}:  # fmt: skip
             return self._record(name)
         raise AttributeError(name)
@@ -83,7 +83,7 @@ class FakeStreamlit:
     def text_input(self, label: str, **_kw) -> str:
         return self.typed.get(label, "")
 
-    def form_submit_button(self, label: str) -> bool:
+    def form_submit_button(self, label: str, type: str = "secondary") -> bool:  # noqa: A002
         return label in self.clicked
 
     def button(self, label: str, key: str | None = None) -> bool:

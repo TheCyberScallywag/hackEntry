@@ -1,6 +1,6 @@
 # Relate in this application
 
-This page explains what Relate is, where it sits in the Data Volunteer Network, and exactly how
+This page explains what Relate is, where it sits in the Volunteer Network, and exactly how
 the application uses it: which files hold the graph, which code opens them, how data gets in,
 which query answers which screen, and how to inspect the result yourself.
 

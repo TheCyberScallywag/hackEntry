@@ -1,11 +1,12 @@
 # The docs portal (Zensical), restored from the sgaffald template. Build: uv run task docs
-# Live: uv run task docs_live. Pages live in docs/content and are shared with the Sphinx manual
+# Live: uv run task docs_live. site_name, site_description, site_author and copyright are
+# written from brand/brand.toml by `uv run task sync`; the colours are assets/stylesheets. Pages live in docs/content and are shared with the Sphinx manual
 # (docs/sphinx); keep `nav` in step with the toctrees in content/manual.md.
 # index.md, about.md and assets/brand/ are copied from brand/ by the docs tasks (git-ignored).
 
 [project]
-site_name = "hackEntry"
-site_description = "Data Volunteer Network: one volunteer account across organisations, matched by a Relate graph"
+site_name = "Volunteer Network"
+site_description = "Volunteer Network: One volunteer account across organisations, matched by a Relate graph"
 site_author = "Cyber Scallywags"
 copyright = "© 2026 Cyber Scallywags"
 docs_dir = "content"
@@ -45,6 +46,7 @@ nav = [
 language = "en"
 logo = "assets/brand/mark.svg"
 favicon = "assets/brand/favicon.png"
+font = false  # no web fonts are downloaded: the stacks are the brand's (--brand-font, --brand-mono)
 features = [
   "content.code.copy",
   "content.tabs.link",
@@ -59,18 +61,20 @@ features = [
   "search.highlight",
 ]
 
-[project.theme.font]
-text = false
-code = false
-
-# The brand's first scheme ([theme.docs] scheme in brand.toml); readers can switch.
+# Follows the reader's system setting, like the web and mobile apps; readers can switch.
 [[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
 scheme = "default"
+primary = "custom"  # the brand's colours (assets/stylesheets/zensical.css), not a built-in set
+accent = "custom"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to dark mode"
 
 [[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
 scheme = "slate"
+primary = "custom"
+accent = "custom"
 toggle.icon = "lucide/sun"
 toggle.name = "Switch to light mode"
 

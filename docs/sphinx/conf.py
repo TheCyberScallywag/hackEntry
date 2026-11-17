@@ -62,7 +62,8 @@ html_theme = "furo"
 html_title = f"{project} manual"
 html_static_path = ["_static", "../content/assets/stylesheets"]
 html_css_files = ["brand.css", "template.css", "furo.css", "brand-extra.css"]
-html_js_files = ["dark-first.js"] if scheme.get("scheme", "dark") == "dark" else []
+# "auto" (the default) leaves Furo following the system; "dark" starts readers in dark.
+html_js_files = ["dark-first.js"] if scheme.get("scheme", "auto") == "dark" else []
 html_logo = next((str(p) for p in BRAND_ASSETS.glob("mark.*")), None)
 html_favicon = next((str(p) for p in BRAND_ASSETS.glob("favicon.*")), None)
 templates_path = ["_templates"]
@@ -71,9 +72,29 @@ html_additional_pages = {"index": "redirect-to-manual.html"}
 html_copy_source = False
 html_show_sourcelink = False
 
-_shared = {
+# One set of variables serves both schemes: the tokens already follow Furo's light/dark switch.
+_brand_css = {
     "font-stack": "var(--brand-font)",
+    "font-stack--headings": "var(--brand-font-display)",
     "font-stack--monospace": "var(--brand-mono)",
+    "color-brand-primary": "var(--brand-accent)",
+    "color-brand-content": "var(--brand-accent)",
+    "color-brand-visited": "var(--brand-highlight)",
+    "color-background-primary": "var(--brand-background)",
+    "color-background-secondary": "var(--brand-surface)",
+    "color-background-hover": "var(--brand-card)",
+    "color-background-border": "var(--brand-border)",
+    "color-background-item": "var(--brand-card)",
+    "color-foreground-primary": "var(--brand-text)",
+    "color-foreground-secondary": "var(--brand-text-muted)",
+    "color-foreground-muted": "var(--brand-text-muted)",
+    "color-foreground-border": "var(--brand-border)",
+    "color-code-background": "var(--brand-card)",
+    "color-inline-code-background": "var(--brand-card)",
+    "color-card-background": "var(--brand-surface)",
+    "color-card-border": "var(--brand-border)",
+    "color-announcement-background": "var(--brand-bar)",
+    "color-announcement-text": "var(--brand-bar-text)",
 }
 html_theme_options = {
     "sidebar_hide_name": False,
@@ -88,35 +109,8 @@ html_theme_options = {
             ],
         )
     ),
-    "light_css_variables": {
-        **_shared,
-        "color-brand-primary": "var(--brand-accent-ink)",
-        "color-brand-content": "var(--brand-accent-ink)",
-        "color-brand-visited": "var(--brand-accent-2-ink)",
-        "color-announcement-background": "var(--brand-surface)",
-        "color-announcement-text": "var(--brand-text)",
-    },
-    "dark_css_variables": {
-        **_shared,
-        "color-brand-primary": "var(--brand-accent)",
-        "color-brand-content": "var(--brand-accent)",
-        "color-brand-visited": "var(--brand-accent-2-light)",
-        "color-background-primary": "var(--brand-background)",
-        "color-background-secondary": "var(--brand-surface)",
-        "color-background-hover": "var(--brand-card)",
-        "color-background-border": "var(--brand-border)",
-        "color-background-item": "var(--brand-card)",
-        "color-foreground-primary": "var(--brand-text)",
-        "color-foreground-secondary": "var(--brand-text-muted)",
-        "color-foreground-muted": "var(--brand-text-subtle)",
-        "color-foreground-border": "var(--brand-border)",
-        "color-code-background": "var(--brand-card)",
-        "color-inline-code-background": "var(--brand-card)",
-        "color-card-background": "var(--brand-surface)",
-        "color-card-border": "var(--brand-border)",
-        "color-announcement-background": "var(--brand-surface)",
-        "color-announcement-text": "var(--brand-text)",
-    },
+    "light_css_variables": _brand_css,
+    "dark_css_variables": _brand_css,
 }
 pygments_style = "friendly"
 pygments_dark_style = "github-dark"

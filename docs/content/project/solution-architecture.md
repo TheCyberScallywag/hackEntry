@@ -1,8 +1,8 @@
-# Data Volunteer Network: Solution Architecture
+# Volunteer Network: Solution Architecture
 
 | | |
 |---|---|
-| **System** | Data Volunteer Network (DVN), a hackathon build |
+| **System** | Volunteer Network (the hackEntry repository), a hackathon build |
 | **Scope** | Web app, JSON API, Ionic mobile app, Streamlit admin console, Relate graph, optional AuraDB |
 | **Status** | Working build, verified locally and under Docker Compose |
 | **Engines** | Python 3.14, Relate 1.0.1 (embedded `relate-db`), SQLite (WAL) |
@@ -30,7 +30,7 @@
 
 ## 1. Purpose and scope
 
-The Data Volunteer Network matches **vetted volunteers** with **approved projects** run by
+The Volunteer Network matches **vetted volunteers** with **approved projects** run by
 partner organisations. It suggests a match when a volunteer has and offers the skills a project
 needs, and never when the project touches a cause or skill the volunteer has excluded. The
 illustrative organisations, *DataKind UK* and *Cyber Scallywags*, can be renamed with

@@ -17,10 +17,10 @@ Run `git diff ecfee3ce58cd966c4ccaf375e5811969da9aece7` to review everything tha
 | Kept from the template | Status |
 |---|---|
 | Repository scaffolding: `LICENSE`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CONTRIBUTING.md`, `cliff.toml`, commit and branch hook scripts, pre-commit setup | kept; pre-commit trimmed |
-| `brand/` and `examples/brands/neutral/` (CC0 neutral brand kit: colours, mark, favicon) | kept unchanged; the web app uses the mark, favicon and colours |
+| `brand/` folder layout and `examples/brands/neutral/` (CC0 neutral brand kit) | layout kept; `brand/` now holds this entry's own name, palette and images, and `examples/brands/neutral/` is the template's kit, updated to the current `brand.toml` fields |
 | `src/app/serve.py` (one entry point per service) | rewritten for `web` and `admin` |
 | `src/app/config.py` (pydantic-settings pattern) | rewritten with new settings |
-| `src/app/meta.py` (reads `brand.toml`) | simplified |
+| `src/app/meta.py` (reads `brand.toml`) | simplified; the reading and checking moved to `src/app/brandkit.py` |
 | `docker/Dockerfile` (uv multi-stage build, non-root) | adapted: one Dockerfile building a web image and an admin image |
 | `docker/mobile.Dockerfile`, `docker/mobile.nginx.conf` (Ionic build with lint and test gate, nginx proxy) | adapted: proxy now points at the web app's `/api/` |
 | `mobile/` Angular, Ionic and Capacitor project setup (build config, lint config, `main.ts`, interceptor pattern, token-store injection token) | kept; app code rewritten (see below) |
@@ -32,7 +32,7 @@ Run `git diff ecfee3ce58cd966c4ccaf375e5811969da9aece7` to review everything tha
 | FastUI web UI, the JWT mock sign-on API, the Pydantic AI agent and the `Item` sample entity |
 | Neo4j server container and Neo4j-backed item store (replaced by embedded Relate) |
 | Template handbook and generated reference pages (the Zensical + Sphinx docs pipeline was later restored, adapted to this project's pages) |
-| Brand-sync, TypeScript type generation, `new_entity` and template-smoke scripts, and their tests |
+| TypeScript type generation, `new_entity` and template-smoke scripts, and their tests (the brand-sync script was removed too, and later rewritten as `src/app/brandkit.py`) |
 | Production compose overlay, release, scorecard and issue workflows |
 
 ### 2. The earlier proof of concept (`data-volunteer-network-poc`, kept intact)
@@ -111,7 +111,7 @@ The project owner remains responsible for reviewing, editing and submitting the 
 | Component | Licence |
 |---|---|
 | This repository's code | MIT ([LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/LICENSE)) |
-| `brand/`, `examples/brands/neutral/` (neutral brand kit) | CC0 1.0 ([brand/LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/brand/LICENSE)) |
+| `brand/` (this entry's brand kit), `examples/brands/neutral/` (the template's neutral brand kit) | CC0 1.0 ([brand/LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/brand/LICENSE)) |
 | `data/fixtures/*.json`, `data/demo.rl` (synthetic, fictional data) | MIT, as part of this repository |
 | Relate engine: `relate-db` 1.0.1 (PyPI) and `relate` 1.0.1 CLI, a Neo4j Labs project | The CLI prints "Apache 2.0 (binary)". See https://relatedb.ai/docs/ |
 | FastAPI 0.162 | MIT |

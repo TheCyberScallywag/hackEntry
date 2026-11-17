@@ -4,7 +4,7 @@
 first, add the video and repository links, and submit. The video has not been recorded yet.
 
 - **Theme:** Context, connected
-- **Project name:** Data Volunteer Network
+- **Project name:** Volunteer Network
 - **Tagline:** One volunteer account for helping several organisations, with graph-backed
   explanations of why people and projects fit.
 

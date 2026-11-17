@@ -1,7 +1,40 @@
-// For information on how to create your own theme, please refer to:
-// https://ionicframework.com/docs/theming/
-//
-// Brand colours arrive at runtime from GET /site (see app/core/theme.ts), which overrides
-// these. _brand.scss is generated from content/site.json (`uv run task sync`), so the first
-// paint is already on-brand.
+// The theme is the brand: _brand.scss is written from brand/brand.toml by `uv run task sync`
+// (src/app/brandkit.py) and sets every Ionic colour for the light and dark schemes, so the app
+// matches the web app, the admin console and the docs. Change colours there, not here.
 @use 'brand';
+
+// The navy bar with the jade-to-honey rule: the same header on every surface.
+ion-header {
+  border-bottom: 3px solid transparent;
+  border-image: var(--brand-rule) 1;
+}
+
+ion-header ion-title,
+ion-list-header,
+.brand-display {
+  font-family: var(--brand-font-display);
+  font-weight: 700;
+}
+
+// The sign-in welcome: the logo on a navy panel.
+.brand-welcome {
+  background: var(--brand-bar);
+  color: var(--brand-bar-text);
+  text-align: center;
+  padding: 24px 16px 20px;
+
+  img {
+    display: block;
+    width: min(60vw, 220px);
+    height: auto;
+    margin: 0 auto 8px;
+    border-radius: 24px;
+  }
+
+  p {
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--brand-secondary);
+  }
+}

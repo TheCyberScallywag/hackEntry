@@ -43,5 +43,5 @@
     "typescript-eslint": "^8.61.0",
     "vitest": "~5.0.5"
   },
-  "description": "Data Volunteer Network mobile companion (Ionic + Angular): bearer-token JSON API only"
+  "description": "Volunteer Network mobile companion (Ionic + Angular): bearer-token JSON API only"
 }
