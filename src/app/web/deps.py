@@ -10,7 +10,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -207,8 +207,17 @@ def _anon_csrf(request: Request) -> str:
 
 
 def safe_next(target: str | None, default: str) -> str:
-    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
-        return target
+    if not target:
+        return default
+    normalized = target.replace("\\", "")
+    parsed = urlparse(normalized)
+    if (
+        normalized.startswith("/")
+        and not normalized.startswith("//")
+        and not parsed.scheme
+        and not parsed.netloc
+    ):
+        return normalized
     return default
 
 
