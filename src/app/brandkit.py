@@ -343,9 +343,6 @@ def _patched(path: Path, replacements: dict[str, str]) -> bytes:
 def outputs(brand: Brand, brand_dir: Path = BRAND_DIR) -> dict[Path, bytes]:
     """Every file outside brand/ that repeats it, with the content it should have."""
     mobile, docs = REPO / "mobile/src", REPO / "docs"
-    meta_path = mobile / "app/core/meta.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    meta |= {"name": brand.name, "tagline": brand.tagline}
     quoted = {key: json.dumps(value, ensure_ascii=False) for key, value in {
         "site_name": brand.name,
         "site_description": f"{brand.name}: {brand.description}",
@@ -354,6 +351,17 @@ def outputs(brand: Brand, brand_dir: Path = BRAND_DIR) -> dict[Path, bytes]:
     }.items()}  # fmt: skip
     files = {
         docs / "content/assets/stylesheets/brand.css": tokens_css(brand).encode(),
+        docs / "zensical.toml": _patched(
+            docs / "zensical.toml",
+            {rf"(?m)^{key} = (.*)$": value for key, value in quoted.items()},
+        ),
+    }
+    if not mobile.is_dir():  # an image that builds one surface (the docs) carries no mobile tree
+        return files
+    meta_path = mobile / "app/core/meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta |= {"name": brand.name, "tagline": brand.tagline}
+    files |= {
         mobile / "theme/_brand.scss": ionic_scss(brand).encode(),
         meta_path: (json.dumps(meta, indent=2, ensure_ascii=False) + "\n").encode(),
         mobile / "index.html": _patched(
@@ -363,10 +371,6 @@ def outputs(brand: Brand, brand_dir: Path = BRAND_DIR) -> dict[Path, bytes]:
                 r'<meta name="theme-color" content="(.*?)"': brand.primary,
                 r'<meta name="description" content="(.*?)"': brand.tagline,
             },
-        ),
-        docs / "zensical.toml": _patched(
-            docs / "zensical.toml",
-            {rf"(?m)^{key} = (.*)$": value for key, value in quoted.items()},
         ),
     }
     for key in ("logo", "mark", "favicon", "hero"):

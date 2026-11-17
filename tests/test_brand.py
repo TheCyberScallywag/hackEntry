@@ -132,3 +132,14 @@ def test_hand_written_styles_hold_no_brand_colours():
         "mobile/src/app/app.component.scss",
     ):
         assert not HEX.findall((REPO / path).read_text(encoding="utf-8")), path
+
+
+def test_docs_only_tree_syncs_without_mobile(tmp_path, monkeypatch):
+    """docker/docs.Dockerfile copies brand/, src/ and docs/ but not mobile/."""
+    from app import brandkit
+
+    shutil.copytree(REPO / "docs", tmp_path / "docs", ignore=shutil.ignore_patterns("_build"))
+    monkeypatch.setattr(brandkit, "REPO", tmp_path)
+    written = brandkit.outputs(load(REPO / "brand"))
+    assert written and all(tmp_path / "docs" in path.parents for path in written)
+    assert brandkit.sync(check=True) == []
