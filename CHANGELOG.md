@@ -5,7 +5,7 @@
 <h1 align="center">Changelog</h1>
 
 <p align="center">
-<em>Data Volunteer Network · what changed, release by release</em>
+<em>Volunteer Network · what changed, release by release</em>
 </p>
 
 <p align="center">

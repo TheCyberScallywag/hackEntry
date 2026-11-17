@@ -17,6 +17,7 @@ import {
   IonToolbar,
 } from '@ionic/angular';
 
+import meta from '../../core/meta.json'; // name and tagline, written by `uv run task sync`
 import { SessionService } from '../../core/session.service';
 
 @Component({
@@ -39,6 +40,7 @@ import { SessionService } from '../../core/session.service';
   ],
 })
 export class SignInPage {
+  protected readonly brand = meta;
   private readonly router = inject(Router);
   protected readonly session = inject(SessionService);
   readonly error = signal<string | null>(null);

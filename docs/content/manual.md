@@ -1,4 +1,6 @@
-# hackEntry reference manual
+# Volunteer Network reference manual
+
+![Volunteer Network logo: three jade volunteers around a golden heart](assets/brand/logo.svg){.brand-crest .brand-crest--float}
 
 {.brand-kicker}
 Cyber Scallywags · Reference manual

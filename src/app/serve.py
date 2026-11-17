@@ -29,12 +29,15 @@ def main(argv: list[str] | None = None) -> None:
         from streamlit.web import cli
 
         import app.admin
+        from app.brandkit import streamlit_flags
+        from app.meta import get_meta
 
         script = Path(app.admin.__file__).parent / "main.py"
         sys.argv = [
             "streamlit", "run", str(script),
             "--server.address", host, "--server.port", os.environ.get("ADMIN_PORT", "8501"),
             "--server.headless", "true", "--browser.gatherUsageStats", "false",
+            *streamlit_flags(get_meta()),  # the brand's colours and fonts
         ]  # fmt: skip
         sys.exit(cli.main())
     else:

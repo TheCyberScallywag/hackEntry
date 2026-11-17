@@ -13,11 +13,13 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from app.brandkit import tokens_css
 from app.config import BRAND_DIR, ORG_ASSETS_DIR, Settings, get_settings
+from app.meta import get_meta
 from app.runtime import Runtime, bootstrap, build_runtime
 from app.web import api, pages
 from app.web.deps import HERE, RT
@@ -64,7 +66,7 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
             await run_in_threadpool(worker.join, 5)
 
     app = FastAPI(
-        title="Data Volunteer Network API",
+        title=f"{get_meta().name} API",
         description=(api.__doc__ or "").strip(),
         lifespan=lifespan,
         docs_url="/api/docs",
@@ -77,6 +79,15 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
     app.include_router(api.router)
     for router in pages.routers:
         app.include_router(router)
+
+    @app.get("/theme.css", include_in_schema=False)
+    def theme_css() -> Response:
+        """The brand's colours and fonts as CSS custom properties (style.css uses nothing else)."""
+        return Response(
+            tokens_css(get_meta()),
+            media_type="text/css",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.get("/healthz", include_in_schema=False)
     def healthz(rt: RT) -> dict:

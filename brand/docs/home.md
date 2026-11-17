@@ -11,14 +11,21 @@ hide:
 
 <p class="brand-kicker">Cyber Scallywags · Docs portal</p>
 
-# Data Volunteer Network
+# Volunteer Network
 
-One volunteer account for helping several organisations, with graph-backed explanations of why
-people and projects fit. This page comes from `brand/docs/home.md`.
+**Connect people, skills and causes.** One volunteer account for helping several organisations,
+with graph-backed explanations of why people and projects fit. This page comes from
+`brand/docs/home.md`.
 
 [Solution architecture](project/solution-architecture.md){ .md-button .md-button--primary }
 [Relate in this application](project/relate.md){ .md-button }
 [Reference manual](/manual/){ .md-button }
+
+</div>
+
+<div class="brand-hero__crest" markdown>
+
+![Volunteer Network logo: three jade volunteers around a golden heart](assets/brand/logo.svg)
 
 </div>
 

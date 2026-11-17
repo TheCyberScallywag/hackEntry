@@ -1,10 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="hero">
+  <img class="hero-img" src="/brand/{{ meta.images.hero }}" alt="{{ meta.images.hero_alt }}" width="2048" height="682">
+  <div class="hero-text">
+  <p class="kicker">{{ meta.tagline }}</p>
   <h1>One volunteer account. Every organisation you choose to help.</h1>
   <p>Keep one skills profile, choose which organisations see you, and get matches that explain
      themselves: which of your skills fit, which cause you share, and what is still needed.</p>
   <p><a class="button" href="/signup">Create an account</a> <a class="button secondary" href="/signin">Sign in</a></p>
+  </div>
 </section>
 <section class="grid">
   <article class="card"><h3>Volunteers</h3><p>Say which skills you have, which you offer and which you never want to be matched on. Prefer or exclude causes.</p></article>

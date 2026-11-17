@@ -132,8 +132,8 @@ reports the failing organisation.
   from the UI (roles are granted by the seed or `app.cli grant-reviewer`); account deletion and
   data export; rate limiting on sign-in; email verification; a native Capacitor build of the
   companion (only the web build was tested).
-- `examples/brands/neutral/` is a leftover from the template and is unused. It is harmless and
-  can be deleted.
+- `examples/brands/neutral/` is the template's neutral brand kit. The app does not use it; a
+  test loads it to prove that a different brand folder still passes the brand checks.
 - Coverage gaps in the tests: `serve.py` is untested, and the AuraDB module is tested against a
   stand-in driver only. The CLI's `status`, `drain` and `grant-reviewer` commands, untested when
   this record was first written, are covered since the November 2026 refactor.

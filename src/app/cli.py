@@ -7,6 +7,7 @@ matches --org KEY     ranked candidates for one organisation, straight from Rela
 status | drain        projection outbox status / project pending items now
 grant-reviewer        give an existing account the reviewer role (operator only)
 openapi [--out PATH]  write the JSON API's OpenAPI document (the mobile types are generated from it)
+brand [--check]       write the mobile and docs copies of brand/ (--check: only list stale ones)
 aura-push | aura-parity   optional, explicit AuraDB push and match parity check
 """
 
@@ -86,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     grant.add_argument("--org", required=True, help="organisation key")
     openapi = sub.add_parser("openapi")
     openapi.add_argument("--out", type=Path)
+    brand = sub.add_parser("brand")
+    brand.add_argument("--check", action="store_true")
     sub.add_parser("aura-push")
     sub.add_parser("aura-parity")
     args = parser.parse_args(argv)
@@ -158,6 +161,21 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Wrote {args.out}")
                 else:
                     print(text, end="")
+            case "brand":
+                from app import brandkit
+
+                try:
+                    stale = brandkit.sync(check=args.check)
+                except brandkit.BrandError as error:
+                    print(f"brand: {error}", file=sys.stderr)
+                    return 1
+                for path in stale:
+                    print(f"{'stale' if args.check else 'wrote'}: {path}")
+                if args.check and stale:
+                    print("Run `uv run task sync`.", file=sys.stderr)
+                    return 1
+                if not stale:
+                    print("Every copy of brand/ is current.")
             case "aura-push":
                 from app.graph import aura
 

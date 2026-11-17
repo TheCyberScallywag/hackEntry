@@ -3,9 +3,11 @@
 {% block title %}Showcase{% endblock %}
 {% block content %}
 <section class="hero">
+  <div class="hero-text">
   <h1>Organisations and the projects they need you for</h1>
   <p>Meet the organisations on the network and the verified projects each one is recruiting for. Opt in to an organisation and its projects are matched against your skills.</p>
   <p class="jump">{% for o in featured %}<a class="chip" href="#{{ o.key }}">{{ o.name }} <span class="count">{{ o.projects|length }}</span></a>{% endfor %}</p>
+  </div>
 </section>
 {% for o in featured %}
 {% set pr = o.profile %}

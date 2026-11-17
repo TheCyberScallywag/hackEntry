@@ -24,6 +24,7 @@ Tasks are defined in `pyproject.toml` under `[tool.taskipy.tasks]` and run with
 | `admin` | Runs the Streamlit admin console on http://localhost:8501 (needs `uv sync --group admin`) |
 | `reset` | Deletes `var/` stores and reseeds the disposable demo |
 | `bundle` | Rebuilds the committed `data/demo.rl` from `data/fixtures` |
+| `sync` | Writes the mobile and docs copies of `brand/` (theme, images, names); the tests fail while one is stale |
 | `inspect` | Runs the sample graph inspection query on the bundled store |
 | `lint` | `ruff check` and `ruff format --check` |
 | `format` | `ruff format` and `ruff check --fix` |
@@ -209,5 +210,5 @@ Settings come from environment variables or a local `.env` file (`src/app/config
 
 | Item | Use here | Where |
 |---|---|---|
-| Brand kit | Name, colours, logo and favicon, read by the web app and the docs | `brand/brand.toml`, `brand/images/`, `src/app/meta.py` |
+| Brand kit | Name, tagline, palette (navy, jade, honey, cream), fonts and images. The single source for every surface: the web app serves it as `/theme.css`, the admin console is started with it as its Streamlit theme, and `uv run task sync` writes the mobile theme (`mobile/src/theme/_brand.scss`), the docs tokens (`docs/content/assets/stylesheets/brand.css`), the image copies and the names. It refuses colours below WCAG AA contrast. | `brand/brand.toml`, `brand/images/`, `brand/README.md`, `src/app/brandkit.py` |
 | VS Code settings | Recommended extension and workspace settings | `.vscode/` |

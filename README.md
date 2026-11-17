@@ -1,4 +1,8 @@
-# Data Volunteer Network
+<p align="center">
+  <img src="brand/images/hero.svg" alt="Volunteer Network: connect people, skills and causes. Built with Relate by Neo4j for Hackathon 2026 by Cyber Scallywags">
+</p>
+
+# Volunteer Network
 
 **One volunteer account for helping several organisations, with graph-backed explanations of why
 people and projects fit.**
@@ -497,6 +501,7 @@ Latest results are in [docs/content/project/verification.md](docs/content/projec
 
 See [docs/content/project/reuse-and-attribution.md](docs/content/project/reuse-and-attribution.md) for what came from the earlier
 template and the earlier PoC, what was built for this entry, the AI-assistance disclosure, and the
-licences of dependencies. The code is MIT ([LICENSE](LICENSE)). `brand/` is the template's CC0
-neutral brand kit ([TRADEMARKS.md](TRADEMARKS.md)). Relate is distributed by its authors under
+licences of dependencies. The code is MIT ([LICENSE](LICENSE)). `brand/` is the project's brand
+kit, under CC0 ([TRADEMARKS.md](TRADEMARKS.md)); every surface takes its name, colours and images
+from it ([brand/README.md](brand/README.md)). Relate is distributed by its authors under
 Apache-2.0 (binary).

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="brand/images/logo.svg" width="112" alt="Volunteer Network logo: three teal volunteers around a golden heart">
+  <img src="brand/images/logo.svg" width="112" alt="Volunteer Network logo: three jade volunteers around a golden heart">
 </p>
 
 <h1 align="center">Contributing</h1>
 
 <p align="center">
-  <em>Data Volunteer Network · thanks for helping</em>
+  <em>Volunteer Network · thanks for helping</em>
 </p>
 
 <p align="center">
@@ -66,5 +66,5 @@ the Relate graph engine is in [docs/content/project/relate.md](docs/content/proj
 ---
 
 <p align="center">
-  <sub>Cyber Scallywags · Data Volunteer Network</sub>
+  <sub>Cyber Scallywags · Volunteer Network</sub>
 </p>

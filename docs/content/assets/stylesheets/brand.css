@@ -1,25 +1,79 @@
-/* Restored from the sgaffald template; colours derive from brand/brand.toml [theme]. */
+/* GENERATED from brand/brand.toml by `uv run task sync` (src/app/brandkit.py). Do not edit. */
 :root {
-  --brand-primary: #264653;
-  --brand-secondary: #2a9d8f;
-  --brand-tertiary: #e9c46a;
-  --brand-accent: #2a9d8f;
-  --brand-accent-rgb: 42, 157, 143;
-  --brand-accent-2: #e9c46a;
-  --brand-accent-2-rgb: 233, 196, 106;
-  --brand-accent-2-light: #f0d697;
-  --brand-accent-ink: #264653;
-  --brand-accent-2-ink: #264653;
-  --brand-background: #0b0e14;
-  --brand-background-2: #0f131a;
-  --brand-surface: #161b22;
-  --brand-card: #1d242e;
-  --brand-border: #30363d;
-  --brand-text: #e6edf3;
-  --brand-text-muted: #cbd5e1;
-  --brand-text-subtle: #94a3b8;
+  --brand-primary: #0b1730;
+  --brand-primary-rgb: 11, 23, 48;
+  --brand-secondary: #31d8c5;
+  --brand-secondary-rgb: 49, 216, 197;
+  --brand-tertiary: #ffdd65;
+  --brand-tertiary-rgb: 255, 221, 101;
+  --brand-cream: #fff7e3;
+  --brand-bar: #0b1730;
+  --brand-bar-text: #fff7e3;
+  --brand-rule: linear-gradient(90deg, #31d8c5, #ffdd65);
   --brand-font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --brand-font-display: Montserrat, 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
   --brand-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --brand-gradient: linear-gradient(90deg, var(--brand-accent), var(--brand-accent-2));
-  --brand-glow: 0 10px 15px -3px rgba(var(--brand-accent-rgb), 0.2), 0 4px 6px -4px rgba(var(--brand-accent-rgb), 0.2);
+  --brand-radius: 12px;
+  --brand-background: #fbf8ef;
+  --brand-surface: #ffffff;
+  --brand-card: #f0f1f3;
+  --brand-border: #e0dccf;
+  --brand-text: #0b1730;
+  --brand-text-muted: #4f5a73;
+  --brand-accent: #007765;
+  --brand-accent-rgb: 0, 119, 101;
+  --brand-on-accent: #ffffff;
+  --brand-highlight: #8a5a00;
+  --brand-highlight-rgb: 138, 90, 0;
+  --brand-gradient: linear-gradient(90deg, #007765, #8a5a00);
+  --brand-glow: 0 10px 15px -3px rgba(0, 119, 101, 0.2), 0 4px 6px -4px rgba(0, 119, 101, 0.2);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand-background: #090f22;
+    --brand-surface: #0e1a36;
+    --brand-card: #1c2740;
+    --brand-border: #22325a;
+    --brand-text: #fff7e3;
+    --brand-text-muted: #a8b3cc;
+    --brand-accent: #31d8c5;
+    --brand-accent-rgb: 49, 216, 197;
+    --brand-on-accent: #0b1730;
+    --brand-highlight: #ffdd65;
+    --brand-highlight-rgb: 255, 221, 101;
+    --brand-gradient: linear-gradient(90deg, #31d8c5, #ffdd65);
+    --brand-glow: 0 10px 15px -3px rgba(49, 216, 197, 0.2), 0 4px 6px -4px rgba(49, 216, 197, 0.2);
+  }
+}
+[data-md-color-scheme="default"],
+body[data-theme="light"] {
+  --brand-background: #fbf8ef;
+  --brand-surface: #ffffff;
+  --brand-card: #f0f1f3;
+  --brand-border: #e0dccf;
+  --brand-text: #0b1730;
+  --brand-text-muted: #4f5a73;
+  --brand-accent: #007765;
+  --brand-accent-rgb: 0, 119, 101;
+  --brand-on-accent: #ffffff;
+  --brand-highlight: #8a5a00;
+  --brand-highlight-rgb: 138, 90, 0;
+  --brand-gradient: linear-gradient(90deg, #007765, #8a5a00);
+  --brand-glow: 0 10px 15px -3px rgba(0, 119, 101, 0.2), 0 4px 6px -4px rgba(0, 119, 101, 0.2);
+}
+[data-md-color-scheme="slate"],
+body[data-theme="dark"] {
+  --brand-background: #090f22;
+  --brand-surface: #0e1a36;
+  --brand-card: #1c2740;
+  --brand-border: #22325a;
+  --brand-text: #fff7e3;
+  --brand-text-muted: #a8b3cc;
+  --brand-accent: #31d8c5;
+  --brand-accent-rgb: 49, 216, 197;
+  --brand-on-accent: #0b1730;
+  --brand-highlight: #ffdd65;
+  --brand-highlight-rgb: 255, 221, 101;
+  --brand-gradient: linear-gradient(90deg, #31d8c5, #ffdd65);
+  --brand-glow: 0 10px 15px -3px rgba(49, 216, 197, 0.2), 0 4px 6px -4px rgba(49, 216, 197, 0.2);
 }

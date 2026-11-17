@@ -14,7 +14,8 @@ import httpx
 import pandas as pd
 import streamlit as st
 
-from app.config import get_settings
+from app.config import BRAND_DIR, get_settings
+from app.meta import get_meta
 
 API = get_settings().api_url.rstrip("/") + "/api/v1"
 
@@ -80,7 +81,7 @@ def sign_in() -> None:
         st.subheader("Staff sign in")
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Sign in")
+        submitted = st.form_submit_button("Sign in", type="primary")
     if not submitted:
         return
     try:
@@ -301,8 +302,17 @@ def system_tab() -> None:
 
 # ------------------------------------------------------------------ page
 def main() -> None:
-    st.set_page_config(page_title="Data Volunteer Network: admin", layout="wide")
-    st.title("Data Volunteer Network: admin")
+    # The colours and fonts are the brand's too: app.serve passes them to `streamlit run`.
+    brand = get_meta()
+    images = BRAND_DIR / "images"
+    st.set_page_config(
+        page_title=f"{brand.name}: admin",
+        page_icon=str(images / brand.images["favicon"]),
+        layout="wide",
+    )
+    st.logo(str(images / brand.images["mark"]), size="large")
+    st.title(f"{brand.name}: admin")
+    st.caption(brand.tagline)
     if "token" not in st.session_state:
         sign_in()
         return

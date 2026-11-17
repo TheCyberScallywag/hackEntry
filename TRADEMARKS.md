@@ -3,8 +3,8 @@
 | Path | Terms |
 |---|---|
 | Everything except `brand/`, `examples/brands/neutral/` and `data/orgs/` | MIT, see [`LICENSE`](LICENSE) |
-| `brand/` (the template's neutral brand kit: name placeholder, mark, logo, hero, palette) | CC0 1.0, see [`brand/LICENSE`](brand/LICENSE) |
-| `examples/brands/neutral/` | CC0 1.0, see [`examples/brands/neutral/LICENSE`](examples/brands/neutral/LICENSE) |
+| `brand/` (the Volunteer Network brand kit: name, mark, logo, hero, palette) | CC0 1.0, see [`brand/LICENSE`](brand/LICENSE) |
+| `examples/brands/neutral/` (the template's neutral brand kit, kept as a starting point for a re-brand) | CC0 1.0, see [`examples/brands/neutral/LICENSE`](examples/brands/neutral/LICENSE) |
 
 | `data/orgs/` (logos, photographs and profile text of the demo organisations) | **Not licensed by this repository.** Property of the organisations named in [`data/orgs/README.md`](data/orgs/README.md), which lists each file's source |
 
