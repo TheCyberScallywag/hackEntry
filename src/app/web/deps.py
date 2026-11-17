@@ -213,9 +213,10 @@ def safe_next(target: str | None, default: str) -> str:
 
 
 def redirect(path: str, msg: str | None = None) -> RedirectResponse:
+    safe_path = safe_next(path, "/")
     if msg:
-        path += ("&" if "?" in path else "?") + urlencode({"msg": msg})
-    return RedirectResponse(path, status_code=303)
+        safe_path += ("&" if "?" in safe_path else "?") + urlencode({"msg": msg})
+    return RedirectResponse(safe_path, status_code=303)
 
 
 def render(
