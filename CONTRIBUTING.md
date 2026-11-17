@@ -32,11 +32,19 @@ in [SECURITY.md](SECURITY.md).
 2. **Branch** from `main` using one of the prefixes below. The hooks refuse commits to `main` and
    badly named branches.
 3. **Commit** with one of the prefixes below (see `scripts/check_commit_msg.sh`).
-4. **Check** with `uv run task lint` and `uv run task test`. For mobile changes, also run
+4. **Check** with `uv run task lint` and `uv run task test` (`uv run task hooks` runs every
+   pre-commit hook on every file). For mobile changes, also run
    `docker build -f docker/mobile.Dockerfile --target test .` (or `npm run lint && npm run
    test:ci` in `mobile/`).
 5. **Fixtures**: if you edit `data/fixtures/*.json`, run `uv run task bundle` to rebuild
    `data/demo.rl`. A test fails if the bundled store drifts from the fixtures.
+6. **Docs**: pages live in `docs/content`. Build them with `uv sync --locked --group docs` and
+   `uv run task docs`; warnings fail the build. A new page goes in both `docs/zensical.toml`
+   (`nav`) and `docs/content/manual.md` (a `toctree`).
+
+Every tool, task and hook is listed in
+[docs/content/project/tooling.md](docs/content/project/tooling.md). How the application uses
+the Relate graph engine is in [docs/content/project/relate.md](docs/content/project/relate.md).
 
 ## Naming
 

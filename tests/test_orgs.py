@@ -81,5 +81,5 @@ def test_candidate_lists_are_scoped_and_hide_contact_details(web: Web):
     for name in ("Dev", "Asha", "Cerys", "Kofi"):
         assert name in page
     assert "Bryn" not in page and "Gwen" not in page  # Cyber Scallywags only
-    assert "@demo.invalid" not in page
+    assert "@cyberscallywags.uk" not in page
     assert USERS["asha"] not in page  # opaque IDs stay server-side too

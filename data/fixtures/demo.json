@@ -10,13 +10,18 @@
       "key": "cyber-scallywags",
       "name": "Cyber Scallywags",
       "description": "Illustrative community tech collective used for this demo only."
+    },
+    {
+      "key": "interlinkrct",
+      "name": "InterLinkRCT",
+      "description": "Illustrative community charity collective used for this demo only."
     }
   ],
   "people": [
     {
       "key": "asha",
       "display_name": "Asha",
-      "email": "asha@demo.invalid",
+      "email": "asha@cyberscallywags.uk",
       "volunteers_with": [
         "datakind-uk",
         "cyber-scallywags"
@@ -34,9 +39,10 @@
     {
       "key": "bryn",
       "display_name": "Bryn",
-      "email": "bryn@demo.invalid",
+      "email": "bryn@cyberscallywags.uk",
       "volunteers_with": [
-        "cyber-scallywags"
+        "cyber-scallywags",
+        "interlinkrct"
       ],
       "skills": {
         "van-driving": "offers",
@@ -49,7 +55,7 @@
     {
       "key": "cerys",
       "display_name": "Cerys",
-      "email": "cerys@demo.invalid",
+      "email": "cerys@cyberscallywags.uk",
       "volunteers_with": [
         "datakind-uk"
       ],
@@ -63,7 +69,7 @@
     {
       "key": "dev",
       "display_name": "Dev",
-      "email": "dev@demo.invalid",
+      "email": "dev@cyberscallywags.uk",
       "volunteers_with": [
         "datakind-uk"
       ],
@@ -79,7 +85,7 @@
     {
       "key": "gwen",
       "display_name": "Gwen",
-      "email": "gwen@demo.invalid",
+      "email": "gwen@cyberscallywags.uk",
       "volunteers_with": [
         "cyber-scallywags"
       ],
@@ -95,7 +101,7 @@
     {
       "key": "farah",
       "display_name": "Farah",
-      "email": "farah@demo.invalid",
+      "email": "farah@cyberscallywags.uk",
       "volunteers_with": [
         "datakind-uk"
       ],
@@ -111,7 +117,7 @@
     {
       "key": "kofi",
       "display_name": "Kofi",
-      "email": "kofi@demo.invalid",
+      "email": "kofi@cyberscallywags.uk",
       "volunteers_with": [
         "datakind-uk"
       ],
@@ -130,7 +136,7 @@
     {
       "key": "rhiannon",
       "display_name": "Rhiannon",
-      "email": "rhiannon@demo.invalid",
+      "email": "rhiannon@cyberscallywags.uk",
       "volunteers_with": [],
       "skills": {},
       "causes": {},
@@ -143,7 +149,7 @@
     {
       "key": "sam",
       "display_name": "Sam",
-      "email": "sam@demo.invalid",
+      "email": "sam@cyberscallywags.uk",
       "volunteers_with": [],
       "system_roles": [
         "admin"
@@ -154,7 +160,7 @@
     {
       "key": "mo",
       "display_name": "Mo",
-      "email": "mo@demo.invalid",
+      "email": "mo@cyberscallywags.uk",
       "volunteers_with": [],
       "system_roles": [
         "moderator"
@@ -165,7 +171,7 @@
     {
       "key": "nia",
       "display_name": "Nia",
-      "email": "nia@demo.invalid",
+      "email": "nia@cyberscallywags.uk",
       "status": "screening",
       "volunteers_with": [
         "cyber-scallywags"
@@ -233,6 +239,42 @@
         "data-visualisation"
       ],
       "outcome": "submitted"
+    },
+    {
+      "key": "community-garden-beds",
+      "org": "interlinkrct",
+      "author": "bryn",
+      "title": "Community Garden Raised Beds",
+      "summary": "Build and plant raised beds so a fictional valleys community group can grow its own veg.",
+      "cause": "environment",
+      "required": [
+        "carpentry",
+        "gardening"
+      ],
+      "optional": [
+        "van-driving"
+      ],
+      "outcome": "approved",
+      "reviewer": "sam",
+      "reason": "A practical, well-scoped project for a member group."
+    },
+    {
+      "key": "digital-drop-in",
+      "org": "interlinkrct",
+      "author": "bryn",
+      "title": "Community Group Digital Drop-in",
+      "summary": "Monthly drop-in where a fictional member group gets help with its website and staying safe online.",
+      "cause": "digital-inclusion",
+      "required": [
+        "web-development",
+        "security-awareness"
+      ],
+      "optional": [
+        "welsh-translation"
+      ],
+      "outcome": "approved",
+      "reviewer": "sam",
+      "reason": "Meets a need several member groups have raised."
     },
     {
       "key": "phishing-workshop",

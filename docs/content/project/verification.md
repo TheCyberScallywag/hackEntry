@@ -13,7 +13,7 @@ session.
 | Write → close → reopen with the embedded binding | **Pass.** Data persisted in a single 32 KB `.rl` file. |
 | `relate` 1.0.1 CLI reads a store written by the binding | **Pass** |
 | Concurrent opener while a connection is held (binding or CLI, read-only included) | **Locked** (`storage locked`, CLI exit code 5). This is why the app opens per unit of work and uses a single in-process writer with bounded retry. |
-| Open, read and close latency on the demo graph | About 8 ms |
+| Open, read and close latency on the demo graph | About 0.2 ms (re-measured November 2026; first recorded as about 8 ms) |
 | Cypher features used (`EXISTS {}` subqueries, scoped `CALL (p) {}`, pattern predicates, `UNWIND` upserts, `DETACH DELETE`) | **Pass** on Relate 1.0.1 (prototyped, then covered by the tests) |
 
 **Engine decision:** use the embedded binding `relate-db==1.0.1`, pinned in `pyproject.toml` and
@@ -25,11 +25,11 @@ adapter is not needed. The CLI is still used for inspection.
 ```text
 $ uv run task lint
 All checks passed!
-48 files already formatted
+83 files already formatted
 
 $ uv run task test
-======================== 81 passed, 2 skipped ========================
-TOTAL coverage 87% (src/app/admin excluded; serve.py and the AuraDB module are not exercised)
+======================== 154 passed, 2 skipped ========================
+TOTAL coverage 95% (admin console included; serve.py and the live AuraDB driver are not exercised)
 SKIPPED tests/test_aura.py: no designated dev AuraDB credentials (AURA_URI / AURA_PASSWORD)
 SKIPPED tests/test_compose.py: COMPOSE_WEB_URL not set   (run separately, below)
 ```
@@ -42,10 +42,15 @@ SKIPPED tests/test_compose.py: COMPOSE_WEB_URL not set   (run separately, below)
 | Suggestions | private until approved, submitter and target set on the server, catalogue validation, changes requested → revise → approve, stale/old-revision/replayed approvals rejected (exactly one approval recorded), self-approval blocked, volunteers can't review, rejected suggestion keeps its feedback, approval publishes, withdrawal removes from browse and matching (`test_submissions.py`) |
 | Matching rules | one test per row of the rules table, plus preferred-only, has-but-not-offer, profile edits reaching Relate, and gaps on the reviewer page (`test_matching.py`) |
 | Projection | startup projection, idempotent replay, failure → pending → withheld → counted as failing → replay at restart, approved but not published until projected, persistence across restarts (`test_projection.py`) |
-| Mobile API, CLI, configuration | bearer sessions, membership checks, cookies rejected on the API, inspect and matches output, production guards, empty Compose variables, configurable organisation names (`test_api.py`, `test_cli.py`) |
+| Mobile API, CLI, configuration | bearer sessions, membership checks, cookies rejected on the API, inspect and matches output, production guards, empty Compose variables, configurable organisation names, outbox status and drain, `grant-reviewer`, `openapi` (`test_api.py`, `test_cli.py`) |
+| API contract | every route declares a response model and answers in that shape; the mobile app's types match the OpenAPI document (`test_api_contract.py`) |
+| Graph schema and AuraDB | the schema covers exactly the relationships in `data/demo.rl`; push and parity against a stand-in driver; unknown relationships refused before anything is deleted (`test_graph_schema.py`) |
+| Placement sweep | complete beyond the row bound, fails loudly on a truncated read, scoped to changed volunteers and projects, full sweep on replay (`test_placements.py`) |
+| Service layer and SQLite | access in one query, grouped listings, reviewers told of a revision, indexes used, pruning (`test_services.py`, `test_sqlstore.py`) |
+| Pages and admin console | handlers off the event loop, placement and volunteer routes, invalid-input re-renders, error pages, connections per page; the console for each role (`test_web_pages.py`, `test_admin_console.py`) |
 
 **Mobile (Ionic):** `npm run lint` reported "All files pass linting". `npm run test:ci` passed
-**25 tests in 10 files** (re-run after adding RBAC, onboarding, Opportunities and Notifications). `npm run build -- --configuration production` succeeded. The Docker
+**39 tests in 11 files** (re-run after the November 2026 refactor). `npm run build -- --configuration production` succeeded. The Docker
 `mobile` image runs the same lint and test stage during its build, and that build passed.
 
 ## Clean-start paths
@@ -86,6 +91,25 @@ Compose. This was fixed with `env_ignore_empty=True` and a regression test.
 - notification read state
 - web Opportunities, project lead and org volunteers pages
 
+## Refactor of November 2026
+
+Re-run on branch `refactor/review-findings` after the changes listed in `REFACTOR_REVIEW.md`.
+
+| Check | Result |
+|---|---|
+| `uv run task lint` | **Pass**, 83 files |
+| `uv run task test` | **154 passed, 2 skipped**, 95% coverage (81 passed and 89% before) |
+| Mobile `npm run lint`, `npm run test:ci`, `npm run build` | **Pass**; 39 tests in 11 files |
+| `docker compose up -d --build --wait` under a separate project name, on ports 18080, 18501, 18100 and 18200 | **Pass.** All four services healthy. The docs image builds with warnings as errors and the mobile image runs its lint and tests, so both of those passed too. |
+| `pytest -m compose` against that stack | **1 passed** |
+| `python -m app.cli status` and `inspect` inside the web container | **Pass** (0 pending; expected table) |
+| Web image contents | No Streamlit or pandas; 316 MB, against 922 MB for the single image it replaces |
+| Admin console under real Streamlit (`AppTest` inside the admin container, over the API) | **Pass.** No exceptions. Sam saw all four tabs, Mo screening only, Kofi his organisation only, Asha the "staff only" notice. Mo approved Nia through the console. |
+| Requests per page on the seeded demo (test client, median of 40) | Project detail 9 SQLite connections and 7.4 ms (14 and 9.3 ms before); home 6 and 5.2 ms (8 and 6.8 ms); notifications 3 and 2.5 ms (5 and 3.2 ms) |
+
+Not verified: the AuraDB push and parity check against a live instance (see below). They are now
+covered by tests that use a stand-in for the Neo4j driver (`tests/test_graph_schema.py`).
+
 ## AuraDB
 
 **Not run.** No designated dev AuraDB instance or credentials were available in this session.
@@ -100,20 +124,21 @@ reports the failing organisation.
 - **Not done in this session, left to the owner:** recording the demo video, checking the current
   Devpost rules (the overview and rules word the extension policy differently), adding the
   repository and video links to `docs/content/project/devpost.md`, committing, publishing and submitting.
-- **Git:** nothing has been committed. The repository has no commits yet. The untouched template
-  baseline is recorded as tree `ecfee3ce58cd966c4ccaf375e5811969da9aece7`. A reviewable history
-  would be: commit the baseline, then commit this work on a `feature/` branch (see "Suggested
-  commits" below).
+- **Git:** when this record was first written nothing had been committed. The work has since
+  been committed; the untouched template baseline is recorded as tree
+  `ecfee3ce58cd966c4ccaf375e5811969da9aece7`. The "Suggested commits" below are kept for the
+  record only.
 - **Not built (out of scope for the slice):** availability and scheduling; reviewer invitations
   from the UI (roles are granted by the seed or `app.cli grant-reviewer`); account deletion and
   data export; rate limiting on sign-in; email verification; a native Capacitor build of the
   companion (only the web build was tested).
 - `examples/brands/neutral/` is a leftover from the template and is unused. It is harmless and
   can be deleted.
-- Coverage gaps in the tests: `serve.py` and the AuraDB module are untested, and the CLI's
-  `status`, `drain` and `grant-reviewer` commands are exercised only manually.
+- Coverage gaps in the tests: `serve.py` is untested, and the AuraDB module is tested against a
+  stand-in driver only. The CLI's `status`, `drain` and `grant-reviewer` commands, untested when
+  this record was first written, are covered since the November 2026 refactor.
 
-## Suggested commits (for the owner; not run)
+## Suggested commits (historical; the work has since been committed)
 
 ```sh
 git checkout -b feature/data-volunteer-network

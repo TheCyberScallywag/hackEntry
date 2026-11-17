@@ -1,10 +1,23 @@
 # Python API
 
 Generated from the docstrings by mkdocstrings. The [reference manual](/manual/reference/python-api-sphinx.html)
-has the Sphinx autodoc edition of the same modules. `app.admin` is left out because a Streamlit
-script runs when it is imported.
+has the Sphinx autodoc edition of the same modules. `app.services` is a package; its functions
+are imported from the package itself (`services.get_submission`). `app.admin` is left out because
+it needs Streamlit, an optional dependency.
 
-::: app.services
+::: app.services.access
+
+::: app.services.orgs
+
+::: app.services.vetting
+
+::: app.services.roles
+
+::: app.services.profile
+
+::: app.services.submissions
+
+::: app.services.errors
 
 ::: app.placements
 
@@ -36,7 +49,13 @@ script runs when it is imported.
 
 ::: app.web.api
 
+::: app.web.schemas
+
 ::: app.web.main
+
+::: app.web.deps
+
+::: app.web.errors
 
 ::: app.cli
 

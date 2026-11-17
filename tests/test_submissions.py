@@ -168,10 +168,7 @@ def test_approve_the_seeded_suggestion_as_the_correct_reviewer(web: Web):
     assert _review(web, DK, AUDIT, "approved").status_code == 303
     web.sign_in("asha")
     assert "Outreach Data Audit" in web.get(f"/o/{DK}/projects").text
-    rows = web.rt.graph.read(
-        cypher.MATCH_CANDIDATES,
-        {"orgs": [DK], "project": AUDIT, "volunteer": "", "preferred_only": False, "limit": 50},
-    )
+    rows = web.rt.graph.read(cypher.MATCH_CANDIDATES, cypher.match_params(orgs=[DK], project=AUDIT))
     assert rows  # matchable once projected
 
 

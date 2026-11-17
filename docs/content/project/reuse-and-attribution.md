@@ -21,7 +21,7 @@ Run `git diff ecfee3ce58cd966c4ccaf375e5811969da9aece7` to review everything tha
 | `src/app/serve.py` (one entry point per service) | rewritten for `web` and `admin` |
 | `src/app/config.py` (pydantic-settings pattern) | rewritten with new settings |
 | `src/app/meta.py` (reads `brand.toml`) | simplified |
-| `docker/Dockerfile` (uv multi-stage build, non-root) | adapted: one image for web and admin |
+| `docker/Dockerfile` (uv multi-stage build, non-root) | adapted: one Dockerfile building a web image and an admin image |
 | `docker/mobile.Dockerfile`, `docker/mobile.nginx.conf` (Ionic build with lint and test gate, nginx proxy) | adapted: proxy now points at the web app's `/api/` |
 | `mobile/` Angular, Ionic and Capacitor project setup (build config, lint config, `main.ts`, interceptor pattern, token-store injection token) | kept; app code rewritten (see below) |
 | `src/app/admin/` Streamlit service slot | rewritten |
@@ -50,7 +50,7 @@ listening; 27 nodes).
 | Pattern of a committed, read-only single-file `.rl` store plus a seed command | kept: `data/demo.rl` and `python -m app.cli bundle` |
 | Relate v1.0.1 pin, `--read-only` inspection commands, the `relate` CLI workflow | kept and documented |
 | AuraDB connection handling (environment variables, `neo4j+s://` check, `RoutingControl`) and the scope-prefixed seed idea | reimplemented in `src/app/graph/aura.py` as a push plus parity check |
-| Compose single-volume idea | extended to a three-service stack |
+| Compose single-volume idea | extended to a four-service stack (web, admin, mobile, docs) |
 
 The PoC's matching query (`HAS_SKILL` plus `INTERESTED_IN`) was **not** reused. The new query adds
 membership, offers versus skills, exclusions, preferences, optional skills, ranking and gaps.
@@ -59,8 +59,8 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
 
 - Multi-organisation identity: signup, sign-in and sign-out with Argon2id, opaque revocable
   sessions, CSRF, active-organisation switching kept separate from opting in or out, and
-  server-side role and tenant checks (`src/app/auth.py`, `src/app/services.py`,
-  `src/app/web/main.py`).
+  server-side role and tenant checks (`src/app/auth.py`, `src/app/services/`,
+  `src/app/web/`).
 - SQLite transactional model: users, sessions, memberships, roles, profile, submissions,
   revisions, reviews and outbox (`src/app/sqlstore.py`).
 - Suggestion workflow: submit, request changes, revise, reject, approve, publish and withdraw,
@@ -78,15 +78,15 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
   and causes and for active and past projects, suggestion status) with new specs.
 - RBAC (system admin, moderator, org admin, reviewer, project lead), volunteer vetting
   workflow, eligibility sweep with two-sided acceptance and `ON_TEAM` teams, in-app
-  notifications (`src/app/services.py`, `src/app/placements.py`, `src/app/notify.py`).
+  notifications (`src/app/services/`, `src/app/placements.py`, `src/app/notify.py`).
 - A JSON API covering every action, with OpenAPI docs (`src/app/web/api.py`).
 - Streamlit admin console as a pure API client: screening, organisation management, users and
   roles, projection health and graph inspection.
 - Operator CLI (reset, bundle, inspect, matches, status, drain, grant-reviewer, aura-push,
   aura-parity), the demo fixture, the bundled `data/demo.rl`, and the AuraDB push and parity
   check.
-- Test suite (`tests/`): 83 tests (81 run locally; the AuraDB and Compose tests are gated), using
-  temporary SQLite and real Relate stores; 25 mobile specs.
+- Test suite (`tests/`): 156 tests (154 run locally; the AuraDB and Compose tests are gated), using
+  temporary SQLite and real Relate stores; 39 mobile specs.
 - Compose stack, CI workflow, and documentation (README, this file, `docs/content/project/verification.md`,
   `docs/content/project/devpost.md`, `docs/content/project/demo-script.md`).
 
@@ -113,7 +113,7 @@ The project owner remains responsible for reviewing, editing and submitting the 
 | This repository's code | MIT ([LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/LICENSE)) |
 | `brand/`, `examples/brands/neutral/` (neutral brand kit) | CC0 1.0 ([brand/LICENSE](https://github.com/TheCyberScallywag/hackEntry/blob/main/brand/LICENSE)) |
 | `data/fixtures/*.json`, `data/demo.rl` (synthetic, fictional data) | MIT, as part of this repository |
-| Relate engine: `relate-db` 1.0.1 (PyPI) and `relate` 1.0.1 CLI | Apache-2.0 according to the package metadata; the CLI prints "Apache 2.0 (binary)". See https://relatedb.ai/docs/ |
+| Relate engine: `relate-db` 1.0.1 (PyPI) and `relate` 1.0.1 CLI, a Neo4j Labs project | The CLI prints "Apache 2.0 (binary)". See https://relatedb.ai/docs/ |
 | FastAPI 0.162 | MIT |
 | Starlette, Uvicorn, Jinja2, httpx, pandas | BSD-3-Clause / BSD |
 | python-multipart, Streamlit | Apache-2.0 |

@@ -21,7 +21,7 @@ function setup() {
 describe('SignInPage', () => {
   it('signs in and goes to matches', () => {
     const { page, http, navigate } = setup();
-    page.form.setValue({ email: 'asha@demo.invalid', password: 'demo-password-1' });
+    page.form.setValue({ email: 'asha@cyberscallywags.uk', password: 'demo-password-1' });
     page.submit();
     http.expectOne('/api/v1/session').flush({ token: 'tok' });
     expect(navigate).toHaveBeenCalledWith('/matches');
@@ -29,7 +29,7 @@ describe('SignInPage', () => {
 
   it('shows a clear error for wrong credentials', () => {
     const { page, http } = setup();
-    page.form.setValue({ email: 'asha@demo.invalid', password: 'nope' });
+    page.form.setValue({ email: 'asha@cyberscallywags.uk', password: 'nope' });
     page.submit();
     http.expectOne('/api/v1/session').flush({}, { status: 401, statusText: '' });
     expect(page.error()).toBe('Wrong email or password');

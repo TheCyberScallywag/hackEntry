@@ -17,6 +17,7 @@ One volunteer account for helping several organisations, with graph-backed expla
 people and projects fit. This page comes from `brand/docs/home.md`.
 
 [Solution architecture](project/solution-architecture.md){ .md-button .md-button--primary }
+[Relate in this application](project/relate.md){ .md-button }
 [Reference manual](/manual/){ .md-button }
 
 </div>
@@ -33,6 +34,23 @@ people and projects fit. This page comes from `brand/docs/home.md`.
     together.
 
     [Architecture →](project/solution-architecture.md)
+
+-   **Relate in this application**
+
+    ---
+
+    What the Relate graph engine does here: the files, the adapter, how data gets in, and which
+    query answers which screen.
+
+    [Relate →](project/relate.md)
+
+-   **Tooling**
+
+    ---
+
+    Every tool the repository uses, where it is configured and how to run it.
+
+    [Tooling →](project/tooling.md)
 
 -   **Demo walkthrough**
 

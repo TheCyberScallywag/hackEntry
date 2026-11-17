@@ -26,7 +26,7 @@ def test_push_and_parity(tmp_path):
     settings = Settings()
     graph = GraphStore(store_path)
     counts = aura.push(settings, graph)
-    assert counts == {"nodes": 32, "relationships": 62}
+    assert counts == {"nodes": 35, "relationships": 67}
     report = aura.parity(
         settings, graph, [stable_id("org", "datakind-uk"), stable_id("org", "cyber-scallywags")]
     )

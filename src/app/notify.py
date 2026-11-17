@@ -44,11 +44,15 @@ def list_for(
         ]
 
 
+def count_unread(conn: sqlite3.Connection, user_id: str) -> int:
+    return conn.execute(
+        "SELECT count(*) FROM notifications WHERE user_id = ? AND read_at IS NULL", (user_id,)
+    ).fetchone()[0]
+
+
 def unread_count(db: Database, user_id: str) -> int:
     with db.read() as conn:
-        return conn.execute(
-            "SELECT count(*) FROM notifications WHERE user_id = ? AND read_at IS NULL", (user_id,)
-        ).fetchone()[0]
+        return count_unread(conn, user_id)
 
 
 def mark_read(db: Database, user_id: str, notification_id: int | None = None) -> int:

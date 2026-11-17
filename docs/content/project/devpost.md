@@ -71,7 +71,8 @@ cause), so the explanation can never disagree with the decision.
 - An optional, explicitly invoked AuraDB push and parity check runs the same Cypher in the cloud.
 
 **Stack:** Python 3.14, uv, FastAPI, Jinja2, SQLite, Relate 1.0.1, Ionic and Angular, Streamlit
-and Docker Compose.
+and Docker Compose. The docs have a page on [how the application uses Relate](relate.md) and a
+full [tooling list](tooling.md).
 
 ## Challenges
 
@@ -88,7 +89,7 @@ and Docker Compose.
 
 - An end-to-end slice: signup, organisation selection, suggestion, scoped approval, publication
   and explainable matching. It runs from a clean clone with uv or with Compose.
-- 66 automated tests against real Relate stores (plus gated AuraDB and Compose tests), including forged-ID tenant isolation, stale
+- 154 automated backend tests against real Relate stores and 39 mobile tests (plus gated AuraDB and Compose tests), including forged-ID tenant isolation, stale
   approvals, exclusion precedence and restart/replay.
 - Changing one exclusion visibly changes the Relate result: a volunteer drops out of a project,
   and the coordinator sees new coverage gaps.
@@ -116,6 +117,6 @@ what was built for this entry.
 
 ```sh
 uv sync --locked && uv run task web        # http://localhost:8080
-# demo login: asha@demo.invalid / demo-password-1 (reviewers: rhiannon@…, kofi@…)
+# demo login: asha@cyberscallywags.uk / demo-password-1 (reviewers: rhiannon@…, kofi@…)
 uv run task inspect                        # inspect the bundled Relate graph
 ```

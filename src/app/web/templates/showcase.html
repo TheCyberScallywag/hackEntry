@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "macros.html" import skills, org_logo %}
+{% block title %}Showcase{% endblock %}
+{% block content %}
+<section class="hero">
+  <h1>Organisations and the projects they need you for</h1>
+  <p>Meet the organisations on the network and the verified projects each one is recruiting for. Opt in to an organisation and its projects are matched against your skills.</p>
+  <p class="jump">{% for o in featured %}<a class="chip" href="#{{ o.key }}">{{ o.name }} <span class="count">{{ o.projects|length }}</span></a>{% endfor %}</p>
+</section>
+{% for o in featured %}
+{% set pr = o.profile %}
+<section class="showcase" id="{{ o.key }}" aria-labelledby="{{ o.key }}-name">
+  <div class="banner{% if not pr.hero %} plain{% endif %}">
+    {% if pr.hero %}<img class="banner-img" src="{{ pr.hero }}" alt="{{ pr.hero_alt }}" loading="lazy">{% endif %}
+    <div class="banner-text">
+      {{ org_logo(o, "lg") }}
+      <div>
+        <h2 id="{{ o.key }}-name">{{ o.name }}</h2>
+        {% if pr.tagline %}<p>{{ pr.tagline }}</p>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="showcase-body">
+    <p class="meta">{% if o.opted_in %}<span class="chip ok">You volunteer here</span>{% endif %}{% if o.org_admin %}<span class="chip pref">Org admin</span>{% elif o.reviewer %}<span class="chip pref">Reviewer</span>{% endif %}</p>
+    <p>{{ pr.about }}</p>
+    {% if pr.highlights %}
+    <ul class="highlights">
+      {% for h in pr.highlights %}<li><strong>{{ h.title }}</strong> {{ h.text }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <h3 class="section">Projects looking for volunteers</h3>
+    {% set can_open = o.opted_in or o.reviewer %}
+    <div class="grid">
+    {% for p in o.projects %}
+      <article class="card project">
+        <p class="meta">{{ p.cause_name }}</p>
+        <h4>{% if can_open %}<a href="/o/{{ o.id }}/projects/{{ p.id }}">{{ p.title }}</a>{% else %}{{ p.title }}{% endif %}</h4>
+        <p>{{ p.summary }}</p>
+        <p>Needs: {{ skills(p.required_names) }}</p>
+        {% if p.optional_names %}<p>Nice to have: {{ skills(p.optional_names, "opt") }}</p>{% endif %}
+      </article>
+    {% else %}
+      <p class="muted">No published projects yet. Have an idea? Suggest one.</p>
+    {% endfor %}
+    </div>
+
+    <div class="actions">
+    {% if o.opted_in %}
+      <a class="button" href="/matches?scope={{ o.id }}">See my matches here</a>
+    {% else %}
+      <form method="post" action="/orgs/{{ o.id }}/join"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit">Volunteer with {{ o.name }}</button></form>
+    {% endif %}
+      <a class="button secondary" href="/submissions/new?org={{ o.id }}">Suggest a project</a>
+      {% if pr.website %}<a class="button secondary" href="{{ pr.website }}" rel="noopener noreferrer external">Visit their website</a>{% endif %}
+    </div>
+    {% if pr.credit %}<p class="credit">{{ pr.credit }} Shown to identify the organisation; no endorsement is implied.</p>{% endif %}
+  </div>
+</section>
+{% endfor %}
+<p class="muted">The projects on this page are fictional demo data. The descriptions of the organisations are summarised from their own public websites.</p>
+{% endblock %}

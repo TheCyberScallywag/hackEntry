@@ -6,6 +6,9 @@
   </ion-toolbar>
 </ion-header>
 <ion-content [fullscreen]="true">
+  @if (error(); as message) {
+    <ion-text color="danger" role="alert"><p class="ion-padding-horizontal">{{ message }}</p></ion-text>
+  }
   <ion-list>
     @for (n of items(); track n.id) {
       <ion-item [routerLink]="appLink(n)" [button]="appLink(n) !== null" [detail]="false" [class.unread]="!n.read_at">

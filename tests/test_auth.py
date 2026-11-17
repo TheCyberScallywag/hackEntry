@@ -8,18 +8,22 @@ from tests.conftest import Web
 
 
 def _signup(web: Web, **fields):
-    data = {"display_name": "Ffion", "email": "ffion@example.org", "password": "long-enough-pw"}
+    data = {
+        "display_name": "Ffion",
+        "email": "ffion@cyberscallywags.uk",
+        "password": "long-enough-pw",
+    }
     data.update(fields)
     return web.post("/signup", data, csrf_from="/signup")
 
 
 def test_signup_normalises_and_uniquely_constrains_email(web: Web):
-    assert _signup(web, email="  Ffion@Example.ORG ").status_code == 303
+    assert _signup(web, email="  Ffion@CyberScallywags.UK ").status_code == 303
     with web.rt.db.read() as conn:
         row = conn.execute("SELECT email FROM users WHERE display_name = 'Ffion'").fetchone()
-        assert row[0] == "ffion@example.org"
+        assert row[0] == "ffion@cyberscallywags.uk"
     web.client.cookies.clear()
-    r = _signup(web, email="FFION@example.org")
+    r = _signup(web, email="FFION@cyberscallywags.uk")
     assert r.status_code == 400 and "already exists" in r.text
 
 
@@ -27,7 +31,9 @@ def test_signup_never_grants_a_role_or_membership(web: Web):
     r = _signup(web, role="reviewer", org_id="anything", is_admin="1")
     assert r.status_code == 303
     with web.rt.db.read() as conn:
-        uid = conn.execute("SELECT id FROM users WHERE email = 'ffion@example.org'").fetchone()[0]
+        uid = conn.execute(
+            "SELECT id FROM users WHERE email = 'ffion@cyberscallywags.uk'"
+        ).fetchone()[0]
         assert (
             conn.execute("SELECT count(*) FROM org_roles WHERE user_id = ?", (uid,)).fetchone()[0]
             == 0
@@ -43,7 +49,7 @@ def test_passwords_are_argon2_hashed_and_tokens_stored_hashed(web: Web):
     token = web.client.cookies.get("dvn_session")
     with web.rt.db.read() as conn:
         hashed = conn.execute(
-            "SELECT password_hash FROM users WHERE email = 'asha@demo.invalid'"
+            "SELECT password_hash FROM users WHERE email = 'asha@cyberscallywags.uk'"
         ).fetchone()[0]
         assert hashed.startswith("$argon2id$")
         assert (
@@ -63,7 +69,11 @@ def test_passwords_are_argon2_hashed_and_tokens_stored_hashed(web: Web):
 def test_wrong_password_is_rejected(web: Web):
     r = web.client.post(
         "/signin",
-        data={"email": "asha@demo.invalid", "password": "nope-nope-nope", "csrf_token": web.csrf()},
+        data={
+            "email": "asha@cyberscallywags.uk",
+            "password": "nope-nope-nope",
+            "csrf_token": web.csrf(),
+        },
     )
     assert r.status_code == 400 and "Wrong email or password" in r.text
 
@@ -76,7 +86,7 @@ def test_session_cookie_flags_on_localhost_and_https(settings):
             r = client.post(
                 "/signin",
                 data={
-                    "email": "asha@demo.invalid",
+                    "email": "asha@cyberscallywags.uk",
                     "password": "demo-password-1",
                     "csrf_token": csrf,
                 },
@@ -96,7 +106,7 @@ def test_state_changing_forms_require_csrf(web: Web):
     # anonymous forms use a double-submit cookie
     web.client.cookies.clear()
     r = web.client.post(
-        "/signin", data={"email": "asha@demo.invalid", "password": "demo-password-1"}
+        "/signin", data={"email": "asha@cyberscallywags.uk", "password": "demo-password-1"}
     )
     assert r.status_code == 403
 

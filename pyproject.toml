@@ -30,6 +30,7 @@ dev = [
     "ruff>=0.14",
     "pre-commit>=4.3",
     "taskipy>=1.14",
+    "git-cliff>=2.10",
 ]
 admin = ["hackentry[admin]"]
 aura = ["hackentry[aura]"]
@@ -63,6 +64,7 @@ packages = ["src/app"]
 "brand/brand.toml" = "app/brand/brand.toml"
 "brand/images" = "app/brand/images"
 "data/fixtures" = "app/fixtures"
+"data/orgs" = "app/orgs"
 "data/demo.rl" = "app/demo.rl"
 
 # ---------------------------------------------------------------- taskipy
@@ -83,6 +85,9 @@ bundle = { cmd = "python -m app.cli bundle", help = "Rebuild the committed data/
 inspect = { cmd = "python -m app.cli inspect --store data/demo.rl", help = "Run the sample graph inspection query on the bundled store" }
 lint = { cmd = "ruff check . && ruff format --check .", help = "Ruff lint + format check" }
 format = { cmd = "ruff format . && ruff check --fix .", help = "Auto-format and fix" }
+hooks = { cmd = "pre-commit run --all-files", help = "Run every pre-commit hook on every file" }
+changelog = { cmd = "git-cliff --output CHANGELOG.md", help = "Regenerate CHANGELOG.md from the commit prefixes (git-cliff, cliff.toml); replaces the file" }
+changelog_preview = { cmd = "git-cliff --unreleased", help = "Print the unreleased changelog section without writing anything" }
 test = { cmd = "pytest", help = "All tests: temporary SQLite + real Relate stores" }
 up = { cmd = "docker compose up -d --build --wait", help = "Build + start web, admin and mobile" }
 down = { cmd = "docker compose down -v", help = "Stop the stack and drop its volume" }
@@ -99,9 +104,6 @@ markers = [
     "compose: needs a Docker daemon and the stack started with task up",
 ]
 addopts = "-ra --strict-markers --cov=app --cov-report=term-missing"
-
-[tool.coverage.run]
-omit = ["src/app/admin/*"]
 
 # ---------------------------------------------------------------- ruff
 [tool.ruff]

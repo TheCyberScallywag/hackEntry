@@ -1,6 +1,6 @@
 // The container's nginx proxies /api to the api service, so the web build stays origin-relative.
-// For a native (Capacitor) build, point this at the public API URL and add the app's origin
-// to CORS_ORIGINS on the API.
+// A native (Capacitor) build would call the API from another origin. The API sends no CORS
+// headers today, so that needs CORS support added to the web app first (src/app/web/main.py).
 export const environment = {
   production: true,
   apiUrl: '/api',

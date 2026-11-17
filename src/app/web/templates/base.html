@@ -33,6 +33,7 @@
     {% if actor and actor.system_roles %}<a href="/api/docs">API</a>{% endif %}
     <a href="/profile">Profile</a>
     <a href="/orgs">Organisations</a>
+    <a href="/showcase">Showcase</a>
     <form method="post" action="/signout" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <button type="submit" class="link">Sign out ({{ session.display_name }})</button>

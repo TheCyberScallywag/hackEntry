@@ -90,16 +90,6 @@ def _org_pending(conn, org_id: str, project_id: str = "") -> str | None:
     return None
 
 
-def _match_params(**overrides) -> dict:
-    return {
-        "orgs": [],
-        "project": "",
-        "volunteer": "",
-        "preferred_only": False,
-        "limit": 200,
-    } | overrides
-
-
 def volunteer_matches(
     db: Database,
     graph: GraphStore,
@@ -129,14 +119,11 @@ def volunteer_matches(
     with graph.reader() as tx:
         rows = tx.read(
             cypher.MATCH_CANDIDATES,
-            _match_params(orgs=allowed, volunteer=user_id, preferred_only=preferred_only),
+            cypher.match_params(orgs=allowed, volunteer=user_id, preferred_only=preferred_only),
         )
-        excluded = tx.read(
-            cypher.EXCLUDED_FOR_VOLUNTEER, {"volunteer": user_id, "orgs": allowed, "limit": 200}
-        )
-        optional_excluded = tx.read(
-            cypher.OPTIONAL_SKILLS_EXCLUDED, {"volunteer": user_id, "orgs": allowed, "limit": 200}
-        )
+        mine = {"volunteer": user_id, "orgs": allowed}
+        excluded = tx.read(cypher.EXCLUDED_FOR_VOLUNTEER, mine)
+        optional_excluded = tx.read(cypher.OPTIONAL_SKILLS_EXCLUDED, mine)
     with db.read() as conn:
         fresh = services.published_state(
             conn, sorted({r["project"] for r in rows} | {r["project"] for r in excluded})
@@ -184,15 +171,17 @@ def project_coverage(
     db: Database, graph: GraphStore, reviewer_id: str, org_id: str, project_id: str = ""
 ) -> ProjectCoverage:
     """For an organisation's reviewers: eligible candidates per required skill, and gaps."""
-    services.require_access(db, reviewer_id, org_id, role="reviewer")
     with db.read() as conn:
+        services.check_access(conn, reviewer_id, org_id, role="reviewer")
         if reason := _org_pending(conn, org_id, project_id):
             return ProjectCoverage(withheld=Withheld(reason))
     with graph.reader() as tx:
-        params = _match_params(orgs=[org_id], project=project_id, limit=500)
-        projects = tx.read(cypher.BROWSE_PROJECTS, {"org": org_id, "limit": 200})
-        rows = tx.read(cypher.MATCH_CANDIDATES, params)
-        gaps = tx.read(cypher.COVERAGE_GAPS, {"org": org_id, "project": project_id, "limit": 500})
+        scope = {"org": org_id, "project": project_id}
+        projects = tx.read(cypher.BROWSE_PROJECTS, scope)
+        rows = tx.read(
+            cypher.MATCH_CANDIDATES, cypher.match_params(orgs=[org_id], project=project_id)
+        )
+        gaps = tx.read(cypher.COVERAGE_GAPS, scope)
     with db.read() as conn:
         fresh = services.published_state(conn, [p["project"] for p in projects])
         names = dict(
@@ -205,7 +194,7 @@ def project_coverage(
     cat = get_catalogue()
     by_project: dict[str, dict] = {}
     for p in projects:
-        if p["project"] not in fresh or (project_id and p["project"] != project_id):
+        if p["project"] not in fresh:
             continue
         by_project[p["project"]] = {
             **p,
@@ -243,19 +232,31 @@ def project_coverage(
     return ProjectCoverage(projects=list(by_project.values()))
 
 
-def browse(db: Database, graph: GraphStore, user_id: str, org_id: str) -> list[dict]:
-    """Verified, published projects of one organisation the user belongs to."""
+def browse(
+    db: Database, graph: GraphStore, user_id: str, org_id: str, project_id: str = ""
+) -> list[dict]:
+    """Verified, published projects of one organisation the user belongs to (or just one of
+    them). Each row carries `sql`: the project's lead and version in SQLite."""
     services.require_access(db, user_id, org_id)
-    rows = graph.read(cypher.BROWSE_PROJECTS, {"org": org_id, "limit": 200})
+    rows = graph.read(cypher.BROWSE_PROJECTS, {"org": org_id, "project": project_id})
     with db.read() as conn:
         fresh = services.published_state(conn, [r["project"] for r in rows])
     cat = get_catalogue()
     return [
         {
             **r,
+            "sql": fresh[r["project"]],
             "required_names": [cat.skill_name(s) for s in sorted(r["required"])],
             "optional_names": [cat.skill_name(s) for s in sorted(r["optional"])],
         }
         for r in rows
         if r["project"] in fresh
     ]
+
+
+def project(db: Database, graph: GraphStore, user_id: str, org_id: str, project_id: str) -> dict:
+    """One published project of an organisation the user belongs to, or NotFound."""
+    rows = browse(db, graph, user_id, org_id, project_id) if project_id else []
+    if not rows:
+        raise services.NotFound("project")
+    return rows[0]

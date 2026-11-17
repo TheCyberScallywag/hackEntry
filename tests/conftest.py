@@ -17,6 +17,7 @@ CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 DK = stable_id("org", "datakind-uk")
 CS = stable_id("org", "cyber-scallywags")
+IL = stable_id("org", "interlinkrct")
 USERS = {
     k: stable_id("u", k)
     for k in ("asha", "bryn", "cerys", "dev", "gwen", "farah", "kofi", "rhiannon")
@@ -52,7 +53,7 @@ class Web:
         token = self.csrf("/signin")
         r = self.client.post(
             "/signin",
-            data={"email": f"{key}@demo.invalid", "password": password, "csrf_token": token},
+            data={"email": f"{key}@cyberscallywags.uk", "password": password, "csrf_token": token},
             follow_redirects=False,
         )
         assert r.status_code == 303, r.text

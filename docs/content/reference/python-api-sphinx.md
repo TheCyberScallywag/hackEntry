@@ -1,10 +1,28 @@
 # Python API
 
-Generated from the docstrings by Sphinx autodoc. `app.admin` is left out because a
-Streamlit script runs when it is imported.
+Generated from the docstrings by Sphinx autodoc. `app.admin` is left out because it needs
+Streamlit, an optional dependency.
 
 ```{eval-rst}
-.. automodule:: app.services
+.. automodule:: app.services.access
+   :members:
+
+.. automodule:: app.services.orgs
+   :members:
+
+.. automodule:: app.services.vetting
+   :members:
+
+.. automodule:: app.services.roles
+   :members:
+
+.. automodule:: app.services.profile
+   :members:
+
+.. automodule:: app.services.submissions
+   :members:
+
+.. automodule:: app.services.errors
    :members:
 
 .. automodule:: app.placements
@@ -52,7 +70,16 @@ Streamlit script runs when it is imported.
 .. automodule:: app.web.api
    :members:
 
+.. automodule:: app.web.schemas
+   :members:
+
 .. automodule:: app.web.main
+   :members:
+
+.. automodule:: app.web.deps
+   :members:
+
+.. automodule:: app.web.errors
    :members:
 
 .. automodule:: app.cli

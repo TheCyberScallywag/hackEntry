@@ -14,8 +14,8 @@ from tests.test_matching import save_profile
 def _graph_snapshot(web: Web) -> tuple:
     with web.rt.graph.reader() as tx:
         return (
-            tx.read(cypher.ALL_NODES, {"limit": 500}),
-            tx.read(cypher.ALL_RELATIONSHIPS, {"limit": 500}),
+            tx.read(cypher.ALL_NODES),
+            tx.read(cypher.ALL_RELATIONSHIPS),
         )
 
 

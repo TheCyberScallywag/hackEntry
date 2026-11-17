@@ -6,6 +6,7 @@ inspect [--store P]   the sample graph inspection query (org -> project -> skill
 matches --org KEY     ranked candidates for one organisation, straight from Relate
 status | drain        projection outbox status / project pending items now
 grant-reviewer        give an existing account the reviewer role (operator only)
+openapi [--out PATH]  write the JSON API's OpenAPI document (the mobile types are generated from it)
 aura-push | aura-parity   optional, explicit AuraDB push and match parity check
 """
 
@@ -21,6 +22,7 @@ from app.config import BUNDLED_GRAPH, get_settings
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore
 from app.runtime import build_runtime, reset_demo, seed_demo
+from app.sqlstore import now
 
 
 def _table(rows: list[dict]) -> str:
@@ -52,6 +54,14 @@ def build_bundle(out: Path) -> None:
         out.chmod(0o444)  # read-only: the app always works on a writable copy
 
 
+def openapi_document() -> str:
+    """The API contract as stable, diff-friendly JSON. Needs no database: nothing is started."""
+    from app.web.main import create_app
+
+    schema = create_app(get_settings(), background=False).openapi()
+    return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
@@ -74,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     grant = sub.add_parser("grant-reviewer")
     grant.add_argument("--email", required=True)
     grant.add_argument("--org", required=True, help="organisation key")
+    openapi = sub.add_parser("openapi")
+    openapi.add_argument("--out", type=Path)
     sub.add_parser("aura-push")
     sub.add_parser("aura-parity")
     args = parser.parse_args(argv)
@@ -94,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
                 build_bundle(args.out)
                 print(f"Wrote {args.out}")
             case "inspect":
-                rows = store(args.store).read(cypher.INSPECT, {"limit": 200})
+                rows = store(args.store).read(cypher.INSPECT)
                 if not args.json:  # the graph holds opaque IDs; label known demo IDs for humans
                     names = _demo_names()
                     for row in rows:
@@ -104,10 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                         ] or ["— coverage gap —"]
                 print(json.dumps(rows, indent=2) if args.json else _table(rows))
             case "matches":
-                params = {
-                    "orgs": [stable_id("org", args.org)], "project": "", "volunteer": "",
-                    "preferred_only": False, "limit": 200,
-                }  # fmt: skip
+                params = cypher.match_params(orgs=[stable_id("org", args.org)])
                 rows = store(args.store).read(cypher.MATCH_CANDIDATES, params)
                 names = _demo_names()
                 for row in rows:
@@ -138,10 +147,17 @@ def main(argv: list[str] | None = None) -> int:
                         raise SystemExit("unknown email or organisation key")
                     conn.execute(
                         "INSERT OR IGNORE INTO org_roles (user_id, org_id, role, granted_at) "
-                        "VALUES (?, ?, 'reviewer', datetime('now'))",
-                        (user["id"], org["id"]),
+                        "VALUES (?, ?, 'reviewer', ?)",
+                        (user["id"], org["id"], now()),
                     )
                 print("granted")
+            case "openapi":
+                text = openapi_document()
+                if args.out:
+                    args.out.write_text(text, encoding="utf-8")
+                    print(f"Wrote {args.out}")
+                else:
+                    print(text, end="")
             case "aura-push":
                 from app.graph import aura
 

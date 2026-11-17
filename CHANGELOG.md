@@ -1,51 +1,44 @@
 <p align="center">
-  <img src="brand/images/logo.svg" width="112" alt="Volunteer Network logo: three teal volunteers around a golden heart">
+<img src="brand/images/logo.svg" width="112" alt="Volunteer Network logo: three teal volunteers around a golden heart">
 </p>
 
 <h1 align="center">Changelog</h1>
 
 <p align="center">
-  <em>Data Volunteer Network · what changed, release by release</em>
+<em>Data Volunteer Network · what changed, release by release</em>
 </p>
 
 <p align="center">
-  <img alt="Latest: 0.2.0 unreleased" src="https://img.shields.io/badge/latest-0.2.0%20unreleased-ffb21c?style=flat-square&labelColor=0b1730">
-  <img alt="Built with Relate" src="https://img.shields.io/badge/built%20with-Relate-13cdb5?style=flat-square&labelColor=0b1730">
-  <img alt="Neo4j Hackathon 2026" src="https://img.shields.io/badge/Neo4j%20Hackathon-2026-13cdb5?style=flat-square&labelColor=0b1730">
+<a href="README.md">README</a> ·
+<a href="CONTRIBUTING.md">Contributing</a> ·
+<a href="CODE_OF_CONDUCT.md">Code of conduct</a>
 </p>
 
-<p align="center">
-  <a href="README.md">README</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a> ·
-  <a href="CODE_OF_CONDUCT.md">Code of conduct</a>
-</p>
+Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.toml).
 
 ---
-
-## 0.2.0 (unreleased): Data Volunteer Network hackathon entry
-
-### Added
-
-- Multi-organisation volunteer network: identity, organisation opt-in and switching,
-  skills/cause profile with offers and exclusions, project suggestions with scoped review and
-  publication, explainable Relate-backed matching and coverage gaps.
-- SQLite transactional store with an outbox projection to an embedded Relate store
-  (`relate-db==1.0.1`), bundled read-only `data/demo.rl`, operator CLI and Streamlit console.
-- Ionic mobile companion on a bearer-token JSON API.
-- Optional AuraDB push and match-parity check.
+## Unreleased
 
 ### Changed
 
-- Replaced the template's FastUI UI, JWT API, Neo4j server and docs pipeline.
+- fix graph-read truncation and Aura push, split services and web, scope the sweep
+- declare API responses, restructure the admin console, tidy the mobile app
+- to add Showcse for charities
 
-## 0.1.0
+### Documentation
+
+- describe the new module layout and record the refactor's verification
+- document how the application uses Relate, list all tooling, fix stale statements
+
+### Chores
+
+- merge remote initial commit, keep project LICENSE
+- Bump nginxinc/nginx-unprivileged in /docker in the images group (#1)
+- Replace @demo.invalid demo addresses with @cyberscallywags.uk
+- build separate web and admin images, run CI once per pull request
 
 ### Other
 
-- Template baseline (sgaffald), recorded as git tree `ecfee3ce58cd966c4ccaf375e5811969da9aece7`.
-
----
-
-<p align="center">
-  <sub>Cyber Scallywags · Data Volunteer Network</sub>
-</p>
+- Initial Commit
+- Initial commit
+- Refactor/theme images (#4)

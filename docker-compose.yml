@@ -1,7 +1,8 @@
 # Local demo stack:  docker compose up -d --build --wait   (or: uv run task up)
 # Host ports default to 8080 (web), 8501 (admin), 8100 (mobile), 8200 (docs); override with
 # WEB_PORT, ADMIN_PORT, MOBILE_PORT and DOCS_PORT if those are taken.
-# web and admin share one named volume holding the SQLite database and the writable Relate store.
+# web and admin are built from one Dockerfile with different extras (the web image has no
+# Streamlit) and share one named volume holding the SQLite database and the writable Relate store.
 # On first start the web app copies the bundled read-only data/demo.rl into it and seeds the
 # disposable demo accounts. `docker compose down -v` throws it all away.
 
@@ -23,8 +24,11 @@ x-health: &health
 
 services:
   web:
-    image: dvn/app:local
-    build: { context: ., dockerfile: docker/Dockerfile }
+    image: dvn/web:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args: { EXTRAS: "--extra aura" }
     environment:
       <<: *app-env
       SERVICE: web
@@ -35,7 +39,11 @@ services:
       <<: *health
 
   admin:
-    image: dvn/app:local
+    image: dvn/admin:local
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args: { EXTRAS: "--extra admin" }
     environment:
       <<: *app-env
       SERVICE: admin

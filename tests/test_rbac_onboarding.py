@@ -4,7 +4,7 @@ JSON API, which is the system's single action surface."""
 
 from app.catalogue import get_catalogue, stable_id
 from app.runtime import DEMO_PASSWORD
-from tests.conftest import AUDIT, CS, DK, USERS, WINTER, Web
+from tests.conftest import AUDIT, CS, DK, IL, USERS, WINTER, Web
 
 NIA = stable_id("u", "nia")  # seeded in screening, offers first aid, joined Cyber Scallywags
 SAM = stable_id("u", "sam")  # system admin
@@ -33,7 +33,7 @@ class Client:
 
 def as_(web: Web, key: str) -> Client:
     r = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@demo.invalid", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
     )
     assert r.status_code == 200, r.text
     return Client(web, r.json()["token"])
@@ -77,7 +77,11 @@ def full_profile(c: Client, **skills) -> dict:
 def test_full_volunteer_onboarding_to_team(web: Web):
     r = web.client.post(
         "/api/v1/auth/signup",
-        json={"email": "ffion@example.org", "display_name": "Ffion", "password": "long-enough-pw"},
+        json={
+            "email": "ffion@cyberscallywags.uk",
+            "display_name": "Ffion",
+            "password": "long-enough-pw",
+        },
     )
     assert r.status_code == 201
     ffion = Client(web, r.json()["token"])
@@ -264,10 +268,10 @@ def test_org_admins_manage_only_their_own_organisation(web: Web):
     # system admin: every organisation
     assert sam.get(f"/orgs/{DK}/volunteers").status_code == 200
     assert sam.get(f"/orgs/{CS}/submissions").status_code == 200
-    # remove a volunteer: membership, team place and graph edges go
+    # remove a volunteer: membership, team place and graph edges go, in this organisation only
     r = kofi.post(f"/orgs/{CS}/volunteers/{USERS['bryn']}/remove", {"reason": "Moved away"})
     assert r.status_code == 200
-    assert graph_edges(web, USERS["bryn"], "VOLUNTEERS_WITH") == []
+    assert graph_edges(web, USERS["bryn"], "VOLUNTEERS_WITH") == [IL]
     assert graph_edges(web, USERS["bryn"], "ON_TEAM") == []
     assert placement(web, WINTER, USERS["bryn"])["state"] == "removed"
     assert any("removed you as a volunteer: Moved away" in m for m in as_(web, "bryn").messages())

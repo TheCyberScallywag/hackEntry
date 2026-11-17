@@ -9,7 +9,7 @@ import secrets
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 SCHEMA = """
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS vetting_events (
     private_note         TEXT NOT NULL DEFAULT '',  -- moderators and admins only
     created_at           TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS vetting_events_user ON vetting_events(user_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
     token_hash    TEXT PRIMARY KEY,               -- sha256 of the opaque token; never the token
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at    TEXT NOT NULL,
     revoked_at    TEXT
 );
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id, created_at);
 
 CREATE TABLE IF NOT EXISTS organisations (
     id          TEXT PRIMARY KEY,
@@ -74,6 +76,7 @@ CREATE TABLE IF NOT EXISTS memberships (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, org_id)
 );
+CREATE INDEX IF NOT EXISTS memberships_org ON memberships(org_id, opted_in);
 
 -- Organisation roles: org_admin (manages the organisation's projects and volunteers, reviews)
 -- and reviewer (reviews suggestions). Granted by a system admin, the seed or the CLI only.
@@ -84,6 +87,7 @@ CREATE TABLE IF NOT EXISTS org_roles (
     granted_at TEXT NOT NULL,
     PRIMARY KEY (user_id, org_id, role)
 );
+CREATE INDEX IF NOT EXISTS org_roles_org ON org_roles(org_id);
 
 CREATE TABLE IF NOT EXISTS causes (id TEXT PRIMARY KEY, name TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS skills (
@@ -127,6 +131,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     updated_at        TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS submissions_org_state ON submissions(org_id, state);
+CREATE INDEX IF NOT EXISTS submissions_author ON submissions(author_id);
 
 CREATE TABLE IF NOT EXISTS submission_revisions (
     submission_id TEXT NOT NULL REFERENCES submissions(id),
@@ -147,6 +152,13 @@ CREATE TABLE IF NOT EXISTS revision_skills (
     FOREIGN KEY (submission_id, revision) REFERENCES submission_revisions
 );
 
+-- A submission with the title of its current revision: what every list and notification shows.
+CREATE VIEW IF NOT EXISTS submission_current AS
+SELECT s.id, s.org_id, s.author_id, s.lead_id, s.state, s.current_revision, s.version,
+       s.updated_at, v.title
+FROM submissions s
+JOIN submission_revisions v ON v.submission_id = s.id AND v.revision = s.current_revision;
+
 CREATE TABLE IF NOT EXISTS reviews (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     submission_id     TEXT NOT NULL REFERENCES submissions(id),
@@ -158,6 +170,7 @@ CREATE TABLE IF NOT EXISTS reviews (
     private_note      TEXT NOT NULL DEFAULT '',     -- reviewers of the organisation only
     created_at        TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS reviews_submission ON reviews(submission_id);
 
 -- A volunteer and a project that Relate found eligible. Both sides must say yes before the
 -- volunteer joins the team (state 'team', projected as (:Volunteer)-[:ON_TEAM]->(:Project)).
@@ -174,6 +187,7 @@ CREATE TABLE IF NOT EXISTS placements (
     updated_at     TEXT NOT NULL,
     PRIMARY KEY (project_id, volunteer_id)
 );
+CREATE INDEX IF NOT EXISTS placements_volunteer ON placements(volunteer_id, state);
 
 CREATE TABLE IF NOT EXISTS notifications (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,8 +213,16 @@ CREATE TABLE IF NOT EXISTS outbox (
     next_attempt_at TEXT NOT NULL,
     done_at         TEXT
 );
-CREATE INDEX IF NOT EXISTS outbox_pending ON outbox(done_at, kind, entity_id);
+-- Only pending items are ever looked up, so the index covers just those rows. (The index it
+-- replaces covered every row the outbox had ever held.)
+DROP INDEX IF EXISTS outbox_pending;
+CREATE INDEX IF NOT EXISTS outbox_due ON outbox(kind, entity_id) WHERE done_at IS NULL;
 """
+
+# How long finished or expired rows are kept before `prune` deletes them.
+OUTBOX_DONE_DAYS = 7
+SESSION_ENDED_DAYS = 7
+NOTIFICATION_READ_DAYS = 90
 
 
 def now() -> str:
@@ -212,12 +234,14 @@ def new_id(prefix: str) -> str:
 
 
 def connect(path: Path) -> sqlite3.Connection:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Open a connection. Kept cheap, because one is opened per unit of work.
+
+    `timeout` is SQLite's busy timeout. WAL mode is a property of the database file, so it is
+    set once in `init_schema` and not on every connection.
+    """
     conn = sqlite3.connect(path, timeout=10, isolation_level=None)  # explicit transactions
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA busy_timeout = 10000")
     return conn
 
 
@@ -229,8 +253,10 @@ class SchemaOutdated(RuntimeError):
 
 
 def init_schema(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(path)
     try:
+        conn.execute("PRAGMA journal_mode = WAL")  # persistent: stored in the database file
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         has_tables = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'"
@@ -286,3 +312,30 @@ def enqueue(conn: sqlite3.Connection, kind: str, entity_id: str) -> None:
         "INSERT INTO outbox (kind, entity_id, created_at, next_attempt_at) VALUES (?, ?, ?, ?)",
         (kind, entity_id, stamp, stamp),
     )
+
+
+def days_ago(days: int) -> str:
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+
+
+def prune(conn: sqlite3.Connection) -> int:
+    """Delete rows nothing reads any more: projected outbox items, sessions that expired or were
+    revoked, and notifications read long ago. Unread notifications are never deleted."""
+    deleted = conn.execute(
+        "DELETE FROM outbox WHERE done_at IS NOT NULL AND done_at < ?",
+        (days_ago(OUTBOX_DONE_DAYS),),
+    ).rowcount
+    ended = days_ago(SESSION_ENDED_DAYS)
+    deleted += conn.execute(
+        # A user's newest session is kept: sign-in resumes the organisation it had active.
+        "DELETE FROM sessions "
+        "WHERE (expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)) "
+        "AND EXISTS (SELECT 1 FROM sessions n WHERE n.user_id = sessions.user_id "
+        "AND n.created_at > sessions.created_at)",
+        (ended, ended),
+    ).rowcount
+    deleted += conn.execute(
+        "DELETE FROM notifications WHERE read_at IS NOT NULL AND read_at < ?",
+        (days_ago(NOTIFICATION_READ_DAYS),),
+    ).rowcount
+    return deleted

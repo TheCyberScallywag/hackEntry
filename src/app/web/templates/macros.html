@@ -1,5 +1,11 @@
 {% macro skills(names, cls="") %}{% for n in names %}<span class="chip {{ cls }}">{{ n }}</span>{% endfor %}{% endmacro %}
 
+{# An organisation's logo on a light plate (logos are drawn for light backgrounds), or its initials. #}
+{% macro org_logo(o, size="") %}
+{% if o.profile.logo %}<span class="org-logo {{ o.profile.logo_shape }} {{ size }}"><img src="{{ o.profile.logo }}" alt="{{ o.name }} logo"></span>
+{% else %}<span class="org-logo initials {{ size }}" aria-hidden="true">{{ o.profile.initials }}</span>{% endif %}
+{% endmacro %}
+
 {% macro match_card(m, show_org=True) %}
 <article class="card match">
   <h3><a href="/o/{{ m.org }}/projects/{{ m.project }}">{{ m.title }}</a></h3>
