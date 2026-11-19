@@ -17,7 +17,7 @@ def test_switching_active_organisation_needs_no_new_sign_in(web: Web):
     for org in (DK, CS, DK):
         r = web.post("/orgs/switch", {"org_id": org})
         assert r.status_code == 303 and r.headers["location"].startswith(f"/o/{org}/projects")
-        assert f'<option value="{org}" selected' in web.get("/home").text
+        assert f'data-menu="organisation" data-org="{org}"' in web.get("/home").text
     assert web.client.cookies.get("dvn_session") == cookie
 
 

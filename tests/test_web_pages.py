@@ -4,7 +4,7 @@ the re-render of a form on invalid input, and the shared error pages."""
 import inspect
 import logging
 
-from app import sqlstore
+from app import notify, sqlstore
 from app.graph.store import GraphBusy
 from app.runtime import DEMO_PASSWORD
 from app.web import api, pages
@@ -304,3 +304,70 @@ def test_a_renamed_organisation_loses_its_branding():
     renamed = profile_for({**org, "name": "Organisation A"})
     assert (renamed["logo"], renamed["hero"], renamed["about"]) == (None, None, "Fallback.")
     assert renamed["initials"] == "OA" and not renamed["tagline"]
+
+
+# ------------------------------------------------------------------ the navigation bar
+def _nav(web: Web, path: str = "/home") -> str:
+    page = web.get(path).text
+    return page[page.index("<nav") : page.index("</nav>")]
+
+
+def test_nav_lists_only_what_each_user_can_act_on(web: Web):
+    """Each entry is rendered only for a user who can use it, and matching is never an entry."""
+    everyone = ('href="/home"', 'href="/orgs"', 'href="/showcase"', 'href="/profile"',
+                'href="/notifications"', 'href="/submissions"', "Sign out")  # fmt: skip
+    expected = {
+        # a moderator who volunteers nowhere and reviews for nobody
+        "mo": {"Opportunities": 0, "Suggest a project": 0, 'data-menu="organisation"': 0,
+               "API docs": 1},
+        # a volunteer in one organisation
+        "cerys": {"Opportunities": 1, "Suggest a project": 1, f'href="/o/{DK}/projects"': 1,
+                  "Review queue": 0, "Coverage": 0, "Volunteers": 0, "Switch to": 0,
+                  "API docs": 0},
+        # a volunteer in two
+        "asha": {"Opportunities": 1, "Switch to": 1, "Review queue": 0},
+        # an organisation admin who does not volunteer
+        "rhiannon": {"Opportunities": 0, "Suggest a project": 1, "Review queue": 1,
+                     "Coverage": 1, f'href="/o/{DK}/volunteers"': 1, "Switch to": 0},
+        # a volunteer still in screening: suggesting needs an active account
+        "nia": {"Suggest a project": 0, "API docs": 0},
+    }  # fmt: skip
+    for user, entries in expected.items():
+        nav = _nav(web.sign_in(user))
+        assert all(text in nav for text in everyone), user
+        assert "/matches" not in nav and "<select" not in nav, user
+        for text, shown in entries.items():
+            assert (text in nav) == bool(shown), (user, text)
+
+
+def test_nav_keeps_personal_details_in_the_account_menu(web: Web):
+    web.sign_in("mo")
+    nav = _nav(web)
+    account = nav[nav.index('data-menu="account"') :]
+    assert '<span class="avatar" aria-hidden="true">M</span>' in account
+    assert "<strong>Mo</strong>" in account and "Moderator" in account
+    assert "Mo" not in nav[: nav.index('data-menu="account"')]
+
+
+def test_nav_marks_the_current_page_and_counts_unread(web: Web):
+    web.sign_in("asha")
+    assert '<a href="/profile" aria-current="page">' in _nav(web, "/profile")
+    assert _nav(web, "/home").count("aria-current") == 1
+    web.post("/notifications/read-all")
+    assert "unread notifications" not in _nav(web)
+    with web.rt.db.tx() as conn:
+        (
+            notify.notify(conn, USERS["asha"], "placement", "One"),
+            notify.notify(conn, USERS["asha"], "placement", "Two"),
+        )
+    nav = _nav(web)
+    assert "Your account, 2 unread notifications" in nav
+    assert nav.count('<span class="count"') == 2  # on the avatar and beside the link
+
+
+def test_switching_from_a_personal_page_stays_on_it(web: Web):
+    web.sign_in("asha")
+    assert 'name="next" value="/opportunities"' in _nav(web, "/opportunities")
+    assert 'name="next" value=""' in _nav(web, f"/o/{DK}/projects")
+    r = web.post("/orgs/switch", {"org_id": CS, "next": "/opportunities"})
+    assert r.headers["location"].startswith("/opportunities")
