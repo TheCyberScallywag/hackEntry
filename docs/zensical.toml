@@ -2,7 +2,8 @@
 # Live: uv run task docs_live. site_name, site_description, site_author and copyright are
 # written from brand/brand.toml by `uv run task sync`; the colours are assets/stylesheets. Pages live in docs/content and are shared with the Sphinx manual
 # (docs/sphinx); keep `nav` in step with the toctrees in content/manual.md.
-# index.md, about.md and assets/brand/ are copied from brand/ by the docs tasks (git-ignored).
+# index.md, about.md and assets/brand/ are copied from brand/ by the docs tasks (git-ignored);
+# about.md gets its contributors from brand/docs/contributors.json on the way.
 
 [project]
 site_name = "Volunteer Network"

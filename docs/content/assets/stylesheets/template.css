@@ -109,3 +109,58 @@ img.brand-banner {
   border-radius: 0.75rem;
   margin: 0 0 1.5rem;
 }
+
+/* The contributors on the about page (brandkit.contributors_html): a grid of GitHub avatars.
+   The selectors carry the list's class twice over so they outrank both themes' list styles. */
+ul.brand-contributors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+ul.brand-contributors > li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+ul.brand-contributors a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  height: 100%;
+  padding: 1rem 0.5rem;
+  border: 1px solid var(--brand-border);
+  border-radius: var(--brand-radius);
+  background: var(--brand-surface);
+  color: var(--brand-text);
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+ul.brand-contributors a:hover,
+ul.brand-contributors a:focus-visible {
+  border-color: var(--brand-accent);
+  box-shadow: var(--brand-glow);
+}
+
+ul.brand-contributors img {
+  width: 5rem;
+  height: 5rem;
+  margin-bottom: 0.5rem;
+  border-radius: 50%;
+  background: var(--brand-card);
+}
+
+ul.brand-contributors span {
+  font-weight: 700;
+}
+
+ul.brand-contributors small {
+  color: var(--brand-text-muted);
+}

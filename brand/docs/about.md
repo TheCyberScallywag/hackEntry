@@ -13,3 +13,9 @@ live partnership.
 ## Get in touch
 
 - Repository: [TheCyberScallywag/hackEntry](https://github.com/TheCyberScallywag/hackEntry)
+
+## Contributors
+
+Thank you to everyone who has contributed to the project.
+
+<!-- contributors -->

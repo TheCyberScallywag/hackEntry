@@ -1,6 +1,8 @@
 """The brand kit: brand/brand.toml is the one source of the name, colours and images, and
 every surface (web, admin, mobile, docs) carries it."""
 
+import html
+import json
 import re
 import shutil
 from pathlib import Path
@@ -93,6 +95,29 @@ def test_the_mobile_theme_uses_the_same_colours():
     literal = {c for c in HEX.findall(scss) if "step" not in c}
     assert {brand.primary, brand.secondary, brand.tertiary} <= literal
     assert allowed & literal
+
+
+def test_the_about_page_lists_the_contributors_with_their_github_avatars(tmp_path):
+    page = brandkit.about_page()
+    assert brandkit.CONTRIBUTORS_MARK not in page
+    block = page[page.index("## Contributors") :]
+    assert "\n\n" not in block[block.index("<ul") : block.index("</ul>")]  # one HTML block
+    for person in json.loads((REPO / "brand/docs/contributors.json").read_text()):
+        assert f'<a href="https://github.com/{person["login"]}">' in block
+        assert html.escape(person["avatar_url"]) in block
+        assert html.escape(person["name"]) in block
+
+    neutral = REPO / "examples/brands/neutral"  # no marker: the page is copied as written
+    assert brandkit.about_page(neutral) == (neutral / "docs/about.md").read_text()
+
+    target = tmp_path / "brand"
+    shutil.copytree(REPO / "brand", target)
+    (target / "docs/contributors.json").write_text('[{"login": "<b>", "url": "http://x"}]')
+    with pytest.raises(BrandError, match="avatar_url"):
+        brandkit.about_page(target)
+    (target / "docs/contributors.json").unlink()
+    with pytest.raises(BrandError, match=r"contributors\.json"):
+        brandkit.about_page(target)
 
 
 def test_the_admin_console_is_started_with_the_brand_theme():
