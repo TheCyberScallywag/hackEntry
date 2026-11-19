@@ -8,18 +8,22 @@ status | drain        projection outbox status / project pending items now
 grant-reviewer        give an existing account the reviewer role (operator only)
 openapi [--out PATH]  write the JSON API's OpenAPI document (the mobile types are generated from it)
 brand [--check]       write the mobile and docs copies of brand/ (--check: only list stale ones)
+about --out PATH      write the docs about page: brand/docs/about.md with its contributors
+contributors --repo OWNER/NAME   refresh brand/docs/contributors.json from GitHub
 aura-push | aura-parity   optional, explicit AuraDB push and match parity check
 """
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
 from app.catalogue import load_demo, stable_id
-from app.config import BUNDLED_GRAPH, get_settings
+from app.config import BRAND_DIR, BUNDLED_GRAPH, get_settings
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore
 from app.runtime import build_runtime, reset_demo, seed_demo
@@ -63,6 +67,33 @@ def openapi_document() -> str:
     return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+def fetch_contributors(repo: str) -> list[dict]:
+    """The people (not bots) GitHub lists as contributors to `repo`, most commits first.
+
+    Unauthenticated calls are enough for a public repository; GITHUB_TOKEN is sent when set.
+    """
+    headers = {"Accept": "application/vnd.github+json"}
+    if token := os.environ.get("GITHUB_TOKEN"):
+        headers["Authorization"] = f"Bearer {token}"
+
+    def get(path: str):
+        request = urllib.request.Request(f"https://api.github.com/{path}", headers=headers)
+        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310 - fixed host
+            return json.load(response)
+
+    return [
+        {
+            "login": person["login"],
+            "name": get(f"users/{person['login']}").get("name") or person["login"],
+            "avatar_url": person["avatar_url"],
+            "url": person["html_url"],
+            "contributions": person["contributions"],
+        }
+        for person in get(f"repos/{repo}/contributors?per_page=100")
+        if person["type"] == "User"
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m app.cli",
@@ -89,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     openapi.add_argument("--out", type=Path)
     brand = sub.add_parser("brand")
     brand.add_argument("--check", action="store_true")
+    about = sub.add_parser("about")
+    about.add_argument("--out", type=Path, required=True)
+    contributors = sub.add_parser("contributors")
+    contributors.add_argument("--repo", required=True, help="GitHub repository, OWNER/NAME")
     sub.add_parser("aura-push")
     sub.add_parser("aura-parity")
     args = parser.parse_args(argv)
@@ -161,6 +196,23 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Wrote {args.out}")
                 else:
                     print(text, end="")
+            case "about":
+                from app import brandkit
+
+                try:
+                    page = brandkit.about_page()
+                except brandkit.BrandError as error:
+                    print(f"about: {error}", file=sys.stderr)
+                    return 1
+                args.out.write_text(page, encoding="utf-8")
+                print(f"Wrote {args.out}")
+            case "contributors":
+                people = fetch_contributors(args.repo)
+                out = BRAND_DIR / "docs/contributors.json"
+                out.write_text(
+                    json.dumps(people, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+                )
+                print(f"Wrote {out}: {len(people)} contributors")
             case "brand":
                 from app import brandkit
 

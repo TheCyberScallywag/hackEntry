@@ -12,6 +12,7 @@ To change the brand, edit this folder (or start again from `examples/brands/neut
 | `brand.toml` | Name, tagline, palette (`[theme]`), light and dark surfaces (`[theme.light]`, `[theme.dark]`), fonts, images (`[images]`) | The web app and the admin console at start-up; `task sync` for the mobile app and the docs, which cannot read it |
 | `images/` | Logo, mark, favicon (a PNG of the mark) and hero banner | Served by the web app at `/brand/`; `task sync` copies them into the mobile app, and the docs tasks into the docs |
 | `docs/*.md` | The docs portal's home (`home.md`) and about page | Copied into `docs/content/` by `uv run task docs` (home.md becomes index.md) |
+| `docs/contributors.json` | The people listed under Contributors on the about page: GitHub login, name, avatar and profile URL | `uv run task docs` puts them where `about.md` says `<!-- contributors -->`; `uv run task contributors` refreshes the file from GitHub |
 | `content/` | Template sample content, not used by this application | Nothing |
 
 ## Where each surface gets the brand

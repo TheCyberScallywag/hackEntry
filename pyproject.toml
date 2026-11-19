@@ -72,8 +72,9 @@ packages = ["src/app"]
 use_vars = true
 
 [tool.taskipy.variables]
-# The brand's home and about pages and images, copied into the docs (git-ignored copies).
-docs_brand = "python -m app.cli brand && mkdir -p docs/content/assets/brand && cp brand/docs/home.md docs/content/index.md && cp brand/docs/about.md docs/content/about.md && cp brand/images/* docs/content/assets/brand/"
+# The brand's home and about pages and images, copied into the docs (git-ignored copies); the
+# about page gets its contributors from brand/docs/contributors.json on the way.
+docs_brand = "python -m app.cli brand && mkdir -p docs/content/assets/brand && cp brand/docs/home.md docs/content/index.md && python -m app.cli about --out docs/content/about.md && cp brand/images/* docs/content/assets/brand/"
 # Portal first (its --clean empties the site dir), then the manual into site/manual.
 docs_build = { var = "{docs_brand} && zensical build --strict --clean -f docs/zensical.toml && sphinx-build -W --keep-going -q -b html -c docs/sphinx docs/content docs/_build/site/manual", recursive = true }
 
@@ -82,6 +83,7 @@ web = { cmd = "python -m app.serve web", help = "Run the web app on http://local
 admin = { cmd = "python -m app.serve admin", help = "Run the Streamlit admin on http://localhost:8501 (needs uv sync --group admin)" }
 reset = { cmd = "python -m app.cli reset --demo", help = "Wipe var/ and reseed the disposable demo (SQLite + writable copy of data/demo.rl)" }
 sync = { cmd = "python -m app.cli brand", help = "Write the mobile and docs copies of brand/ (theme, images, names); task test fails while one is stale" }
+contributors = { cmd = "python -m app.cli contributors --repo TheCyberScallywag/hackEntry", help = "Refresh brand/docs/contributors.json (the About page's list) from the GitHub contributors" }
 bundle = { cmd = "python -m app.cli bundle", help = "Rebuild the committed data/demo.rl from data/fixtures" }
 inspect = { cmd = "python -m app.cli inspect --store data/demo.rl", help = "Run the sample graph inspection query on the bundled store" }
 lint = { cmd = "ruff check . && ruff format --check .", help = "Ruff lint + format check" }

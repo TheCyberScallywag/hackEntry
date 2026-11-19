@@ -15,6 +15,7 @@ The CSS custom properties are the same on every surface:
     --brand-highlight                                honey: badges and emphasis
 """
 
+import html
 import json
 import re
 import tomllib
@@ -26,6 +27,7 @@ from app.config import BRAND_DIR
 REPO = Path(__file__).resolve().parents[2]
 SCHEMES = ("light", "dark")
 AA = 4.5  # WCAG AA contrast for body text
+CONTRIBUTORS_MARK = "<!-- contributors -->"  # where brand/docs/about.md lists its contributors
 HEADER = "GENERATED from brand/brand.toml by `uv run task sync` (src/app/brandkit.py). Do not edit."
 
 
@@ -326,6 +328,46 @@ def streamlit_flags(brand: Brand) -> list[str]:
             f"theme.{name}.sidebar.borderColor": mix(brand.primary, brand.cream, 0.2),
         }
     return [part for key, value in options.items() for part in (f"--{key}", value)]
+
+
+# ------------------------------------------------------------------ the about page (docs)
+def contributors_html(people: list[dict]) -> str:
+    """The contributors as a grid of GitHub avatars, each linked to its profile.
+
+    One HTML block with no blank line, so Python-Markdown (the portal) and MyST (the manual)
+    both pass it through as written. template.css styles it (.brand-contributors).
+    """
+    items = []
+    for person in people:
+        try:
+            login, avatar, url = person["login"], person["avatar_url"], person["url"]
+        except KeyError as missing:
+            raise BrandError(f"contributors.json: an entry has no {missing}") from missing
+        if not all(link.startswith("https://") for link in (avatar, url)):
+            raise BrandError(f"contributors.json: {login}: avatar_url and url must be https://")
+        name = person.get("name") or login
+        avatar += ("&" if "?" in avatar else "?") + "s=160"  # 80px shown, sharp at 2x
+        handle = "" if name == login else f"<small>@{html.escape(login)}</small>"
+        items.append(
+            f'<li><a href="{html.escape(url)}">'
+            f'<img src="{html.escape(avatar)}" alt="" width="80" height="80" loading="lazy">'
+            f"<span>{html.escape(name)}</span>{handle}</a></li>"
+        )
+    return '<ul class="brand-contributors">\n' + "\n".join(items) + "\n</ul>"
+
+
+def about_page(brand_dir: Path = BRAND_DIR) -> str:
+    """brand/docs/about.md with its contributors marker replaced by the people in
+    brand/docs/contributors.json. A brand without the marker gets its page unchanged."""
+    page = (brand_dir / "docs/about.md").read_text(encoding="utf-8")
+    if CONTRIBUTORS_MARK not in page:
+        return page
+    source = brand_dir / "docs/contributors.json"
+    try:
+        people = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise BrandError(f"about.md lists contributors, but contributors.json: {error}") from error
+    return page.replace(CONTRIBUTORS_MARK, contributors_html(people))
 
 
 # ------------------------------------------------------------------ the generated copies
