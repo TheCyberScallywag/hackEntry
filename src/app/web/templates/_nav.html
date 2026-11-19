@@ -1,0 +1,60 @@
+{# The signed-in bar: Home, what you do as a volunteer, what you do for the active organisation,
+   and your own account under the avatar. An entry is rendered only when the user can act on it.
+   The menus are native <details> (the page CSP allows no inline script); sharing one `name`
+   makes the browser close a menu when another opens. #}
+{% macro item(href, label) -%}
+<a href="{{ href }}"{% if path == href.split("?")[0] %} aria-current="page"{% endif %}>{{ label }}{{ caller() if caller }}</a>
+{%- endmacro %}
+{% set volunteering = orgs|selectattr("opted_in")|list %}
+{% set stay = path if path in ("/home", "/opportunities", "/matches", "/notifications", "/profile", "/orgs", "/showcase", "/submissions") else "" %}
+<nav aria-label="Main">
+  {{ item("/home", "Home") }}
+  <details class="menu" name="nav" data-menu="volunteer">
+    <summary>Volunteer</summary>
+    <div class="menu-panel">
+      {% if volunteering %}{{ item("/opportunities", "Opportunities") }}{% endif %}
+      {% if actor.active and active %}{{ item("/submissions/new?org=" ~ active.id, "Suggest a project") }}{% endif %}
+      {{ item("/orgs", "Find organisations") }}
+      {{ item("/showcase", "Showcase") }}
+    </div>
+  </details>
+  {% if active %}
+  <details class="menu" name="nav" data-menu="organisation" data-org="{{ active.id }}">
+    <summary>{{ active.name }}</summary>
+    <div class="menu-panel">
+      {{ item("/o/" ~ active.id ~ "/projects", "Projects") }}
+      {% if active.reviewer %}
+      {{ item("/o/" ~ active.id ~ "/review", "Review queue") }}
+      {{ item("/o/" ~ active.id ~ "/coverage", "Coverage") }}
+      {% endif %}
+      {% if active.org_admin %}{{ item("/o/" ~ active.id ~ "/volunteers", "Volunteers") }}{% endif %}
+      {% if orgs|length > 1 %}
+      <p class="menu-head">Switch to</p>
+      {% for o in orgs if o.id != active.id %}
+      <form method="post" action="/orgs/switch">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="next" value="{{ stay }}">
+        <input type="hidden" name="org_id" value="{{ o.id }}">
+        <button type="submit" class="link">{{ o.name }}</button>
+      </form>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </details>
+  {% endif %}
+  <details class="menu account" name="nav" data-menu="account">
+    <summary aria-label="Your account{% if unread %}, {{ unread }} unread notifications{% endif %}"><span class="avatar" aria-hidden="true">{{ session.display_name|initials }}</span>{% if unread %}<span class="count" aria-hidden="true">{{ unread }}</span>{% endif %}</summary>
+    <div class="menu-panel">
+      <p class="who"><strong>{{ session.display_name }}</strong>
+        <span class="status {{ actor.status }}">{{ status_labels[actor.status] }}</span>{% for role in actor.system_roles|sort %} · {{ role|capitalize }}{% endfor %}</p>
+      {{ item("/profile", "Profile") }}
+      {% call item("/notifications", "Notifications") %}{% if unread %} <span class="count">{{ unread }}</span>{% endif %}{% endcall %}
+      {{ item("/submissions", "My suggestions") }}
+      {% if actor.system_roles %}{{ item("/api/docs", "API docs") }}{% endif %}
+      <form method="post" action="/signout">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <button type="submit" class="link">Sign out</button>
+      </form>
+    </div>
+  </details>
+</nav>
