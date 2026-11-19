@@ -66,6 +66,15 @@ templates.env.filters["state_label"] = lambda s: (
 ).get(s, s)
 
 
+def initials(name: str) -> str:
+    """Up to two letters for the avatar: the first of the first and of the last word."""
+    words = name.split()
+    return "".join(w[0] for w in (words[:1] + words[1:][-1:])).upper() or "?"
+
+
+templates.env.filters["initials"] = initials
+
+
 # ------------------------------------------------------------------ session
 def get_rt(request: Request) -> Runtime:
     return request.app.state.rt
