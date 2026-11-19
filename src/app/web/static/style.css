@@ -23,12 +23,30 @@ h1 { font-size: 1.6rem; line-height: 1.25; font-weight: 800; } h2 { font-size: 1
 /* The navy bar with the jade-to-honey rule: the same header on every surface. */
 .top { background: var(--brand-bar); color: var(--brand-bar-text); padding: 8px 16px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; border-bottom: 3px solid transparent; border-image: var(--brand-rule) 1; }
 .top a { color: var(--brand-bar-text); text-decoration: none; }
-.top nav a:hover { color: var(--brand-secondary); }
+.top nav > a:hover { color: var(--brand-secondary); }
 .brand { font-weight: 800; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; }
 .brand img { border-radius: 7px; }
-.top nav { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; font-size: .95rem; }
-.switcher { display: flex; gap: 6px; align-items: center; }
-.switcher select { max-width: 12rem; }
+.top nav { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; font-size: .95rem; }
+.top nav > a[aria-current], .menu[open] > summary { color: var(--brand-secondary); }
+/* Dropdown menus: native <details>, no script. The panel is a card hanging under its summary. */
+.menu { position: relative; }
+.menu.account { margin-left: auto; }
+.menu > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu:not(.account) > summary::after { content: "▾"; font-size: .8em; }
+.menu > summary:hover { color: var(--brand-secondary); }
+.menu-panel { position: absolute; z-index: 10; top: calc(100% + 10px); left: 0; min-width: 13rem; max-width: calc(100vw - 32px); padding: 6px; background: var(--brand-surface); color: var(--brand-text); border: 1px solid var(--brand-border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+.menu.account .menu-panel { left: auto; right: 0; }
+.menu-panel a, .menu-panel button.link { display: block; width: 100%; padding: 6px 10px; border-radius: 8px; color: var(--brand-text); text-align: left; text-decoration: none; }
+.menu-panel a:hover, .menu-panel button.link:hover, .menu-panel a[aria-current] { background: var(--brand-background); color: var(--brand-accent); }
+.menu-panel a[aria-current] { font-weight: 600; }
+.menu-panel form { margin: 0; }
+.menu-head, .who { margin: 6px 0 2px; padding: 6px 10px 2px; border-top: 1px solid var(--brand-border); color: var(--brand-text-muted); font-size: .8rem; }
+.menu-head { text-transform: uppercase; letter-spacing: .06em; }
+.who { margin: 0 0 6px; padding: 6px 10px 8px; border-top: 0; border-bottom: 1px solid var(--brand-border); }
+.who strong { display: block; color: var(--brand-text); font-size: .95rem; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; background: var(--brand-secondary); color: var(--brand-primary); font-weight: 700; font-size: .85rem; }
+.menu.account > summary > .count { margin-left: -10px; align-self: flex-start; }
 .sr { position: absolute; left: -9999px; }
 .card { background: var(--brand-surface); border: 1px solid var(--brand-border); border-radius: var(--radius); padding: 14px 16px; margin: 12px 0; }
 .card.current { border-color: var(--brand-accent); box-shadow: 0 0 0 2px var(--brand-accent) inset; }
@@ -62,7 +80,6 @@ form label { display: block; margin: 10px 0; font-weight: 600; }
 form label.check { font-weight: 400; display: flex; gap: 6px; align-items: center; }
 input, select, textarea, button { font: inherit; }
 input:not([type=checkbox]):not([type=radio]), select, textarea { display: block; width: 100%; max-width: 100%; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--brand-border); border-radius: 8px; background: var(--brand-surface); color: var(--brand-text); }
-.top select { display: inline-block; width: auto; margin: 0; padding: 4px 6px; }
 .narrow { max-width: 28rem; }
 button, .button { display: inline-block; background: var(--brand-accent); color: var(--brand-on-accent); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; text-decoration: none; font-weight: 600; }
 button.secondary, .button.secondary { background: transparent; color: var(--brand-accent); border: 1px solid var(--brand-accent); }
