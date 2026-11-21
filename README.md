@@ -121,13 +121,16 @@ The fixture (`data/fixtures/demo.json`) contains two organisations with separate
 system admin, a moderator, a volunteer in screening, a volunteer in both organisations, a formed
 team, overlapping project skills, one hard exclusion (Gwen), one unfilled skill
 (*First aid* for Winter Outreach Kitchen), one approved project per organisation, one suggestion
-awaiting review (*Outreach Data Audit*) and one rejected suggestion.
+awaiting review (*Outreach Data Audit*), one unfinished draft suggestion (*Password Manager
+Clinic*, visible to Asha only) and one rejected suggestion.
 
 Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/demo-script.md)):
 
 1. Sign in as **Asha** and switch between DataKind UK and Cyber Scallywags with the header
    switcher. Switching does not sign you in again, and it is a separate action from joining.
-2. *My suggestions* shows **Outreach Data Audit** as *Submitted*.
+2. *My suggestions* shows **Outreach Data Audit** as *In review* and **Password Manager Clinic**
+   as a *Draft*. Open the draft: it can be saved again, discarded, or completed and submitted
+   for review. Nobody else sees it until then.
 3. Sign in as **Kofi**. He is org admin for Cyber Scallywags, so the DataKind UK review queue
    gives him a 403 and the suggestion gives him a 404.
 4. Sign in as **Rhiannon**, open the suggestion and choose *Approve and activate*. The approval
@@ -155,7 +158,7 @@ Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/
 | `org_admin` | one organisation | review its project suggestions; withdraw projects and reassign project leads; list and remove its volunteers; accept or decline candidates for any of its projects |
 | `reviewer` | one organisation | review its project suggestions |
 | Project lead | one project (the author by default) | accept or decline candidates; remove team members |
-| Volunteer | themselves | profile, joining organisations, submitting for vetting, answering offers, leaving teams, suggesting projects once active |
+| Volunteer | themselves | profile, joining organisations, submitting for vetting, answering offers, leaving teams, suggesting projects once active (as a private draft first, if they wish) |
 
 Roles come only from the seed, a system admin (API or console) or `python -m app.cli
 grant-reviewer`. Signup never grants a role. Every check happens on the server, against the
@@ -196,7 +199,7 @@ in-process, so roles, states and version checks are enforced in one place
 | auth | `POST /auth/signup`, `POST /session`, `DELETE /session` |
 | me | `GET /me`, `PUT /me/active-org`, `GET/PUT /profile`, `POST /me/vetting`, `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all` |
 | organisations | `GET /orgs`, `PUT/DELETE /orgs/{org}/membership`, `GET /orgs/{org}/matches`, `GET /orgs/{org}/projects`, `GET /orgs/{org}/coverage`, `GET /orgs/{org}/volunteers`, `POST /orgs/{org}/volunteers/{user}/remove` |
-| projects | `GET/POST /submissions`, `GET /submissions/{id}`, `POST /submissions/{id}/revisions`, `GET /orgs/{org}/submissions`, `POST /orgs/{org}/submissions/{id}/decision`, `POST /orgs/{org}/projects/{id}/withdraw`, `PUT /orgs/{org}/projects/{id}/lead` |
+| projects | `GET/POST /submissions`, `POST /submissions/drafts`, `PUT /submissions/{id}/draft`, `POST /submissions/{id}/submit`, `GET/DELETE /submissions/{id}`, `POST /submissions/{id}/revisions`, `GET /orgs/{org}/submissions`, `POST /orgs/{org}/submissions/{id}/decision`, `POST /orgs/{org}/projects/{id}/withdraw`, `PUT /orgs/{org}/projects/{id}/lead` |
 | placements | `GET /placements`, `POST /placements/{project}/answer`, `POST /placements/{project}/leave`, `GET /projects/{project}/placements`, `POST /projects/{project}/placements/{volunteer}/answer`, `POST /projects/{project}/placements/{volunteer}/remove` |
 | moderation | `GET /moderation/volunteers?status=`, `GET /moderation/volunteers/{user}`, `POST /moderation/volunteers/{user}/decision` |
 | admin | `GET /admin/users`, `PUT/DELETE /admin/users/{user}/system-roles/{role}`, `PUT/DELETE /admin/orgs/{org}/roles/{user}/{role}`, `POST /admin/orgs`, `GET /admin/projection`, `POST /admin/projection/replay`, `GET /admin/graph` |
@@ -476,7 +479,8 @@ The suite covers:
 
 - one login across organisations, and switching versus joining
 - role and tenant isolation, including forged organisation, submission and project IDs
-- submission visibility, changes requested and revision, rejection, approval and withdrawal
+- drafts (private to the author, partial content, edit in place, submit, discard), submission
+  visibility, changes requested and revision, rejection, approval and withdrawal
 - stale, repeated and self-approval attempts
 - every row of the matching-rules table, the preferred-only filter, and profile edits propagating
   to Relate

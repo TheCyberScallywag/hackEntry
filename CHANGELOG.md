@@ -21,24 +21,19 @@ Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.
 
 ### Changed
 
-- fix graph-read truncation and Aura push, split services and web, scope the sweep
-- declare API responses, restructure the admin console, tidy the mobile app
-- to add Showcse for charities
-
-### Documentation
-
-- describe the new module layout and record the refactor's verification
-- document how the application uses Relate, list all tooling, fix stale statements
+- Removed renamed "Data Volunteer Network" to "Volunteer Netw… (#7)
+- Added Contributor section (#23)
+- Refactored the project onboarding flow to allow for a draft status of a suggestion
 
 ### Chores
 
 - merge remote initial commit, keep project LICENSE
 - Bump nginxinc/nginx-unprivileged in /docker in the images group (#1)
-- Replace @demo.invalid demo addresses with @cyberscallywags.uk
-- build separate web and admin images, run CI once per pull request
 
 ### Other
 
 - Initial Commit
 - Initial commit
 - Refactor/theme images (#4)
+- Refactor/review findings (#5)
+- Refactor/refactor the UI to be more compact (#21)

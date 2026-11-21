@@ -53,20 +53,56 @@ def new_submission(request: Request, session: User):
 
 @router.post("/submissions/new")
 def create_submission(request: Request, rt: RT, session: User, form: UserForm):
+    """Both buttons of the form post here: "Save draft" (intent=save) keeps the suggestion
+    private to its author; "Submit for review" sends it to the organisation."""
     draft = draft_from(form)
     target = str(form.get("org_id", ""))
+    saving = form.get("intent") == "save"
     try:
-        sid = services.create_submission(rt.db, session.user_id, target, draft)
+        if saving:
+            sid = services.save_draft(rt.db, session.user_id, target, draft)
+        else:
+            sid = services.create_submission(rt.db, session.user_id, target, draft)
     except services.Invalid as error:
         return render(request, "submission_form.html", session, draft=draft, target=target,
                       error=str(error), status_code=400)  # fmt: skip
-    return redirect(f"/submissions/{sid}", "submitted")
+    return redirect(f"/submissions/{sid}", "draft_saved" if saving else "submitted")
 
 
 @router.get("/submissions/{sid}")
 def submission(sid: str, request: Request, rt: RT, session: User):
     sub = services.get_submission(rt.db, session.user_id, sid)
+    if sub["can_edit"]:  # the author's own draft opens in the form
+        return render(request, "submission_form.html", session, sub=sub, draft=sub["current"],
+                      target=sub["org_id"])  # fmt: skip
     return render(request, "submission.html", session, sub=sub)
+
+
+@router.post("/submissions/{sid}/draft")
+def save_draft(sid: str, request: Request, rt: RT, session: User, form: UserForm):
+    """Save the draft; with intent=submit, also send it for review. If it is not complete
+    enough to submit, what was entered is still saved and the form says what is missing."""
+    draft = draft_from(form)
+    target = str(form.get("org_id", ""))
+    version = to_int(form.get("version"))
+    try:
+        services.update_draft(rt.db, session.user_id, sid, target, draft, expected_version=version)
+        if form.get("intent") != "submit":
+            return redirect(f"/submissions/{sid}", "draft_saved")
+        services.submit_draft(rt.db, session.user_id, sid, expected_version=version + 1)
+    except services.Invalid as error:
+        sub = services.get_submission(rt.db, session.user_id, sid)
+        return render(request, "submission_form.html", session, sub=sub, draft=draft,
+                      target=target, error=str(error), status_code=400)  # fmt: skip
+    return redirect(f"/submissions/{sid}", "submitted")
+
+
+@router.post("/submissions/{sid}/discard")
+def discard_draft(sid: str, rt: RT, session: User, form: UserForm):
+    services.discard_draft(
+        rt.db, session.user_id, sid, expected_version=to_int(form.get("version"))
+    )
+    return redirect("/submissions", "draft_discarded")
 
 
 @router.post("/submissions/{sid}/revise")

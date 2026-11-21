@@ -36,6 +36,8 @@ MESSAGES = {
     "switched": "Active organisation switched.",
     "profile_saved": "Profile saved. Matches update once the graph has caught up.",
     "submitted": "Suggestion submitted for review.",
+    "draft_saved": "Draft saved. Only you can see it until you submit it for review.",
+    "draft_discarded": "Draft discarded.",
     "revised": "Revision submitted for review.",
     "reviewed": "Decision recorded.",
     "withdrawn": "Project withdrawn from browse and matching.",

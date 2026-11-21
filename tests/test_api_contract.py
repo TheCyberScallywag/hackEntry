@@ -52,7 +52,7 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 45  # a new route must be added to the calls below
+    assert len(api.router.routes) == 49  # a new route must be added to the calls below
 
 
 def test_every_route_answers_in_the_shape_it_declares(web: Web):
@@ -112,6 +112,20 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
        "POST", "/moderation/volunteers/{user_id}/decision")  # fmt: skip
 
     # ---- project onboarding
+    draft = ok(asha.post("/submissions/drafts", {"title": "Half an idea", "org_id": DK}),
+               "POST", "/submissions/drafts", 201)  # fmt: skip
+    assert draft["state"] == "draft"
+    detail = asha.get(f"/submissions/{draft['id']}").json()
+    assert detail["can_edit"] and detail["current"]["cause_id"] is None
+    assert rhiannon.get(f"/submissions/{draft['id']}").status_code == 404
+    assert asha.post(f"/submissions/{draft['id']}/submit", {"version": 1}).status_code == 422
+    ok(asha.put(f"/submissions/{draft['id']}/draft", {**DRAFT, "org_id": DK, "version": 1}),
+       "PUT", "/submissions/{sid}/draft")  # fmt: skip
+    assert ok(asha.post(f"/submissions/{draft['id']}/submit", {"version": 2}),
+              "POST", "/submissions/{sid}/submit") == {"state": "submitted"}  # fmt: skip
+    scrap = asha.post("/submissions/drafts", {"title": "Scrap this", "org_id": DK}).json()
+    ok(asha.delete(f"/submissions/{scrap['id']}?version=1"), "DELETE", "/submissions/{sid}")
+    assert asha.get(f"/submissions/{scrap['id']}").status_code == 404
     created = ok(asha.post("/submissions", {**DRAFT, "org_id": DK}), "POST", "/submissions", 201)
     mine = ok(asha.get("/submissions"), "GET", "/submissions")
     assert mine[0]["state_label"] == "In review"
@@ -236,7 +250,7 @@ def test_mobile_state_unions_match_the_api(schema: dict):
     assert set(re.findall(r"'([^']+)'", placement_states)) == set(
         components["MyPlacement"]["properties"]["state"]["enum"]
     )
-    submission_states = re.search(r"state: ('submitted'[^;]+);", source).group(1)
+    submission_states = re.search(r"state: ('draft'[^;]+);", source).group(1)
     assert set(re.findall(r"'([^']+)'", submission_states)) == set(
         components["SubmissionSummary"]["properties"]["state"]["enum"]
     )

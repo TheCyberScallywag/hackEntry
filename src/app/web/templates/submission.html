@@ -6,7 +6,7 @@
 <h1>{{ sub.current.title }}</h1>
 <p><span class="state {{ sub.state }}">{{ sub.state|state_label }}</span> · revision {{ sub.current_revision }}</p>
 <p>{{ sub.current.summary }}</p>
-<p>Cause: {{ catalogue().cause_name(sub.current.cause_id) }}</p>
+{% if sub.current.cause_id %}<p>Cause: {{ catalogue().cause_name(sub.current.cause_id) }}</p>{% endif %}
 <p>Required: {{ skills(sub.current.required|map("skill_name")) }}</p>
 {% if sub.current.optional %}<p>Optional: {{ skills(sub.current.optional|map("skill_name"), "opt") }}</p>{% endif %}
 {% if sub.approved_revision %}<p class="muted">Verified: revision {{ sub.approved_revision }} approved by {{ sub.approved_by_name }} at {{ sub.approved_at[:16]|replace("T", " ") }} UTC.{% if sub.published_at %} Published to the matching graph at {{ sub.published_at[:16]|replace("T", " ") }} UTC.{% endif %}</p>{% endif %}

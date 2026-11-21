@@ -1,7 +1,10 @@
 """Suggest → review → publish → withdraw, with visibility and stale-form protection."""
 
+from app.catalogue import stable_id
 from app.graph import cypher
-from tests.conftest import AUDIT, CS, DK, PHISHING, Web
+from tests.conftest import AUDIT, CS, DK, PHISHING, USERS, Web
+
+CLINIC = stable_id("p", "password-manager-clinic")  # Asha's seeded draft for Cyber Scallywags
 
 DRAFT = {
     "title": "Allotment Data Map",
@@ -194,3 +197,133 @@ def test_withdraw_removes_from_browse_and_matching(web: Web):
     assert "Outreach Data Audit" not in web.get(f"/o/{DK}/projects").text
     assert "Outreach Data Audit" not in web.get("/matches?scope=all").text
     assert "Project paused" in web.get(f"/submissions/{AUDIT}").text
+
+
+# ---------------------------------------------------------------- drafts
+def _save(web: Web, org: str, **fields) -> str:
+    r = web.post("/submissions/new", {"org_id": org, "intent": "save", **fields})
+    assert r.status_code == 303 and "msg=draft_saved" in r.headers["location"], r.text
+    return r.headers["location"].split("/submissions/")[1].split("?")[0]
+
+
+def _notes(web: Web, user: str) -> list[str]:
+    with web.rt.db.read() as conn:
+        return [
+            r[0]
+            for r in conn.execute(
+                "SELECT message FROM notifications WHERE user_id = ?", (USERS[user],)
+            )
+        ]
+
+
+def test_a_draft_may_be_incomplete_and_is_private_to_its_author(web: Web):
+    web.sign_in("cerys")
+    form = web.get("/submissions/new").text
+    assert "Save draft" in form and "Submit for review" in form and "Discard draft" not in form
+    sid = _save(web, DK, title="Allotment Data Map")  # no summary, cause or skills yet
+    s = _state(web, sid)
+    assert (s["state"], s["current_revision"], s["version"]) == ("draft", 1, 1)
+    page = web.get(f"/submissions/{sid}").text
+    assert "Save draft" in page and "Discard draft" in page and 'value="Allotment Data Map"' in page
+    assert "Draft: not yet submitted" in web.get("/submissions").text
+    assert "Allotment Data Map" in web.get("/home").text
+    assert "Allotment Data Map" not in web.get("/profile").text  # not one of my projects yet
+    # the organisation's reviewer neither sees it, nor is told about it, nor counts it
+    assert not [n for n in _notes(web, "rhiannon") if "Allotment" in n]
+    web.sign_in("rhiannon")
+    assert web.get(f"/submissions/{sid}").status_code == 404
+    assert "Allotment Data Map" not in web.get(f"/o/{DK}/review").text
+    r = web.post(f"/o/{DK}/review/{sid}", {"action": "approved", "reason": "Looks fine",
+                                           "revision": 1, "version": 1})  # fmt: skip
+    assert r.status_code == 409 and _state(web, sid)["state"] == "draft"
+
+
+def test_a_draft_still_needs_a_title_and_valid_choices(web: Web):
+    web.sign_in("cerys")
+    r = web.post("/submissions/new", {"org_id": DK, "intent": "save", "title": "ab"})
+    assert r.status_code == 400 and "Title must be" in r.text
+    r = web.post("/submissions/new", {"org_id": DK, "intent": "save", "title": "Fine title",
+                                      "required": ["juggling"]})  # fmt: skip
+    assert r.status_code == 400 and "shared catalogue" in r.text
+    web.sign_in("bryn")  # not in DataKind UK
+    r = web.post("/submissions/new", {"org_id": DK, "intent": "save", "title": "Fine title"})
+    assert r.status_code == 403
+
+
+def test_a_draft_is_edited_in_place_then_submitted_for_review(web: Web):
+    web.sign_in("cerys")
+    sid = _save(web, DK, title="Allotment Data Map")
+    # submitting while incomplete saves what was typed and says what is missing
+    partial = {"title": "Allotment Map", "summary": "Too short"}
+    r = web.post(f"/submissions/{sid}/draft", {"org_id": DK, "intent": "submit", "version": 1,
+                                               **partial})  # fmt: skip
+    assert r.status_code == 400 and "Summary must be" in r.text and "Too short" in r.text
+    s = _state(web, sid)
+    assert (s["state"], s["current_revision"], s["version"]) == ("draft", 1, 2)
+    # a form rendered before that save is stale
+    r = web.post(f"/submissions/{sid}/draft", {**DRAFT, "org_id": DK, "intent": "save",
+                                               "version": 1})  # fmt: skip
+    assert r.status_code == 409
+    r = web.post(f"/submissions/{sid}/draft", {**DRAFT, "org_id": DK, "intent": "save",
+                                               "version": 2})  # fmt: skip
+    assert r.status_code == 303 and "msg=draft_saved" in r.headers["location"]
+    assert not [n for n in _notes(web, "rhiannon") if "Allotment" in n]
+    r = web.post(f"/submissions/{sid}/draft", {**DRAFT, "org_id": DK, "intent": "submit",
+                                               "version": 3})  # fmt: skip
+    assert r.status_code == 303 and "msg=submitted" in r.headers["location"]
+    s = _state(web, sid)
+    assert (s["state"], s["current_revision"]) == ("submitted", 1)  # reviewers see revision 1
+    assert "New project suggestion: “Allotment Data Map”." in _notes(web, "rhiannon")
+    assert "Save draft" not in web.get(f"/submissions/{sid}").text
+    # once submitted it is no longer a draft: no more edits, no discarding
+    again = {**DRAFT, "org_id": DK, "intent": "save", "version": s["version"]}
+    assert web.post(f"/submissions/{sid}/draft", again).status_code == 409
+    assert web.post(f"/submissions/{sid}/discard", {"version": s["version"]}).status_code == 409
+    web.sign_in("rhiannon")
+    assert "Allotment Data Map" in web.get(f"/o/{DK}/review").text
+    assert _review(web, DK, sid, "approved").status_code == 303
+    assert _state(web, sid)["state"] == "published" and _in_graph(web, sid)
+
+
+def test_only_the_author_can_edit_submit_or_discard_a_draft(web: Web):
+    web.sign_in("asha")
+    page = web.get(f"/submissions/{CLINIC}").text
+    assert "Password Manager Clinic" in page and "Discard draft" in page
+    for other in ("kofi", "bryn"):  # the organisation's reviewer; another of its volunteers
+        web.sign_in(other)
+        assert web.get(f"/submissions/{CLINIC}").status_code == 404
+        data = {**DRAFT, "org_id": CS, "intent": "submit", "version": 1}
+        assert web.post(f"/submissions/{CLINIC}/draft", data).status_code == 404
+        assert web.post(f"/submissions/{CLINIC}/discard", {"version": 1}).status_code == 404
+    assert _state(web, CLINIC)["state"] == "draft"
+    web.sign_in("asha")
+    assert web.post(f"/submissions/{CLINIC}/discard", {"version": 7}).status_code == 409
+    r = web.post(f"/submissions/{CLINIC}/discard", {"version": 1})
+    assert r.status_code == 303 and "msg=draft_discarded" in r.headers["location"]
+    assert web.get(f"/submissions/{CLINIC}").status_code == 404
+    assert "Password Manager Clinic" not in web.get("/submissions").text
+    with web.rt.db.read() as conn:
+        left = conn.execute(
+            "SELECT count(*) FROM submission_revisions WHERE submission_id = ?", (CLINIC,)
+        ).fetchone()[0]
+    assert left == 0
+
+
+def test_a_draft_can_move_to_another_organisation_the_author_belongs_to(web: Web):
+    web.sign_in("asha")  # DataKind UK and Cyber Scallywags
+    moved = {**DRAFT, "org_id": DK, "intent": "save", "version": 1}
+    assert web.post(f"/submissions/{CLINIC}/draft", moved).status_code == 303
+    assert _state(web, CLINIC)["org_id"] == DK
+    web.sign_in("bryn")  # Cyber Scallywags only
+    sid = _save(web, CS, title="Phone Box Library")
+    r = web.post(f"/submissions/{sid}/draft", {**DRAFT, "org_id": DK, "intent": "save",
+                                               "version": 1})  # fmt: skip
+    assert r.status_code == 403 and _state(web, sid)["org_id"] == CS
+
+
+def test_submitting_a_draft_rechecks_the_author(web: Web):
+    web.sign_in("asha")
+    assert web.post(f"/orgs/{CS}/leave").status_code == 303  # opts out of the draft's organisation
+    data = {**DRAFT, "org_id": CS, "intent": "submit", "version": 1}
+    assert web.post(f"/submissions/{CLINIC}/draft", data).status_code == 403
+    assert _state(web, CLINIC)["state"] == "draft"

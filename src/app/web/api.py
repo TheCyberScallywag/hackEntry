@@ -302,6 +302,42 @@ def create_submission(body: m.SubmissionIn, request: Request, session: Api) -> m
     return {"id": sid, "state": "submitted"}
 
 
+@router.post("/submissions/drafts", status_code=201, tags=["projects"])
+def save_draft(body: m.DraftSaveIn, request: Request, session: Api) -> m.SubmissionCreated:
+    """Save a suggestion as a draft: private to its author and not yet sent for review. Only
+    the title and the organisation are required at this point."""
+    sid = services.save_draft(_rt(request).db, session.user_id, body.org_id, body.draft())
+    return {"id": sid, "state": "draft"}
+
+
+@router.put("/submissions/{sid}/draft", tags=["projects"])
+def update_draft(
+    sid: str, body: m.DraftUpdateIn, request: Request, session: Api
+) -> m.SubmissionStateOut:
+    """Save my draft again, in place. The organisation may still be changed."""
+    services.update_draft(
+        _rt(request).db, session.user_id, sid, body.org_id, body.draft(),
+        expected_version=body.version,
+    )  # fmt: skip
+    return {"state": "draft"}
+
+
+@router.post("/submissions/{sid}/submit", tags=["projects"])
+def submit_draft(
+    sid: str, body: m.VersionIn, request: Request, session: Api
+) -> m.SubmissionStateOut:
+    """Send my draft for review. It must be complete by now."""
+    services.submit_draft(_rt(request).db, session.user_id, sid, expected_version=body.version)
+    return {"state": "submitted"}
+
+
+@router.delete("/submissions/{sid}", tags=["projects"])
+def discard_draft(sid: str, version: int, request: Request, session: Api) -> m.RemovedOut:
+    """Delete my draft. Suggestions that were submitted cannot be deleted."""
+    services.discard_draft(_rt(request).db, session.user_id, sid, expected_version=version)
+    return {"removed": True}
+
+
 @router.get("/submissions/{sid}", tags=["projects"])
 def get_submission(sid: str, request: Request, session: Api) -> m.Submission:
     """Visible to the author and to the organisation's reviewers and admins."""

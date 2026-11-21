@@ -17,6 +17,7 @@ describe('SubmissionsPage', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Outreach Data Audit');
     expect(fixture.nativeElement.textContent).toContain('In review');
+    expect(fixture.nativeElement.textContent).toContain('Draft: not yet submitted');
   });
 
   it('shows the label the server sent, and says when the list cannot be loaded', () => {

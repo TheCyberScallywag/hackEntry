@@ -64,6 +64,11 @@ def test_submission_current_view_carries_the_current_title(web: Web):
             "SELECT title, state, org_id FROM submission_current WHERE id = ?", (FOOD_BANK,)
         ).fetchone()
     assert tuple(row) == ("Food Bank Demand Dashboard", "published", DK)
+    with web.rt.db.read() as conn:  # a draft has a title too, so it is listed like the rest
+        draft = conn.execute(
+            "SELECT title FROM submission_current WHERE state = 'draft'"
+        ).fetchone()
+    assert draft["title"] == "Password Manager Clinic"
 
 
 def test_prune_deletes_only_what_nothing_reads_any_more(web: Web):
