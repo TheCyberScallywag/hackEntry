@@ -98,6 +98,21 @@ The web container copies the bundled `data/demo.rl` into the `dvn-data` volume o
 and seeds the demo accounts. The admin container shares that volume. The mobile image runs the
 Ionic lint and unit tests while it builds. Its nginx then proxies `/api/` to the web app.
 
+### External access with a Cloudflare Tunnel
+
+The stack binds to `127.0.0.1` only. To reach it from outside, put the tunnel's token in `.env` as
+`CLOUDFLARE_TUNNEL_TOKEN` (see `.env.example`) and start the opt-in `tunnel` profile:
+
+```sh
+docker compose --profile tunnel up -d --build --wait     # or: uv run task tunnel
+docker compose logs tunnel                               # "Registered tunnel connection" when up
+```
+
+The `tunnel` service runs `cloudflared` on the Compose network, so the tunnel's public hostnames
+(Cloudflare Zero Trust > Networks > Tunnels) point at service names: `http://web:8080`,
+`http://mobile:8080`, `http://admin:8501` or `http://docs:8080`. The demo accounts share one
+published password, so put anything you expose behind a Cloudflare Access policy.
+
 ## Demo accounts
 
 Every demo account uses the password **`demo-password-1`**. These accounts exist only in the
@@ -418,7 +433,7 @@ version, configuration file and commands. In short:
 | Automation | GitHub Actions (CI and CodeQL), Dependabot |
 
 `uv run task --list` prints the tasks: `web`, `admin`, `reset`, `bundle`, `inspect`, `lint`,
-`format`, `hooks`, `changelog`, `changelog_preview`, `test`, `up`, `down`, `docs`, `docs_serve`, `docs_live` and
+`format`, `hooks`, `changelog`, `changelog_preview`, `test`, `up`, `tunnel`, `down`, `docs`, `docs_serve`, `docs_live` and
 `docs_live_manual`.
 
 ## Security and privacy

@@ -5,6 +5,8 @@
 # Streamlit) and share one named volume holding the SQLite database and the writable Relate store.
 # On first start the web app copies the bundled read-only data/demo.rl into it and seeds the
 # disposable demo accounts. `docker compose down -v` throws it all away.
+# External access is opt-in: `docker compose --profile tunnel up -d` (or: uv run task tunnel) also
+# starts a Cloudflare Tunnel connector, which needs CLOUDFLARE_TUNNEL_TOKEN in .env.
 
 x-app-env: &app-env
   APP_ENV: test
@@ -33,6 +35,7 @@ services:
       <<: *app-env
       SERVICE: web
     ports: ["127.0.0.1:${WEB_PORT:-8080}:8080"]
+    expose: [8080]
     volumes: [dvn-data:/data]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
@@ -48,6 +51,7 @@ services:
       <<: *app-env
       SERVICE: admin
     ports: ["127.0.0.1:${ADMIN_PORT:-8501}:8501"]
+    expose: [8501]
     volumes: [dvn-data:/data]
     depends_on: { web: { condition: service_healthy } }
     healthcheck:
@@ -60,6 +64,7 @@ services:
     environment:
       API_URL: http://web:8080
     ports: ["127.0.0.1:${MOBILE_PORT:-8100}:8080"]
+    expose: [8100]
     depends_on: { web: { condition: service_healthy } }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
@@ -69,9 +74,22 @@ services:
     image: dvn/docs:local
     build: { context: ., dockerfile: docker/docs.Dockerfile }   # fails on any docs warning
     ports: ["127.0.0.1:${DOCS_PORT:-8200}:8080"]
+    expose: [8200]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       <<: *health
+
+  # Cloudflare Tunnel connector (opt-in, profile "tunnel"). It dials out to Cloudflare, so it
+  # publishes no host ports. The tunnel's public hostnames are set in the Cloudflare Zero Trust
+  # dashboard and point at the Compose service names, e.g. http://web:8080 or http://mobile:8080.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}   # from .env; not required unless the profile is used
+    restart: unless-stopped
+    depends_on: { web: { condition: service_healthy } }
 
 volumes:
   dvn-data:
