@@ -20,6 +20,7 @@ from app.sqlstore import Database
 SKILL_STATES = services.SKILL_STATES
 CAUSE_STANCES = services.CAUSE_STANCES
 PROJECT_STATES = services.PROJECT_STATES
+# A draft is in neither list: it shows under "My suggestions" only, not among the projects.
 ACTIVE_STATES = ("submitted", "changes_requested", "approved", "published")
 PAST_STATES = ("rejected", "withdrawn")
 

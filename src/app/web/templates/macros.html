@@ -41,6 +41,7 @@
 <label>Summary <textarea name="summary" required minlength="10" maxlength="2000" rows="4">{{ draft.summary if draft else '' }}</textarea></label>
 <label>Cause
   <select name="cause_id" required>
+    <option value="">Choose a cause</option>
     {% for c in catalogue().causes %}<option value="{{ c.id }}" {% if draft and draft.cause_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
   </select>
 </label>

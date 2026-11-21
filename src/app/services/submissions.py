@@ -1,11 +1,17 @@
-"""Project onboarding: a suggestion, its revisions, review, publication and withdrawal."""
+"""Project onboarding: a suggestion, its draft, revisions, review, publication and withdrawal."""
 
 import sqlite3
 from dataclasses import dataclass
 
 from app.catalogue import get_catalogue
 from app.notify import notify, notify_org_admins
-from app.services.access import load_actor, org_access, require_access, require_active
+from app.services.access import (
+    check_access,
+    load_actor,
+    org_access,
+    require_access,
+    require_active,
+)
 from app.services.errors import (
     NOTE_MAX,
     SUMMARY_MAX,
@@ -20,6 +26,7 @@ from app.sqlstore import Database, enqueue, new_id, now
 
 # State -> label, for the web templates, the API and the mobile app alike.
 PROJECT_STATES = {
+    "draft": "Draft: not yet submitted",
     "submitted": "In review",
     "changes_requested": "Scoping: more detail requested",
     "rejected": "Rejected",
@@ -38,18 +45,22 @@ class Draft:
     required: list[str]
     optional: list[str]
 
-    def validate(self) -> Draft:
+    def validate(self, *, complete: bool = True) -> Draft:
+        """Check the content. `complete=False` is for a saved draft: it needs a title, and the
+        summary, cause and required skills may still be missing, but whatever is there must be
+        valid."""
         catalogue = get_catalogue()
         self.title, self.summary = self.title.strip(), self.summary.strip()
+        self.cause_id = self.cause_id.strip()
         self.required = sorted(set(self.required))
         self.optional = sorted(set(self.optional) - set(self.required))
         if not 3 <= len(self.title) <= TITLE_MAX:
             raise Invalid(f"Title must be 3–{TITLE_MAX} characters.")
-        if not 10 <= len(self.summary) <= SUMMARY_MAX:
+        if not (10 if complete else 0) <= len(self.summary) <= SUMMARY_MAX:
             raise Invalid(f"Summary must be 10–{SUMMARY_MAX} characters.")
-        if self.cause_id not in catalogue.cause_ids:
+        if (complete or self.cause_id) and self.cause_id not in catalogue.cause_ids:
             raise Invalid("Choose a cause from the catalogue.")
-        if not self.required:
+        if complete and not self.required:
             raise Invalid("Choose at least one required skill.")
         if set(self.required + self.optional) - catalogue.skill_ids:
             raise Invalid("Choose skills from the shared catalogue.")
@@ -60,7 +71,7 @@ def _insert_revision(conn: sqlite3.Connection, sid: str, revision: int, draft: D
     conn.execute(
         "INSERT INTO submission_revisions (submission_id, revision, title, summary, cause_id, "
         "created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (sid, revision, draft.title, draft.summary, draft.cause_id, now()),
+        (sid, revision, draft.title, draft.summary, draft.cause_id or None, now()),
     )
     conn.executemany(
         "INSERT INTO revision_skills (submission_id, revision, skill_id, required) "
@@ -70,10 +81,26 @@ def _insert_revision(conn: sqlite3.Connection, sid: str, revision: int, draft: D
     )
 
 
-def create_submission(db: Database, user_id: str, org_id: str, draft: Draft) -> str:
-    """Project onboarding, step 1: an active user suggests a project to one organisation they
-    belong to. It goes to that organisation's admin team for review."""
-    draft.validate()
+def _replace_revision(conn: sqlite3.Connection, sid: str, revision: int, draft: Draft) -> None:
+    """Overwrite a revision in place. Only a draft's revision is ever rewritten."""
+    conn.execute(
+        "DELETE FROM revision_skills WHERE submission_id = ? AND revision = ?", (sid, revision)
+    )
+    conn.execute(
+        "DELETE FROM submission_revisions WHERE submission_id = ? AND revision = ?",
+        (sid, revision),
+    )
+    _insert_revision(conn, sid, revision, draft)
+
+
+def _announce_submitted(conn: sqlite3.Connection, sid: str, org_id: str, author_id: str,
+                        title: str) -> None:  # fmt: skip
+    link = f"/submissions/{sid}"
+    notify(conn, author_id, "project", f"“{title}” was submitted and is in review.", link)
+    notify_org_admins(conn, org_id, "review", f"New project suggestion: “{title}”.", link)
+
+
+def _create(db: Database, user_id: str, org_id: str, draft: Draft, *, state: str) -> str:
     require_active(db, user_id)
     require_access(db, user_id, org_id)
     sid = new_id("p")
@@ -81,14 +108,86 @@ def create_submission(db: Database, user_id: str, org_id: str, draft: Draft) -> 
     with db.tx() as conn:
         conn.execute(
             "INSERT INTO submissions (id, org_id, author_id, lead_id, state, current_revision, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, 'submitted', 1, ?, ?)",
-            (sid, org_id, user_id, user_id, stamp, stamp),
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+            (sid, org_id, user_id, user_id, state, stamp, stamp),
         )
         _insert_revision(conn, sid, 1, draft)
-        link = f"/submissions/{sid}"
-        notify(conn, user_id, "project", f"“{draft.title}” was submitted and is in review.", link)
-        notify_org_admins(conn, org_id, "review", f"New project suggestion: “{draft.title}”.", link)
+        if state == "submitted":
+            _announce_submitted(conn, sid, org_id, user_id, draft.title)
     return sid
+
+
+def create_submission(db: Database, user_id: str, org_id: str, draft: Draft) -> str:
+    """Project onboarding, step 1: an active user suggests a project to one organisation they
+    belong to. It goes to that organisation's admin team for review."""
+    return _create(db, user_id, org_id, draft.validate(), state="submitted")
+
+
+def save_draft(db: Database, user_id: str, org_id: str, draft: Draft) -> str:
+    """Start a suggestion without sending it: only its author sees a draft, nobody is notified,
+    and it may be incomplete. `submit_draft` sends it for review."""
+    return _create(db, user_id, org_id, draft.validate(complete=False), state="draft")
+
+
+def _own_draft(
+    conn: sqlite3.Connection, user_id: str, sid: str, expected_version: int
+) -> sqlite3.Row:
+    """The caller's draft, or NotFound; Conflict if it was submitted or changed meanwhile."""
+    sub = conn.execute(
+        "SELECT org_id, author_id, state, current_revision, version FROM submissions WHERE id = ?",
+        (sid,),
+    ).fetchone()
+    if sub is None or sub["author_id"] != user_id:
+        raise NotFound("submission")
+    if sub["state"] != "draft" or sub["version"] != expected_version:
+        raise Conflict("This draft changed since you opened it, or was already submitted.")
+    return sub
+
+
+def update_draft(
+    db: Database, user_id: str, sid: str, org_id: str, draft: Draft, *, expected_version: int
+) -> None:
+    """The author saves their draft again. It is rewritten in place (no new revision), and the
+    target organisation may still change."""
+    draft.validate(complete=False)
+    with db.tx() as conn:
+        sub = _own_draft(conn, user_id, sid, expected_version)
+        check_access(conn, user_id, org_id)
+        _replace_revision(conn, sid, sub["current_revision"], draft)
+        conn.execute(
+            "UPDATE submissions SET org_id = ?, version = version + 1, updated_at = ? WHERE id = ?",
+            (org_id, now(), sid),
+        )
+
+
+def submit_draft(db: Database, user_id: str, sid: str, *, expected_version: int) -> None:
+    """The author sends their saved draft for review. The content must now be complete, and the
+    author must still be active and belong to the organisation."""
+    with db.tx() as conn:
+        sub = _own_draft(conn, user_id, sid, expected_version)
+        if not load_actor(conn, user_id).active:
+            raise Forbidden("active")
+        check_access(conn, user_id, sub["org_id"])
+        current = _revision(conn, sid, sub["current_revision"])
+        draft = Draft(
+            current["title"], current["summary"], current["cause_id"] or "",
+            current["required"], current["optional"],
+        ).validate()  # fmt: skip
+        conn.execute(
+            "UPDATE submissions SET state = 'submitted', version = version + 1, updated_at = ? "
+            "WHERE id = ?",
+            (now(), sid),
+        )
+        _announce_submitted(conn, sid, sub["org_id"], user_id, draft.title)
+
+
+def discard_draft(db: Database, user_id: str, sid: str, *, expected_version: int) -> None:
+    """The author deletes their draft. Nothing else refers to a draft, so the rows go."""
+    with db.tx() as conn:
+        _own_draft(conn, user_id, sid, expected_version)
+        conn.execute("DELETE FROM revision_skills WHERE submission_id = ?", (sid,))
+        conn.execute("DELETE FROM submission_revisions WHERE submission_id = ?", (sid,))
+        conn.execute("DELETE FROM submissions WHERE id = ?", (sid,))
 
 
 def revise_submission(
@@ -140,7 +239,8 @@ def _revision(conn: sqlite3.Connection, sid: str, revision: int) -> dict:
 
 def get_submission(db: Database, user_id: str, sid: str) -> dict:
     """Visible to its author and to reviewers of its organisation; anyone else gets NotFound.
-    Private review notes are included only for reviewers."""
+    A draft is visible to its author only. Private review notes are included only for
+    reviewers."""
     with db.read() as conn:
         # Columns are named, so a column added to `submissions` is not published by accident.
         sub = conn.execute(
@@ -157,7 +257,7 @@ def get_submission(db: Database, user_id: str, sid: str) -> dict:
             raise NotFound("submission")
         is_author = sub["author_id"] == user_id
         is_reviewer = org_access(conn, user_id, sub["org_id"]).reviewer
-        if not (is_author or is_reviewer):
+        if not (is_author or (is_reviewer and sub["state"] != "draft")):
             raise NotFound("submission")
         reviews = [
             {
@@ -178,6 +278,7 @@ def get_submission(db: Database, user_id: str, sid: str) -> dict:
         "reviews": reviews,
         "is_author": is_author,
         "is_reviewer": is_reviewer,
+        "can_edit": is_author and sub["state"] == "draft",
         "can_review": is_reviewer and not is_author and sub["state"] == "submitted",
         "can_revise": is_author and sub["state"] == "changes_requested",
         "can_withdraw": is_reviewer and sub["state"] in ("approved", "published"),
@@ -206,7 +307,7 @@ def review_queue(db: Database, user_id: str, org_id: str) -> list[dict]:
             for r in conn.execute(
                 "SELECT s.id, s.state, s.current_revision, s.updated_at, s.author_id, "
                 "u.display_name AS author_name, s.title FROM submission_current s "
-                "JOIN users u ON u.id = s.author_id WHERE s.org_id = ? "
+                "JOIN users u ON u.id = s.author_id WHERE s.org_id = ? AND s.state != 'draft' "
                 "ORDER BY CASE s.state WHEN 'submitted' THEN 0 ELSE 1 END, s.updated_at DESC, s.id",
                 (org_id,),
             )

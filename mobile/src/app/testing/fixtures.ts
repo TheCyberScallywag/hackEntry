@@ -40,6 +40,15 @@ export const SUBMISSIONS: Submission[] = [
     current_revision: 1,
     updated_at: '2026-11-13T10:00:00+00:00',
   },
+  {
+    id: 'p_4',
+    title: 'Password Manager Clinic',
+    state: 'draft',
+    state_label: 'Draft: not yet submitted',
+    org_name: 'Cyber Scallywags',
+    current_revision: 1,
+    updated_at: '2026-11-13T09:00:00+00:00',
+  },
 ];
 
 const SKILLS: Profile['skills'] = [

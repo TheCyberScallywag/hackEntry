@@ -72,6 +72,7 @@ h1 { font-size: 1.6rem; line-height: 1.25; font-weight: 800; } h2 { font-size: 1
 .state.published, .state.approved { color: var(--ok-text); }
 .state.rejected, .state.withdrawn { color: var(--gap-text); }
 .state.changes_requested, .state.submitted { color: var(--pref-text); }
+.state.draft { color: var(--brand-text-muted); }
 .flash, .pending, .error { padding: 10px 14px; border-radius: var(--radius); }
 .flash { background: var(--ok); color: var(--ok-text); }
 .pending { background: var(--pref); color: var(--pref-text); }

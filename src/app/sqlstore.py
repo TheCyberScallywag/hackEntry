@@ -116,8 +116,9 @@ CREATE TABLE IF NOT EXISTS submissions (
     org_id            TEXT NOT NULL REFERENCES organisations(id),
     author_id         TEXT NOT NULL REFERENCES users(id),
     lead_id           TEXT REFERENCES users(id),        -- project lead; the author by default
+    -- 'draft' is private to the author and edited in place until they submit it for review.
     state             TEXT NOT NULL CHECK (state IN (
-                          'submitted', 'changes_requested', 'rejected',
+                          'draft', 'submitted', 'changes_requested', 'rejected',
                           'approved', 'published', 'withdrawn')),
     current_revision  INTEGER NOT NULL,
     version           INTEGER NOT NULL DEFAULT 1,   -- bumped on every transition
@@ -138,7 +139,7 @@ CREATE TABLE IF NOT EXISTS submission_revisions (
     revision      INTEGER NOT NULL,
     title         TEXT NOT NULL,
     summary       TEXT NOT NULL,
-    cause_id      TEXT NOT NULL REFERENCES causes(id),
+    cause_id      TEXT REFERENCES causes(id),      -- NULL only while the submission is a draft
     created_at    TEXT NOT NULL,
     PRIMARY KEY (submission_id, revision)
 );
@@ -245,7 +246,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SchemaOutdated(RuntimeError):

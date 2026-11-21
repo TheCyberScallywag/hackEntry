@@ -73,7 +73,7 @@ export interface Matches {
 export interface Submission {
   id: string;
   title: string;
-  state: 'submitted' | 'changes_requested' | 'rejected' | 'approved' | 'published' | 'withdrawn';
+  state: 'draft' | 'submitted' | 'changes_requested' | 'rejected' | 'approved' | 'published' | 'withdrawn';
   state_label: string;
   org_name: string;
   current_revision: number;

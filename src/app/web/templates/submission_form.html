@@ -1,15 +1,23 @@
 {% extends "base.html" %}
 {% from "macros.html" import draft_fields %}
-{% block title %}Suggest a project{% endblock %}
+{% block title %}{% if sub %}{{ sub.current.title }} (draft){% else %}Suggest a project{% endif %}{% endblock %}
 {% block content %}
+{% if sub %}
+<p class="meta">Draft suggestion · <span class="state draft">{{ sub.state|state_label }}</span> · last saved {{ sub.updated_at[:16]|replace("T", " ") }} UTC</p>
+<h1>{{ sub.current.title }}</h1>
+{% else %}
 <h1>Suggest a project</h1>
+{% endif %}
 {% if not orgs %}<p>Join an organisation first: <a href="/orgs">organisations</a>.</p>
 {% else %}
-<p>Your suggestion goes to that organisation's reviewers. It stays private to you and them until it is approved.</p>
-<form method="post" action="/submissions/new">
+<p>Save a draft to come back to it later: only you can see a draft. Once you submit it, your suggestion goes to that organisation's reviewers and stays private to you and them until it is approved.</p>
+<form method="post" action="{% if sub %}/submissions/{{ sub.id }}/draft{% else %}/submissions/new{% endif %}">
   <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  {% if sub %}<input type="hidden" name="version" value="{{ sub.version }}">{% endif %}
   {{ draft_fields(draft, orgs, target or (active.id if active else "")) }}
-  <button type="submit">Submit for review</button>
+  <button type="submit" name="intent" value="submit">Submit for review</button>
+  <button type="submit" name="intent" value="save" formnovalidate class="secondary">Save draft</button>
+  {% if sub %}<button type="submit" formaction="/submissions/{{ sub.id }}/discard" formnovalidate class="danger">Discard draft</button>{% endif %}
 </form>
 {% endif %}
 {% endblock %}

@@ -14,7 +14,7 @@ from app import services
 
 VolunteerStatus = Literal["draft", "screening", "info_requested", "active", "declined", "suspended"]
 SubmissionState = Literal[
-    "submitted", "changes_requested", "rejected", "approved", "published", "withdrawn"
+    "draft", "submitted", "changes_requested", "rejected", "approved", "published", "withdrawn"
 ]
 PlacementState = Literal["eligible", "team", "declined", "lapsed", "removed", "left"]
 SkillState = Literal["none", "has", "offers", "exclude"]
@@ -59,6 +59,23 @@ class SubmissionIn(DraftIn):
 
 
 class RevisionIn(DraftIn):
+    version: int
+
+
+class DraftSaveIn(DraftIn):
+    """A draft suggestion: only the title and the organisation are needed until it is submitted."""
+
+    org_id: str = Field(max_length=64)
+    summary: str = Field(default="", max_length=4000)
+    cause_id: str = Field(default="", max_length=64)
+    required: list[str] = Field(default=[], max_length=50)
+
+
+class DraftUpdateIn(DraftSaveIn):
+    version: int
+
+
+class VersionIn(BaseModel):
     version: int
 
 
@@ -301,7 +318,7 @@ class Revision(BaseModel):
     revision: int
     title: str
     summary: str
-    cause_id: str
+    cause_id: str | None  # None only while the suggestion is a draft
     created_at: str
     required: list[str]
     optional: list[str]
@@ -337,6 +354,7 @@ class Submission(BaseModel):
     reviews: list[Review]
     is_author: bool
     is_reviewer: bool
+    can_edit: bool  # the author's own draft
     can_review: bool
     can_revise: bool
     can_withdraw: bool

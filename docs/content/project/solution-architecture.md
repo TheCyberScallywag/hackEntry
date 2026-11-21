@@ -41,8 +41,9 @@ The solution covers:
 - **Identity:** signup, sign-in and sign-out, with server-side authorisation on every action.
 - **Volunteer onboarding:** profile, then vetting by a moderator, then active, then matched,
   then on a team.
-- **Project onboarding:** a suggestion is reviewed by the organisation, may be sent back for
-  scoping, and is then approved and made active.
+- **Project onboarding:** a suggestion can be saved as a private draft; once submitted it is
+  reviewed by the organisation, may be sent back for scoping, and is then approved and made
+  active.
 - **Matching** on a graph engine (Relate), with explainable results and coverage gaps.
 - **Three clients** on one backend: server-rendered web pages, an Ionic mobile app and a
   Streamlit admin console.
@@ -506,7 +507,11 @@ remove team members.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> submitted: suggestion made (active account)
+  [*] --> draft: "Save draft" (active account)
+  [*] --> submitted: "Submit for review" (active account)
+  draft --> draft: author saves again (edited in place)
+  draft --> submitted: author submits (content must be complete)
+  draft --> [*]: author discards (rows deleted)
   submitted --> changes_requested: "Request scoping detail"
   changes_requested --> submitted: author revises
   submitted --> rejected: reject (with reason)
@@ -516,18 +521,64 @@ stateDiagram-v2
   published --> withdrawn: reviewer / org admin withdraws
 ```
 
-| State (DB) | Label shown | Visible for matching |
-|---|---|---|
-| `submitted` | In review | ✘ |
-| `changes_requested` | Scoping: more detail requested | ✘ |
-| `rejected` | Rejected | ✘ |
-| `approved` | Approved (activating…) | ✘ (until projected) |
-| `published` | **Active** | ✔ |
-| `withdrawn` | Withdrawn | ✘ (projection removes it; placements end) |
+| State (DB) | Label shown | Who sees it | Visible for matching |
+|---|---|---|---|
+| `draft` | Draft: not yet submitted | author only | ✘ |
+| `submitted` | In review | author + the organisation's reviewers | ✘ |
+| `changes_requested` | Scoping: more detail requested | author + reviewers | ✘ |
+| `rejected` | Rejected | author + reviewers | ✘ |
+| `approved` | Approved (activating…) | author + reviewers | ✘ (until projected) |
+| `published` | **Active** | the organisation | ✔ |
+| `withdrawn` | Withdrawn | author + reviewers | ✘ (projection removes it; placements end) |
 
-The author is notified at every step, and the organisation's admins are told about new
-suggestions. Decisions check the state, revision and version, so a replayed or stale form can't
-publish twice.
+**The process, step by step:**
+
+1. **Draft (optional).** An active volunteer opens *Suggest a project* and chooses **Save
+   draft**. A draft needs only a title and a target organisation the author belongs to; the
+   summary, cause and skills can be filled in later, but anything entered must already be valid.
+   Only the author can see a draft: it is not in the review queue or its count, the
+   organisation's reviewers get a 404 for it, and nobody is notified.
+2. **Edit.** The author reopens the draft from *My suggestions* and saves as often as they like.
+   Each save rewrites revision 1 in place and bumps `version`, so a form opened before the last
+   save is refused (409). The target organisation can still be changed. **Discard draft**
+   deletes it.
+3. **Submit for review.** From the draft, or straight from a new form without saving a draft
+   first. The content must now be complete (title, summary, cause, at least one required skill),
+   and the author must still be active and belong to the organisation. If the content is not
+   complete, what was typed is still saved and the draft stays a draft. On success the state
+   becomes `submitted`, the author is told it is in review, and the organisation's admins are
+   told there is a new suggestion.
+4. **Review.** A reviewer of the organisation (never the author) requests scoping detail,
+   rejects, or approves, each with a reason for the author.
+5. **Scoping.** After "changes requested" the author revises and resubmits, which creates the
+   next revision and puts the suggestion back in the queue.
+6. **Activation.** An approved revision is written to Relate by the projector; once confirmed,
+   the state is `published` and the project can be matched.
+7. **Withdrawal.** A reviewer or org admin can withdraw an approved or published project; it
+   leaves the graph and its placements end.
+
+```mermaid
+sequenceDiagram
+  participant A as Author
+  participant W as Web / API
+  participant Q as SQLite
+  participant O as Org reviewers
+  A->>W: Save draft (title + organisation)
+  W->>Q: INSERT submission (draft), revision 1
+  Note over O: nothing visible, no notification
+  A->>W: Save draft again (version n)
+  W->>Q: rewrite revision 1, version n+1
+  A->>W: Submit for review (version n+1)
+  W->>Q: full validation, re-check active + org access
+  Q-->>W: draft → submitted
+  W-->>A: "… was submitted and is in review"
+  W-->>O: "New project suggestion: …"
+  O->>W: decision (approve / request detail / reject)
+```
+
+From submission onwards the author is notified at every step. Decisions and draft saves check
+the state and version (decisions the revision too), so a replayed or stale form can't publish
+twice or overwrite a newer draft.
 
 ### 7.6 Notifications
 
@@ -549,7 +600,7 @@ graph busy.
 | **auth** | `POST /auth/signup` · `POST /session` · `DELETE /session` |
 | **me** | `GET /me` · `PUT /me/active-org` · `GET/PUT /profile` · `POST /me/vetting` · `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` |
 | **organisations** | `GET /orgs` · `PUT/DELETE /orgs/{org}/membership` · `GET /orgs/{org}/matches` · `GET /orgs/{org}/projects` · `GET /orgs/{org}/coverage` · `GET /orgs/{org}/volunteers` · `POST /orgs/{org}/volunteers/{uid}/remove` |
-| **projects** | `GET/POST /submissions` · `GET /submissions/{sid}` · `POST /submissions/{sid}/revisions` · `GET /orgs/{org}/submissions` · `POST /orgs/{org}/submissions/{sid}/decision` · `POST /orgs/{org}/projects/{sid}/withdraw` · `PUT /orgs/{org}/projects/{sid}/lead` |
+| **projects** | `GET/POST /submissions` · `POST /submissions/drafts` · `PUT /submissions/{sid}/draft` · `POST /submissions/{sid}/submit` · `GET/DELETE /submissions/{sid}` · `POST /submissions/{sid}/revisions` · `GET /orgs/{org}/submissions` · `POST /orgs/{org}/submissions/{sid}/decision` · `POST /orgs/{org}/projects/{sid}/withdraw` · `PUT /orgs/{org}/projects/{sid}/lead` |
 | **placements** | `GET /placements` · `POST /placements/{pid}/answer` · `POST /placements/{pid}/leave` · `GET /projects/{pid}/placements` · `POST /projects/{pid}/placements/{vid}/answer` · `POST /projects/{pid}/placements/{vid}/remove` |
 | **moderation** | `GET /moderation/volunteers` · `GET /moderation/volunteers/{uid}` · `POST /moderation/volunteers/{uid}/decision` |
 | **admin** | `GET /admin/users` · `PUT/DELETE /admin/users/{uid}/system-roles/{role}` · `PUT/DELETE /admin/orgs/{org}/roles/{uid}/{role}` · `POST /admin/orgs` · `GET /admin/projection` · `POST /admin/projection/replay` · `GET /admin/graph` |
@@ -662,7 +713,7 @@ flowchart LR
 `SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`. [Tooling](tooling.md) gives the
 default and meaning of each.
 
-**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (2), or the app stops with
+**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (3), or the app stops with
 a `SchemaOutdated` message pointing to the reset commands. The demo data is disposable, so there
 are no migrations.
 

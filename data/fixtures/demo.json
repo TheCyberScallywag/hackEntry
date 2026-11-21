@@ -241,6 +241,17 @@
       "outcome": "submitted"
     },
     {
+      "key": "password-manager-clinic",
+      "org": "cyber-scallywags",
+      "author": "asha",
+      "title": "Password Manager Clinic",
+      "summary": "",
+      "cause": "digital-inclusion",
+      "required": [],
+      "optional": [],
+      "outcome": "draft"
+    },
+    {
       "key": "community-garden-beds",
       "org": "interlinkrct",
       "author": "bryn",
