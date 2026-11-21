@@ -19,11 +19,15 @@ Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.
 ---
 ## Unreleased
 
+### Added
+
+- Cloudflare tunnel to application.
+
 ### Changed
 
 - Removed renamed "Data Volunteer Network" to "Volunteer Netw… (#7)
 - Added Contributor section (#23)
-- Refactored the project onboarding flow to allow for a draft status of a suggestion
+- Refactored the project onboarding flow to allow for a draft… (#26)
 
 ### Chores
 
