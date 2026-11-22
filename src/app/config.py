@@ -68,6 +68,16 @@ class Settings(BaseSettings):
         description="Seed the disposable demo when the data directory is empty (test env only).",
     )
     graph_max_rows: int = Field(500, description="Upper bound on rows read from Relate.")
+    invitation_reminder_days: int = Field(
+        7, description="Remind a volunteer of an unanswered team invitation after this many days."
+    )
+    invitation_expiry_days: int = Field(
+        14,
+        description=(
+            "An unanswered team invitation closes after this many days and the volunteer goes "
+            "back to the project's candidate list. 0 keeps invitations open indefinitely."
+        ),
+    )
 
     aura_uri: str = Field("", description="Optional neo4j+s:// URI of a designated dev AuraDB.")
     aura_username: str = Field("neo4j", description="AuraDB user.")

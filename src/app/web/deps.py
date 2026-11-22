@@ -43,6 +43,8 @@ MESSAGES = {
     "withdrawn": "Project withdrawn from browse and matching.",
     "vetting": "Thanks! Your profile is in screening. We'll notify you here when it's reviewed.",
     "answered": "Answer recorded.",
+    "invited": "Invitation sent. They join the team once they say yes.",
+    "reopened": "Reopened. They are a candidate again if they still match the project.",
     "left_team": "You left the team.",
     "removed": "Volunteer removed.",
     "read": "Notifications marked as read.",

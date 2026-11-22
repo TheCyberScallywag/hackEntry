@@ -1,4 +1,5 @@
-"""Published projects, matches and coverage, and the two-sided placement answers."""
+"""Published projects, matches and coverage, and placements: the lead invites, the volunteer
+answers."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -99,12 +100,24 @@ def leave_team(project_id: str, rt: RT, session: User, _form: UserForm):
 def lead_answer(
     org_id: str, project_id: str, volunteer_id: str, rt: RT, session: User, form: UserForm
 ):
+    answer = str(form.get("answer", ""))
     placements.lead_respond(
-        rt.db, session.user_id, project_id, volunteer_id, str(form.get("answer", "")),
-        version=to_int(form.get("version")),
+        rt.db, session.user_id, project_id, volunteer_id, answer,
+        version=to_int(form.get("version")), note=str(form.get("reason", "")),
     )  # fmt: skip
     drain(rt)
-    return redirect(f"/o/{org_id}/projects/{project_id}", "answered")
+    return redirect(
+        f"/o/{org_id}/projects/{project_id}", "invited" if answer == "yes" else "answered"
+    )
+
+
+@router.post("/o/{org_id}/projects/{project_id}/candidates/{volunteer_id}/reopen")
+def lead_reopen(
+    org_id: str, project_id: str, volunteer_id: str, rt: RT, session: User, _form: UserForm
+):
+    placements.reopen(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "reopened")
 
 
 @router.post("/o/{org_id}/projects/{project_id}/team/{volunteer_id}/remove")

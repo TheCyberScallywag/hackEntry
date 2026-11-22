@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore, Tx
 from app.notify import notify
+from app.services import teams
 from app.sqlstore import Database, now, prune
 
 log = logging.getLogger(__name__)
@@ -233,6 +234,8 @@ class Projector:
                 tx.run(cypher.VOLUNTEER_EDGE_MERGE[rel], params)
 
     def _project_project(self, submission_id: str) -> None:
+        with self.db.tx() as conn:
+            teams.ensure_lead_on_team(conn, submission_id)  # the lead needs no second yes
         with self.db.read() as conn:
             sub = conn.execute(
                 "SELECT id, org_id, state, approved_revision FROM submissions WHERE id = ?",

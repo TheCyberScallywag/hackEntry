@@ -7,7 +7,7 @@
 
 <ion-content [fullscreen]="true">
   <ion-note class="ion-padding" color="medium">
-    <p>When your skills match an active project, you and the project lead are both asked. Once you've both said yes, you're on the team.</p>
+    <p>When your skills match an active project, its lead can invite you to the team. Your invitations appear here: say yes and you're on the team.</p>
   </ion-note>
   @if (message(); as m) {
     <ion-text color="primary" role="status"><p class="ion-padding-horizontal">{{ m }}</p></ion-text>
@@ -22,7 +22,7 @@
         <p>You match:</p>
         @for (s of p.matched_skills; track s) { <ion-chip color="success">{{ s }}</ion-chip> }
         @if (p.state === 'eligible') {
-          <p>You: {{ p.volunteer_said ?? 'not answered' }} · Project lead: {{ p.lead_said ?? 'not answered' }}</p>
+          <p>The project lead has invited you to this team.</p>
           @if (!p.volunteer_said) {
             <ion-button size="small" (click)="answer(p, 'yes')">Yes, I'd like to help</ion-button>
             <ion-button size="small" fill="outline" (click)="answer(p, 'no')">No thanks</ion-button>
@@ -34,7 +34,7 @@
     </ion-card>
   } @empty {
     <p class="ion-padding">
-      No opportunities yet.
+      No invitations yet.
       @if (orgs.me()?.status !== 'active') { They appear once your account is active. } @else { Offer more skills on your profile. }
     </p>
   }

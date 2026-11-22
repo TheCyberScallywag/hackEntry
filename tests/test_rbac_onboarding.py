@@ -110,22 +110,36 @@ def test_full_volunteer_onboarding_to_team(web: Web):
     assert graph_edges(web, uid, "VOLUNTEERS_WITH") == [CS]
     messages = ffion.messages()
     assert any("approved and active" in m for m in messages)
-    assert any("eligible to volunteer on “Winter Outreach Kitchen”" in m for m in messages)
+    # step 2: Ffion is a candidate. Only the lead is told; Ffion has nothing to answer yet.
+    assert not any("Winter Outreach Kitchen" in m for m in messages)
+    assert ffion.get("/placements").json() == []
     asha = as_(web, "asha")  # the project lead
-    assert any("Ffion is eligible for “Winter Outreach Kitchen”" in m for m in asha.messages())
-    # step 2: both say yes
+    assert any(
+        "Ffion is a new candidate for “Winter Outreach Kitchen”" in m for m in asha.messages()
+    )
     p = placement(web, WINTER, uid)
     assert p["state"] == "eligible" and p["matched_skills"] == '["first-aid"]'
-    assert ffion.post(
-        f"/placements/{WINTER}/answer", {"answer": "yes", "version": p["version"]}
-    ).json() == {"state": "eligible"}  # noqa: E501
-    assert any("Waiting for the project lead" in m for m in ffion.messages())
-    p = placement(web, WINTER, uid)
+    early = ffion.post(f"/placements/{WINTER}/answer", {"answer": "yes", "version": p["version"]})
+    assert early.status_code == 409 and "not invited you" in early.json()["detail"]
+    # the lead invites, then the volunteer says yes
     r = asha.post(
         f"/projects/{WINTER}/placements/{uid}/answer", {"answer": "yes", "version": p["version"]}
     )
-    assert r.json() == {"state": "team"}
+    assert r.json() == {"state": "eligible"}
+    assert any(
+        "You are invited to join the team for “Winter Outreach" in m for m in ffion.messages()
+    )
+    mine = ffion.get("/placements").json()
+    assert [(x["status"], x["state_label"]) for x in mine] == [
+        ("invited", "Invited: awaiting your answer")
+    ]
+    p = placement(web, WINTER, uid)
+    assert p["lead_actor_id"] == USERS["asha"] and p["invited_at"]
+    assert ffion.post(
+        f"/placements/{WINTER}/answer", {"answer": "yes", "version": p["version"]}
+    ).json() == {"state": "team"}
     assert any("You are on the team for “Winter Outreach Kitchen”" in m for m in ffion.messages())
+    assert any("Ffion joined the team" in m for m in asha.messages())
     assert graph_edges(web, uid, "ON_TEAM") == [WINTER]
     mine = ffion.get("/placements").json()
     assert [(x["title"], x["state"]) for x in mine] == [("Winter Outreach Kitchen", "team")]
@@ -201,8 +215,8 @@ def test_suspension_removes_matching(web: Web):
 def test_lead_side_is_restricted_and_volunteer_side_is_self_only(web: Web):
     p = placement(web, AUDIT, USERS["asha"])
     assert p is None  # the audit is not active yet, so nobody is eligible
-    p = placement(web, WINTER, USERS["asha"])  # Asha leads Winter Outreach; lead side is "yes"
-    assert p["lead_said"] == "yes" and p["state"] == "eligible"
+    p = placement(web, WINTER, USERS["asha"])  # Asha leads Winter Outreach: on its team already
+    assert p["lead_said"] == "yes" and p["state"] == "team"
     gwen, kofi, dev = as_(web, "gwen"), as_(web, "kofi"), as_(web, "dev")
     fb = stable_id("p", "food-bank-dashboard")
     p = placement(web, fb, USERS["dev"])
@@ -223,24 +237,29 @@ def test_lead_side_is_restricted_and_volunteer_side_is_self_only(web: Web):
         {"answer": "no", "version": p["version"]},
     )  # noqa: E501
     assert r.json() == {"state": "declined"}
-    assert any("has not taken your place" in m for m in dev.messages())
+    # Dev was passed over without ever being invited, so there is nothing to tell him
+    assert not any("Food Bank" in m for m in dev.messages())
     assert dev.post(f"/placements/{fb}/answer", body).status_code == 409  # stale and closed
 
 
 def test_new_exclusion_lapses_an_offer_and_reoffering_revives_it(web: Web):
     asha = as_(web, "asha")
     fb = stable_id("p", "food-bank-dashboard")
-    assert placement(web, fb, USERS["asha"])["state"] == "eligible"
+    p = placement(web, fb, USERS["asha"])
+    assert p["state"] == "eligible"
+    invite = {"answer": "yes", "version": p["version"]}
+    as_(web, "cerys").post(f"/projects/{fb}/placements/{USERS['asha']}/answer", invite)
     asha.put("/profile", full_profile(asha, **{"data-analysis": "exclude"}))
     assert placement(web, fb, USERS["asha"])["state"] == "lapsed"
     assert any("no longer eligible for “Food Bank Demand Dashboard”" in m for m in asha.messages())
     asha.put("/profile", full_profile(asha, **{"data-analysis": "offers"}))
-    assert placement(web, fb, USERS["asha"])["state"] == "eligible"
+    p = placement(web, fb, USERS["asha"])  # a candidate again: the old invitation does not carry
+    assert (p["state"], p["lead_said"], p["lead_actor_id"]) == ("eligible", None, None)
 
 
 def test_team_members_can_leave_or_be_removed(web: Web):
     bryn, asha = as_(web, "bryn"), as_(web, "asha")
-    assert graph_edges(web, USERS["bryn"], "ON_TEAM") == [WINTER]  # seeded team
+    assert WINTER in graph_edges(web, USERS["bryn"], "ON_TEAM")  # seeded team
     assert (
         asha.post(
             f"/projects/{WINTER}/placements/{USERS['bryn']}/remove", {"reason": "x"}
@@ -251,7 +270,7 @@ def test_team_members_can_leave_or_be_removed(web: Web):
         f"/projects/{WINTER}/placements/{USERS['bryn']}/remove", {"reason": "Rota is full"}
     )  # noqa: E501
     assert r.json() == {"state": "removed"}
-    assert graph_edges(web, USERS["bryn"], "ON_TEAM") == []
+    assert WINTER not in graph_edges(web, USERS["bryn"], "ON_TEAM")
     assert any("removed from the team" in m and "Rota is full" in m for m in bryn.messages())
     assert bryn.post(f"/placements/{WINTER}/leave").status_code == 404
 
@@ -272,7 +291,7 @@ def test_org_admins_manage_only_their_own_organisation(web: Web):
     r = kofi.post(f"/orgs/{CS}/volunteers/{USERS['bryn']}/remove", {"reason": "Moved away"})
     assert r.status_code == 200
     assert graph_edges(web, USERS["bryn"], "VOLUNTEERS_WITH") == [IL]
-    assert graph_edges(web, USERS["bryn"], "ON_TEAM") == []
+    assert WINTER not in graph_edges(web, USERS["bryn"], "ON_TEAM")  # his other teams stay
     assert placement(web, WINTER, USERS["bryn"])["state"] == "removed"
     assert any("removed you as a volunteer: Moved away" in m for m in as_(web, "bryn").messages())
 
@@ -317,7 +336,8 @@ def test_only_system_admins_manage_roles_organisations_and_projection(web: Web):
     assert sam.post("/admin/orgs", {"key": "riverside-food", "name": "Again"}).status_code == 409
     assert sam.get("/admin/projection").json()["pending"] == 0
     graph = sam.get("/admin/graph").json()
-    assert {"type": "ON_TEAM", "relationships": 1} in graph["relationships"]
+    # Bryn on Winter Outreach, plus each lead who volunteers with their project's organisation
+    assert {"type": "ON_TEAM", "relationships": 5} in graph["relationships"]
 
 
 # ------------------------------------------------------------------ project onboarding
@@ -349,13 +369,25 @@ def test_project_onboarding_notifies_each_phase(web: Web):
         "state": "published"
     }
     assert any("is now active" in m for m in cerys.messages())
-    # an active project immediately matches active volunteers
+    # an active project immediately has its candidates, and its author leads it from the team
     assert placement(web, sid, USERS["dev"])["state"] == "eligible"
-    # withdrawing ends open offers and teams, with notice
+    assert placement(web, sid, USERS["kofi"])["state"] == "eligible"
+    lead = placement(web, sid, USERS["cerys"])  # on the team as lead, whatever her skills
+    assert (lead["state"], lead["matched_skills"]) == ("team", "[]")
+    assert any(
+        "You lead “Allotment Data Map”, so you are on its team" in m for m in cerys.messages()
+    )
+    assert any("new candidates for “Allotment Data Map”" in m for m in cerys.messages())
+    p = placement(web, sid, USERS["dev"])
+    cerys.post(f"/projects/{sid}/placements/{USERS['dev']}/answer",
+               {"answer": "yes", "version": p["version"]})  # fmt: skip
+    # withdrawing ends invitations and teams, with notice to those who had been told
     v = rhiannon.get(f"/submissions/{sid}").json()["version"]
     rhiannon.post(f"/orgs/{DK}/projects/{sid}/withdraw", {"reason": "Paused", "version": v})
     assert placement(web, sid, USERS["dev"])["state"] == "removed"
     assert any("Allotment Data Map" in m and "withdrawn" in m for m in as_(web, "dev").messages())
+    assert placement(web, sid, USERS["kofi"])["state"] == "removed"  # never invited: not told
+    assert not any("Allotment Data Map" in m for m in as_(web, "kofi").messages())
 
 
 # ------------------------------------------------------------------ API surface
@@ -386,20 +418,24 @@ def test_notifications_can_be_marked_read(web: Web):
 def test_web_pages_for_onboarding_opportunities_and_org_admins(web: Web):
     web.sign_in("nia")
     assert 'data-status="screening"' in web.get("/home").text
-    web.sign_in("dev")
-    page = web.get("/opportunities").text
-    assert "Food Bank Demand Dashboard" in page and "Yes, I&#39;d like to help" in page
     fb = stable_id("p", "food-bank-dashboard")
-    v = placement(web, fb, USERS["dev"])["version"]
-    assert (
-        web.post(f"/opportunities/{fb}/answer", {"answer": "yes", "version": v}).status_code == 303
-    )
+    web.sign_in("dev")
+    assert "No invitations yet" in web.get("/opportunities").text  # a candidate is not asked
     web.sign_in("cerys")  # lead of the food bank project
     page = web.get(f"/o/{DK}/projects/{fb}").text
-    assert 'data-volunteer="Dev"' in page and "you lead this project" in page
+    assert 'data-volunteer="Dev" data-status="candidate"' in page
+    assert "you lead this project" in page and ">Invite</button>" in page
     v = placement(web, fb, USERS["dev"])["version"]
     r = web.post(f"/o/{DK}/projects/{fb}/candidates/{USERS['dev']}/answer",
                  {"answer": "yes", "version": v})  # fmt: skip
+    assert r.status_code == 303
+    assert "Withdraw invitation" in web.get(f"/o/{DK}/projects/{fb}").text
+    web.sign_in("dev")
+    page = web.get("/opportunities").text
+    assert "Food Bank Demand Dashboard" in page and "Yes, I&#39;d like to help" in page
+    assert "Invited: answer now" in web.get("/matches").text
+    v = placement(web, fb, USERS["dev"])["version"]
+    r = web.post(f"/opportunities/{fb}/answer", {"answer": "yes", "version": v})
     assert r.status_code == 303 and placement(web, fb, USERS["dev"])["state"] == "team"
     web.sign_in("rhiannon")
     assert 'data-volunteer="Dev"' in web.get(f"/o/{DK}/volunteers").text

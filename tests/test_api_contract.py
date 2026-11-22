@@ -52,7 +52,7 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 49  # a new route must be added to the calls below
+    assert len(api.router.routes) == 50  # a new route must be added to the calls below
 
 
 def test_every_route_answers_in_the_shape_it_declares(web: Web):
@@ -153,11 +153,6 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
        "POST", "/orgs/{org_id}/projects/{sid}/withdraw")  # fmt: skip
 
     # ---- placements
-    offers = ok(dev.get("/placements"), "GET", "/placements")
-    assert {"title", "org_id", "org_name", "state_label"} <= set(offers[0])
-    version = placement(web, FOOD_BANK, USERS["dev"])["version"]
-    ok(dev.post(f"/placements/{FOOD_BANK}/answer", {"answer": "yes", "version": version}),
-       "POST", "/placements/{project_id}/answer")  # fmt: skip
     team = ok(rhiannon.get(f"/projects/{FOOD_BANK}/placements"), "GET",
               "/projects/{project_id}/placements")  # fmt: skip
     assert "display_name" in team[0] and "email" not in str(team)
@@ -165,9 +160,16 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
     ok(rhiannon.post(f"/projects/{FOOD_BANK}/placements/{USERS['dev']}/answer",
                      {"answer": "yes", "version": version}),
        "POST", "/projects/{project_id}/placements/{volunteer_id}/answer")  # fmt: skip
+    offers = ok(dev.get("/placements"), "GET", "/placements")
+    assert {"title", "org_id", "org_name", "state_label"} <= set(offers[0])
+    version = placement(web, FOOD_BANK, USERS["dev"])["version"]
+    ok(dev.post(f"/placements/{FOOD_BANK}/answer", {"answer": "yes", "version": version}),
+       "POST", "/placements/{project_id}/answer")  # fmt: skip
     ok(rhiannon.post(f"/projects/{FOOD_BANK}/placements/{USERS['dev']}/remove",
                      {"reason": "Rota is full"}),
        "POST", "/projects/{project_id}/placements/{volunteer_id}/remove")  # fmt: skip
+    ok(rhiannon.post(f"/projects/{FOOD_BANK}/placements/{USERS['dev']}/reopen"),
+       "POST", "/projects/{project_id}/placements/{volunteer_id}/reopen")  # fmt: skip
     ok(bryn.post(f"/placements/{WINTER}/leave"), "POST", "/placements/{project_id}/leave")
     ok(rhiannon.post(f"/orgs/{DK}/volunteers/{USERS['cerys']}/remove", {"reason": "Moved away"}),
        "POST", "/orgs/{org_id}/volunteers/{user_id}/remove")  # fmt: skip

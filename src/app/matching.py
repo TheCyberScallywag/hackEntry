@@ -11,7 +11,7 @@ consulted only for access, freshness and display names:
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from app import services
+from app import placements, services
 from app.catalogue import get_catalogue
 from app.graph import cypher
 from app.graph.store import GraphStore
@@ -129,10 +129,11 @@ def volunteer_matches(
             conn, sorted({r["project"] for r in rows} | {r["project"] for r in excluded})
         )
         org_names = dict(conn.execute("SELECT id, name FROM organisations").fetchall())
+        mine = placements.states_for(conn, volunteer_id=user_id)
     opt_out = {r["project"]: sorted(r["skills"]) for r in optional_excluded}
     return VolunteerMatches(
         matches=[
-            _explain(r, org_names, opt_out.get(r["project"], []))
+            _explain(r, org_names, opt_out.get(r["project"], []), mine.get(r["project"]))
             for r in rows
             if r["project"] in fresh
         ],
@@ -140,10 +141,17 @@ def volunteer_matches(
     )
 
 
-def _explain(row: dict, org_names: dict, optional_excluded: list[str]) -> dict:
+def _explain(
+    row: dict, org_names: dict, optional_excluded: list[str], status: str | None = None
+) -> dict:
     cat = get_catalogue()
+    # Where this match stands as a placement. Being a candidate is not shown: it asks nothing
+    # of the volunteer, and the lead may never act on it.
+    shown = status if status not in (None, "candidate", "lapsed") else None
     return {
         **row,
+        "placement": shown,
+        "placement_label": placements.STATUS_LABELS[shown] if shown else None,
         "org_name": org_names.get(row["org"], row["org"]),
         "matched": sorted(row["matched"]),
         "matched_names": [cat.skill_name(s) for s in sorted(row["matched"])],
@@ -170,7 +178,9 @@ def _explain_exclusion(row: dict, org_names: dict) -> dict:
 def project_coverage(
     db: Database, graph: GraphStore, reviewer_id: str, org_id: str, project_id: str = ""
 ) -> ProjectCoverage:
-    """For an organisation's reviewers: eligible candidates per required skill, and gaps."""
+    """For an organisation's reviewers: per required skill, who on the team covers it and which
+    candidates could. `gaps` are skills no candidate can cover; `team_gaps` are skills nobody on
+    the team covers yet, read from the ON_TEAM edges."""
     with db.read() as conn:
         services.check_access(conn, reviewer_id, org_id, role="reviewer")
         if reason := _org_pending(conn, org_id, project_id):
@@ -182,6 +192,7 @@ def project_coverage(
             cypher.MATCH_CANDIDATES, cypher.match_params(orgs=[org_id], project=project_id)
         )
         gaps = tx.read(cypher.COVERAGE_GAPS, scope)
+        on_team = tx.read(cypher.TEAM_COVERAGE, scope)
     with db.read() as conn:
         fresh = services.published_state(conn, [p["project"] for p in projects])
         names = dict(
@@ -191,6 +202,7 @@ def project_coverage(
                 (org_id,),
             ).fetchall()
         )
+        statuses = placements.states_for(conn, project_ids=list(fresh))
     cat = get_catalogue()
     by_project: dict[str, dict] = {}
     for p in projects:
@@ -204,14 +216,18 @@ def project_coverage(
             "candidates": [],
             "per_skill": defaultdict(list),
             "gaps": [],
+            "team_by_skill": {},
         }
     for r in rows:
         entry = by_project.get(r["project"])
         if entry is None or r["volunteer"] not in names:
             continue  # not published in SQL, or no longer opted in: fail closed
+        status = statuses.get((r["project"], r["volunteer"]), "candidate")
         candidate = {
             "volunteer": r["volunteer"],
             "name": names[r["volunteer"]],
+            "status": status,
+            "status_label": placements.STATUS_LABELS[status],
             "preferred": r["preferred"],
             "matched_names": [cat.skill_name(s) for s in sorted(r["matched"])],
             "optional_names": [cat.skill_name(s) for s in sorted(r["optional_matched"])],
@@ -224,11 +240,26 @@ def project_coverage(
     for g in gaps:
         if entry := by_project.get(g["project"]):
             entry["gaps"].append(g["skill_name"])
+    for t in on_team:
+        if entry := by_project.get(t["project"]):
+            # SQL freshness, as for candidates: only people still on the team in SQLite.
+            entry["team_by_skill"][t["skill"]] = [
+                names[v]
+                for v in t["team"]
+                if v in names and statuses.get((t["project"], v)) == "team"
+            ]
     for entry in by_project.values():
+        team_by_skill = entry.pop("team_by_skill")
         entry["per_skill"] = [
-            {"skill": cat.skill_name(s), "candidates": entry["per_skill"].get(s, [])}
+            {
+                "skill": cat.skill_name(s),
+                "team": team_by_skill.get(s, []),
+                # Someone already on the team is not also listed as a candidate.
+                "candidates": [c for c in entry["per_skill"].get(s, []) if c["status"] != "team"],
+            }
             for s in sorted(entry["required"])
         ]
+        entry["team_gaps"] = [row["skill"] for row in entry["per_skill"] if not row["team"]]
     return ProjectCoverage(projects=list(by_project.values()))
 
 

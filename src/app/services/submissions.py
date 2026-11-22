@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from app.catalogue import get_catalogue
 from app.notify import notify, notify_org_admins
+from app.services import teams
 from app.services.access import (
     check_access,
     load_actor,
@@ -422,7 +423,7 @@ def withdraw_project(
         notify(conn, sub["author_id"], "project", f"“{sub['title']}” was withdrawn: {reason}",
                f"/submissions/{sid}")  # fmt: skip
         affected = conn.execute(
-            "SELECT volunteer_id FROM placements WHERE project_id = ? "
+            "SELECT volunteer_id, state, lead_said FROM placements WHERE project_id = ? "
             "AND state IN ('eligible', 'team')",
             (sid,),
         ).fetchall()
@@ -431,19 +432,27 @@ def withdraw_project(
             "WHERE project_id = ? AND state IN ('eligible', 'team')",
             (stamp, sid),
         )
-        for (vid,) in affected:
-            notify(conn, vid, "placement",
-                   f"“{sub['title']}” was withdrawn, so your place on it has ended.",
-                   "/opportunities")  # fmt: skip
+        for row in affected:
+            teams.record(conn, sid, row["volunteer_id"], "project_withdrawn",
+                         actor_id=reviewer_id, note=reason)  # fmt: skip
+            # Candidates who were never invited were never told, so they are not told now.
+            if row["state"] == "team" or row["lead_said"] == "yes":
+                notify(conn, row["volunteer_id"], "placement",
+                       f"“{sub['title']}” was withdrawn, so your place on it has ended.",
+                       "/opportunities")  # fmt: skip
         enqueue(conn, "project", sid)
 
 
 def set_project_lead(db: Database, actor_id: str, org_id: str, sid: str, lead_id: str) -> None:
-    """An org admin hands a project to a new lead: an active volunteer or admin of the org."""
+    """An org admin hands a project to a new lead: an active volunteer or admin of the org.
+
+    The new lead is told what is waiting for them and joins the team automatically (when the
+    project is next projected, which the enqueue below triggers). The former lead keeps the
+    team place they already had, and is told they no longer lead the project."""
     require_access(db, actor_id, org_id, role="org_admin")
     with db.tx() as conn:
         sub = conn.execute(
-            "SELECT 1 FROM submissions WHERE id = ? AND org_id = ? "
+            "SELECT lead_id, title FROM submission_current WHERE id = ? AND org_id = ? "
             "AND state IN ('approved', 'published')",
             (sid, org_id),
         ).fetchone()
@@ -452,13 +461,30 @@ def set_project_lead(db: Database, actor_id: str, org_id: str, sid: str, lead_id
         access = org_access(conn, lead_id, org_id)
         if not (access.org_admin or (access.volunteer and load_actor(conn, lead_id).active)):
             raise Invalid("The lead must be an active volunteer or an admin of this organisation.")
+        if sub["lead_id"] == lead_id:
+            return
         conn.execute(
             "UPDATE submissions SET lead_id = ?, version = version + 1, updated_at = ? "
             "WHERE id = ?",
             (lead_id, now(), sid),
         )
-        notify(conn, lead_id, "placement", "You are now the lead for a project.",
-               f"/o/{org_id}/projects/{sid}")  # fmt: skip
+        link = teams.project_link(org_id, sid)
+        waiting = conn.execute(
+            "SELECT count(*) FROM placements WHERE project_id = ? AND state = 'eligible' "
+            "AND lead_said IS NULL AND volunteer_id != ?",
+            (sid, lead_id),
+        ).fetchone()[0]
+        message = f"You are now the lead for “{sub['title']}”."
+        if waiting:
+            message += f" {waiting} candidate{'s are' if waiting != 1 else ' is'} waiting for you."
+        notify(conn, lead_id, "placement", message, link)
+        if sub["lead_id"] and sub["lead_id"] != actor_id:
+            name = conn.execute(
+                "SELECT display_name FROM users WHERE id = ?", (lead_id,)
+            ).fetchone()[0]
+            notify(conn, sub["lead_id"], "placement",
+                   f"{name} is now the lead for “{sub['title']}”.", link)  # fmt: skip
+        enqueue(conn, "project", sid)  # puts the new lead on the team
 
 
 def published_state(conn: sqlite3.Connection, project_ids: list[str]) -> dict[str, dict]:

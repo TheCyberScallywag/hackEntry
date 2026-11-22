@@ -120,7 +120,7 @@ flowchart LR
 | `OFFERS_SKILL` | The volunteer is willing to be matched on it | Profile state is "have and offer" |
 | `EXCLUDES_SKILL` | Never match me on a project that requires this | Profile state is "exclude" |
 | `PREFERS_CAUSE` / `EXCLUDES_CAUSE` | The volunteer's stance on a cause | Profile stance is "prefer" or "exclude" |
-| `ON_TEAM` | The volunteer is on the project's team | The volunteer and the project lead both said yes |
+| `ON_TEAM` | The volunteer is on the project's team | The lead side invited the volunteer and the volunteer said yes (a lead is on their own team automatically) |
 
 Two rules are enforced by the shape of the graph itself, not by a filter in the application:
 
@@ -352,8 +352,11 @@ answer.
 A full sweep of every published project runs at start-up, on `python -m app.cli drain`, on an
 admin replay, when the catalogue or an organisation changes, and after a sweep that failed.
 
-When the volunteer and the lead have both said yes, the placement becomes `team` and a `project`
-outbox row is written. The projector then adds `(:Volunteer)-[:ON_TEAM]->(:Project)`.
+When the lead side has invited a volunteer and the volunteer has said yes, the placement becomes
+`team` and a `project` outbox row is written. The projector then adds
+`(:Volunteer)-[:ON_TEAM]->(:Project)`. Each project projection also puts the project's lead on
+the team first. The edge is read back by `TEAM_COVERAGE`, which reports per required skill who on
+the team covers it.
 
 ## 9. Inspecting the graph
 
@@ -428,7 +431,7 @@ the AuraDB driver.
 | `tests/test_matching.py` | One test for each row of the matching rules, the preferred-only filter, and profile edits reaching Relate |
 | `tests/test_placements.py` | The sweep beyond the row bound, a truncated read failing loudly, scoped sweeps, lapse and revive, full sweep on replay |
 | `tests/test_graph_schema.py` | The schema matching `data/demo.rl`; the AuraDB push and parity check against a stand-in driver |
-| `tests/test_rbac_onboarding.py` | `VOLUNTEERS_WITH` only after vetting; `ON_TEAM` after both say yes |
+| `tests/test_rbac_onboarding.py` | `VOLUNTEERS_WITH` only after vetting; `ON_TEAM` after the lead invites and the volunteer says yes |
 
 ## 13. Known limits
 

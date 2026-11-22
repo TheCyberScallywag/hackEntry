@@ -203,6 +203,8 @@ Settings come from environment variables or a local `.env` file (`src/app/config
 | `PROJECTOR_INTERVAL_SECONDS` | `5` | How often the background projector retries pending graph updates |
 | `SEED_DEMO_ON_START` | `true` | Seed the demo when the data directory is empty (test environment only) |
 | `GRAPH_MAX_ROWS` | `500` | Upper bound on rows read from Relate in one statement |
+| `INVITATION_REMINDER_DAYS` | `7` | Remind a volunteer of an unanswered team invitation after this many days (`0`: never) |
+| `INVITATION_EXPIRY_DAYS` | `14` | Close an unanswered invitation after this many days and return the volunteer to the candidate list (`0`: never) |
 | `AURA_URI`, `AURA_USERNAME`, `AURA_PASSWORD`, `AURA_DATABASE` | empty, `neo4j`, empty, `neo4j` | The optional development AuraDB instance |
 | `HOST`, `PORT`, `ADMIN_PORT`, `SERVICE` | `127.0.0.1`, `8080`, `8501`, — | Read by `app.serve` |
 

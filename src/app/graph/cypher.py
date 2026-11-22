@@ -9,7 +9,7 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
     (:Project)-[:REQUIRES_SKILL]->(:Skill)          required skill
     (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)     optional skill
     (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation) only while opted in AND vetted (active)
-    (:Volunteer)-[:ON_TEAM]->(:Project)              volunteer and project lead both said yes
+    (:Volunteer)-[:ON_TEAM]->(:Project)              invited by the lead side and said yes
     (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
     (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
 
@@ -192,6 +192,19 @@ WHERE o.id = $org AND p.status = 'published' AND ($project = '' OR p.id = $proje
       AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
   }
 RETURN p.id AS project, p.title AS title, s.id AS skill, s.name AS skill_name
+ORDER BY project, skill
+LIMIT $limit
+"""
+
+# Who on the team covers each required skill. An empty `team` is a skill the team still lacks,
+# whatever the candidate list says: coverage counts only once both sides have said yes.
+TEAM_COVERAGE = """
+MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:REQUIRES_SKILL]->(s:Skill)
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
+OPTIONAL MATCH (v:Volunteer)-[:ON_TEAM]->(p)
+WHERE (v)-[:HAS_SKILL]->(s) AND (v)-[:OFFERS_SKILL]->(s)
+WITH p, s, v ORDER BY v.id
+RETURN p.id AS project, s.id AS skill, collect(v.id) AS team
 ORDER BY project, skill
 LIMIT $limit
 """

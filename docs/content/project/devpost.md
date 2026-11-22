@@ -33,9 +33,9 @@ controls, shared only with the organisations they choose, and matches that expla
   others. Coordinators see eligible candidates for each required skill, and the required skills
   nobody can cover.
 - **Vetted onboarding with role-based access.** A moderator screens every new volunteer before
-  they can be matched. When Relate finds a vetted volunteer eligible for an active project, the
-  volunteer and the project lead are both notified in the app, and the volunteer joins the team
-  once both say yes. Projects go through review, scoping and activation, with a notification at
+  they can be matched. When Relate finds a vetted volunteer eligible for an active project, they
+  join the project lead's ranked candidate list. The lead invites who they want, and the volunteer
+  joins the team by saying yes. Projects go through review, scoping and activation, with a notification at
   every step. System admins, moderators, org admins, reviewers and project leads each see only
   what their role allows.
 - **One API for every action** (`/api/v1`, OpenAPI docs at `/api/docs`). The **mobile

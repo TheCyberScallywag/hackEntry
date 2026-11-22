@@ -280,7 +280,7 @@ def test_system_tab_shows_projection_and_graph_and_replays(console):
     assert metrics == [("Pending graph updates", 0), ("Failing (3+ attempts)", 0)]
     tables = [args[0] for name, args in st.drawn if name == "dataframe"]
     assert {"label": "Volunteer", "nodes": 11} in tables[-3]
-    assert {"type": "ON_TEAM", "relationships": 1} in tables[-2]
+    assert {"type": "ON_TEAM", "relationships": 5} in tables[-2]
     assert any(row["eligible_volunteers"] == "coverage gap" for row in tables[-1])
     st.clicked = {"Replay outbox now"}
     assert run() is True and st.session_state["flash"] == ("success", "Replay: done")

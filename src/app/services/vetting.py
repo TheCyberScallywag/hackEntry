@@ -1,6 +1,7 @@
 """Volunteer onboarding, step 1: screening by a moderator or system admin."""
 
 from app.notify import notify, notify_vetters
+from app.services import teams
 from app.services.access import require_vetter
 from app.services.errors import Conflict, Forbidden, Invalid, NotFound, require_reason
 from app.services.profile import get_profile
@@ -65,6 +66,11 @@ def _set_status(conn, user_id, actor_id, old, new, note, private_note) -> None:
     )
     message = VETTING_MESSAGES[new] + (f": {note}" if note else ".")
     notify(conn, user_id, "vetting", message.replace("..", "."), "/profile")
+    if new == "suspended":  # a suspended volunteer holds no team place and no open offer
+        teams.end_for_volunteer(
+            conn, user_id, team_state="removed", event="suspended", actor_id=actor_id, note=note
+        )
+        teams.flag_leaderless(conn, user_id)
     enqueue(conn, "volunteer", user_id)  # only active volunteers get membership edges
 
 

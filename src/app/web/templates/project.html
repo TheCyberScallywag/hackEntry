@@ -23,30 +23,45 @@
 
 {% if team is not none %}
 <h2>Candidates and team <span class="muted">({{ "you lead this project" if is_lead else "org admins" }})</span></h2>
+<p class="muted">Candidates are ranked: preferred cause first, then required skills covered, then optional skills. They are not told about the match until you invite them. An invited volunteer joins the team when they say yes.</p>
 <table class="placements">
-  <thead><tr><th>Volunteer</th><th>Matched skills</th><th>Status</th><th>Volunteer</th><th>Lead</th><th></th></tr></thead>
+  <thead><tr><th>Volunteer</th><th>Skills</th><th>Status</th><th>Decided by</th><th></th></tr></thead>
   <tbody>
   {% for p in team %}
-    <tr data-volunteer="{{ p.display_name }}"><td>{{ p.display_name }}</td><td>{{ p.matched_skills|join(", ") }}</td>
+    {% set answer_url = "/o/" ~ org.id ~ "/projects/" ~ project.project ~ "/candidates/" ~ p.volunteer_id %}
+    <tr data-volunteer="{{ p.display_name }}" data-status="{{ p.status }}"><td>{{ p.display_name }}{% if p.preferred %} <span title="Prefers this project's cause">★</span>{% endif %}{% if p.is_lead %} <span class="chip">Lead</span>{% endif %}</td>
+      <td>{{ p.matched_skills|join(", ") or "—" }}{% if p.optional_skills %}<br><span class="muted">Also offers: {{ p.optional_skills|join(", ") }}</span>{% endif %}</td>
       <td><span class="state {{ p.state }}">{{ p.state_label }}</span></td>
-      <td>{{ p.volunteer_said or "—" }}</td><td>{{ p.lead_said or "—" }}</td>
+      <td>{% if p.is_lead and p.state == "team" %}<span class="muted">Automatic</span>{% elif p.decided_by %}{{ p.decided_by }}{% if p.lead_note %}<br><span class="muted">{{ p.lead_note }}</span>{% endif %}{% else %}—{% endif %}</td>
       <td>
-      {% if p.state == "eligible" and not p.lead_said %}
-        {% for answer, label in (("yes", "Accept"), ("no", "Decline")) %}
-        <form method="post" action="/o/{{ org.id }}/projects/{{ project.project }}/candidates/{{ p.volunteer_id }}/answer" class="inline">
+      {% if not p.can_decide %}<span class="muted">Someone else decides on your own place.</span>
+      {% elif p.status == "candidate" %}
+        {% for answer, label in (("yes", "Invite"), ("no", "Pass")) %}
+        <form method="post" action="{{ answer_url }}/answer" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ p.version }}">
           <input type="hidden" name="answer" value="{{ answer }}"><button type="submit" class="{{ 'secondary' if answer == 'no' }}">{{ label }}</button>
         </form>
         {% endfor %}
+      {% elif p.status == "invited" %}
+        <form method="post" action="{{ answer_url }}/answer" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ p.version }}">
+          <input type="hidden" name="answer" value="no">
+          <input name="reason" maxlength="1000" placeholder="Reason (optional)" aria-label="Reason for withdrawing the invitation to {{ p.display_name }}">
+          <button type="submit" class="secondary">Withdraw invitation</button>
+        </form>
       {% elif p.state == "team" and p.volunteer_id != session.user_id %}
         <form method="post" action="/o/{{ org.id }}/projects/{{ project.project }}/team/{{ p.volunteer_id }}/remove" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf }}">
           <input name="reason" required minlength="3" placeholder="Reason" aria-label="Reason for removing {{ p.display_name }}">
           <button type="submit" class="secondary">Remove</button>
         </form>
+      {% elif p.state in ("declined", "left", "removed") %}
+        <form method="post" action="{{ answer_url }}/reopen" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="secondary">Reopen</button>
+        </form>
       {% endif %}
       </td></tr>
-  {% else %}<tr><td colspan="6" class="muted">No eligible volunteers yet.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="5" class="muted">No eligible volunteers yet.</td></tr>{% endfor %}
   </tbody>
 </table>
 {% endif %}
