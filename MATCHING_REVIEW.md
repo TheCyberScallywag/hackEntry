@@ -12,6 +12,51 @@ throwaway test against the demo seed (through the JSON API, the same way
 `tests/test_rbac_onboarding.py` works); the test file was deleted afterwards. Findings marked
 **By reading** follow from the code and were not run.
 
+## Status of each finding
+
+Implemented on 22 November 2026 on the branch `feature/matching-review`, with the team's answers
+to the questions in section 4:
+
+| Question | Answer | What was built |
+|---|---|---|
+| Is an org admin's yes a substitute for the lead's? | Yes | Unchanged: either may give the lead-side answer. Who gave it is now recorded. |
+| Is a lead automatically on their own team? | Yes | The lead is put on the team when the project is projected, with no second person. |
+| Is one matching skill enough for an offer? | The lead chooses who is invited from the ranked list | A match makes a candidate, shown ranked to the lead side only. The lead invites; the volunteer then answers. |
+| Should anyone be told when a team member stops matching? | No, only while the placement is still open | Unchanged: an open candidate or invitation lapses; a team member stays. |
+| Should suspension take a volunteer off their teams? | Yes | Suspension ends team places and open offers. |
+
+The rest of this document is the review as written, so sections 1 and 2 describe the code
+**before** these changes. The current flow is in the docstring of `src/app/placements.py` and in
+section 7.4 of `docs/content/project/solution-architecture.md`.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | Team members outlive their standing | **Fixed.** Suspension, leaving an organisation and removal from it all end team places and close open offers (`services/teams.py`). The lead is told. |
+| 2 | Lead authority outlives standing | **Fixed.** The lead must be active and still with the organisation, or be an org admin. Org admins are told when a project is left without an active lead. |
+| 3 | One person can supply both acceptances | **Fixed.** Nobody gives the lead-side answer on their own placement. The lead is the one exception, by the team's decision, and it is recorded as automatic. |
+| 4 | Declined, left and removed are permanent | **Fixed for the lead side.** The lead or an org admin can reopen a closed placement; the volunteer becomes a candidate again if they still match. A volunteer cannot reopen one themselves, and there is still no way to invite someone who does not match. |
+| 5 | No capacity or per-skill places | **Partly.** Offers no longer go to every match: the lead invites from the ranked list, and gets one notification per project for new candidates. A team size or a number of places per skill was not added. |
+| 6 | The lead decides with little information | **Fixed.** Preferred cause and optional skills are stored, the table is in ranked order, and an open candidate's skills are refreshed on every sweep. |
+| 7 | Org admins are not told | **Fixed.** Candidate and team notifications go to the org admins whenever the project has no active lead, and to the admin who sent an invitation. |
+| 8 | No record of who answered | **Fixed.** `lead_actor_id`, answer times and an optional reason are on the placement, and every change is a row in `placement_events`. The lead's table shows "Decided by"; the full history has no screen yet. |
+| 9 | Offers never expire | **Fixed for invitations.** One reminder after `INVITATION_REMINDER_DAYS` (7), closed after `INVITATION_EXPIRY_DAYS` (14), which returns the volunteer to the candidate list. Candidates the lead has not acted on are not chased. |
+| 10 | Coverage, matches and team unconnected | **Fixed.** `TEAM_COVERAGE` reads the `ON_TEAM` edges; the coverage table has an "On the team" column and counts a skill as covered only then. Candidates show their status, and "My matches" shows invited, on the team, declined, left or removed. |
+| 11 | Lead change does not carry over | **Fixed.** The new lead joins the team and is told the project's name and how many candidates are waiting; the former lead is told and keeps the team place they had. |
+| 12 | Shared version number | **Not changed.** The two sides now answer in turn (invite, then accept), so the collision described no longer arises. Refreshing a candidate's skills and sending a reminder do not bump the version. |
+| 13 | Answers not re-checked | **Fixed.** A yes checks, in the same transaction, that the project is published and the volunteer is active and opted in. |
+| 14 | Pages and API disagree | **Fixed.** The volunteer's answer is final on both. The lead side can withdraw an open invitation on both, with an optional reason. |
+| 15 | Test coverage | **Done.** `tests/test_placement_rules.py` has a test per finding (19 tests). |
+
+Things to know before running it:
+
+- **The SQLite schema version went from 3 to 4** (new placement columns and the
+  `placement_events` table). An existing data directory is refused at start-up; reset it with
+  `uv run task reset`.
+- The bundled demo graph `data/demo.rl` was rebuilt: project leads are now on their teams, so it
+  has 5 `ON_TEAM` edges where it had 1.
+- New API route: `POST /api/v1/projects/{project_id}/placements/{volunteer_id}/reopen`. The
+  placement, match and coverage responses gained fields; none was removed.
+
 ## Summary
 
 The core two-sided flow works as documented: the graph decides who is eligible, each eligible

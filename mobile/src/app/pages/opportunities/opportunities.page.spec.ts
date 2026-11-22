@@ -19,10 +19,10 @@ function render() {
 }
 
 describe('OpportunitiesPage', () => {
-  it('lists eligible offers with yes/no and teams with leave', () => {
+  it('lists invitations with yes/no and teams with leave', () => {
     const { fixture } = render();
     const text = fixture.nativeElement.textContent;
-    expect(text).toContain('Eligible: awaiting answers');
+    expect(text).toContain('Invited: awaiting your answer');
     expect(text).toContain("Yes, I'd like to help");
     expect(text).toContain('On the team');
     expect(text).toContain('Leave the team');

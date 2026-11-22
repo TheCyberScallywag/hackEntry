@@ -13,8 +13,9 @@ or exclude causes. A moderator vets each new volunteer before they can be matche
 volunteers can suggest projects to an organisation, and that organisation's admins scope and
 approve them before they go live. A [Relate](https://relatedb.ai/docs/) graph decides who matches
 what (Relate is the embedded graph engine from Neo4j Labs). Each result says which skills matched, whether the volunteer prefers the cause, and what is
-still needed. When a volunteer is eligible for a project, they and the project lead are both
-notified in the app, and the volunteer joins the team once both say yes.
+still needed. When a volunteer is eligible for a project, they become a candidate on the project
+lead's ranked list. The lead invites who they want, and an invited volunteer joins the team by
+saying yes.
 
 > All people, projects and accounts in this repository are fictional. *DataKind UK*,
 > *Cyber Scallywags* and *InterLinkRCT* are used as illustrative organisations only. Their use
@@ -186,11 +187,22 @@ them from `draft` to `screening`, and moderators are notified. A moderator then 
 Relate, so the graph itself makes sure no one is matched before they have been vetted.
 
 Once a volunteer is active, the projector asks Relate after each graph update which volunteers
-match which active projects (the same matching query as everywhere else). For each new pair, the
-volunteer and the project lead are notified in the app that the volunteer is eligible. When both
-say yes, the volunteer is on the team, and Relate records an `ON_TEAM` edge. A no from either side
-declines the pair. A pair that stops matching before both said yes lapses, and it revives if it
-matches again.
+match which active projects (the same matching query as everywhere else). Each new pair is a
+candidate, shown to the project lead in ranked order: preferred cause, then required skills
+covered, then optional skills. The volunteer is not told yet. The lead (or an org admin, whose
+answer counts the same) invites the candidates they want, and each invited volunteer is notified.
+When the volunteer says yes they are on the team, and Relate records an `ON_TEAM` edge. A no from
+either side declines the pair, and the lead side can reopen it later. A candidate who stops
+matching lapses, and comes back if they match again.
+
+A few rules keep this honest. The project lead is on their own team automatically; nobody else
+decides on their own place. A volunteer who is suspended, or who leaves or is removed from the
+organisation, comes off its teams and loses any open invitation; a lead in that position loses
+the lead's powers and the org admins are told. An invitation left unanswered gets one reminder
+(`INVITATION_REMINDER_DAYS`, default 7) and then closes (`INVITATION_EXPIRY_DAYS`, default 14),
+returning the volunteer to the candidate list. Every change is kept in `placement_events` with who
+made it. The coverage page counts a required skill as covered only once someone who offers it is
+on the team.
 
 **Project onboarding:** *In review* → (*Scoping: more detail requested* → revised) →
 *Approved (activating…)* → *Active* (visible and matching once projected to Relate), with
@@ -291,7 +303,7 @@ match by following relationships:
 (:Organisation)-[:OWNS_PROJECT]->(:Project)-[:SERVES_CAUSE]->(:Cause)
 (:Project)-[:REQUIRES_SKILL]->(:Skill)        (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)
 (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation)          only while opted in AND vetted (active)
-(:Volunteer)-[:ON_TEAM]->(:Project)                       volunteer and project lead both said yes
+(:Volunteer)-[:ON_TEAM]->(:Project)                       invited by the lead side and said yes
 (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
 (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
 ```
@@ -404,7 +416,7 @@ Code map:
 | `src/app/web/main.py`, `web/pages/`, `templates/` | the app factory and the server-rendered pages |
 | `src/app/web/schemas.py` | the API contract: every request body and response model |
 | `src/app/services/` | domain operations with server-side authorisation: access, roles, vetting, organisations, profiles, submissions |
-| `src/app/placements.py` | eligibility sweep from Relate matches, two-sided acceptance, teams |
+| `src/app/placements.py` | candidate sweep from Relate matches, invitations, teams, reminders and expiry |
 | `src/app/notify.py` | in-app notifications, written in the same transaction as the change |
 | `src/app/profile_view.py` | the Profile screen (sections, skill types, labels, active and past projects), shared by the web page and the mobile API |
 | `src/app/matching.py` | access and freshness checks around Relate queries |

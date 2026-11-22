@@ -21,7 +21,7 @@ Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.
 
 ### Added
 
-- Cloudflare tunnel to application.
+- Cloudflare tunnel to application. (#27)
 
 ### Changed
 

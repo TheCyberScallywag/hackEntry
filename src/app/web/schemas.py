@@ -102,6 +102,9 @@ class LeadIn(BaseModel):
 class AnswerIn(BaseModel):
     answer: Answer
     version: int
+    # Lead side only: an optional reason, kept on record and shown to the volunteer when an
+    # invitation is withdrawn.
+    reason: str = Field(default="", max_length=1000)
 
 
 class VetIn(BaseModel):
@@ -235,6 +238,10 @@ class Match(BaseModel):
     matched_skills: list[str]
     optional_skills: list[str]
     remaining_skills: list[str]
+    # Where I stand on this project, once it is more than a match: invited, team, declined,
+    # left or removed. None while I am only a candidate.
+    placement: str | None = None
+    placement_label: str | None = None
 
 
 class Exclusion(BaseModel):
@@ -262,17 +269,21 @@ class CoverageCandidate(BaseModel):
     volunteer: str
     name: str
     preferred_cause: bool
+    status: str  # candidate, invited, declined, left, removed or lapsed
+    status_label: str
 
 
 class CoverageSkill(BaseModel):
     skill: str
-    candidates: list[CoverageCandidate]
+    team: list[str]  # display names of team members who cover this skill
+    candidates: list[CoverageCandidate]  # everyone else who could
 
 
 class CoverageProject(BaseModel):
     project: str
     title: str
-    gaps: list[str]
+    gaps: list[str]  # required skills no candidate can cover
+    team_gaps: list[str]  # required skills nobody on the team covers yet
     per_skill: list[CoverageSkill]
 
 
@@ -383,6 +394,10 @@ class _Placement(BaseModel):
     volunteer_said: Answer | None
     lead_said: Answer | None
     matched_skills: list[str]
+    optional_skills: list[str]
+    preferred: bool  # the volunteer prefers the project's cause
+    status: str  # `state`, with `eligible` split into candidate and invited
+    invited_at: str | None
     version: int
     created_at: str
     updated_at: str
@@ -397,9 +412,15 @@ class MyPlacement(_Placement):
 
 
 class ProjectPlacement(_Placement):
-    """A candidate or team member, as the project lead sees them (no contact details)."""
+    """A candidate or team member, as the project lead sees them (no contact details).
+    Candidates are listed in ranked order."""
 
     display_name: str
+    decided_by: str | None  # who gave the lead-side answer: the lead or an org admin
+    lead_said_at: str | None
+    lead_note: str
+    is_lead: bool  # this is the project's lead, who is on the team automatically
+    can_decide: bool  # false on my own row: someone else decides on my place
 
 
 class PlacementStateOut(BaseModel):

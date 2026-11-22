@@ -185,7 +185,7 @@ flowchart LR
   end
   subgraph Domain
     services["services/<br/>access, roles, vetting, orgs, profiles, submissions"]
-    placements["placements.py<br/>eligibility sweep, two-sided yes, teams"]
+    placements["placements.py<br/>candidate sweep, invitations, teams"]
     matching["matching.py<br/>access + freshness around Relate reads"]
     profile["profile_view.py<br/>Profile screen model"]
     notify["notify.py<br/>in-app notifications"]
@@ -221,7 +221,8 @@ flowchart LR
 | `web/pages/` | The HTML pages, one router per area (account, organisations, projects, suggestions) | 431 |
 | `web/deps.py`, `web/errors.py` | Session, CSRF-checked forms, rendering; one table of error responses for pages and API | 357 |
 | `services/` | Domain operations and **all authorisation decisions**, one module per area | 1,005 |
-| `placements.py` | Onboarding step 2: eligible, then both say yes, then on the team | 329 |
+| `placements.py` | Onboarding step 2: candidate, invited by the lead side, then on the team; reopening, reminders and expiry | 591 |
+| `services/teams.py` | Standing, the lead's automatic team place, ending places, the placement event history | 190 |
 | `matching.py` | Org access, account status, pending-update withholding, explanations | 262 |
 | `graph/projector.py` | Outbox drain, reconcile per entity, backoff, hook into the sweep | 321 |
 | `graph/cypher.py` | The graph schema and all Cypher, with fixed labels and parameter-bound values | 286 |
@@ -275,7 +276,8 @@ flowchart LR
     reviews
   end
   subgraph Workflow["Workflow and integration"]
-    placements["placements<br/>state · volunteer_said · lead_said"]
+    placements["placements<br/>state · volunteer_said · lead_said<br/>lead_actor_id · ranking"]
+    placement_events["placement_events<br/>who did what, and why"]
     notifications
     outbox["outbox<br/>kind · entity_id · attempts"]
   end
@@ -296,7 +298,10 @@ Key columns:
   `status_version`, `profile_version`, `vetted_by`, `vetted_at`.
 - **`submissions`:** `state`, `current_revision`, `version`, `lead_id` (the author by default).
 - **`placements`:** `state` (eligible, team, declined, lapsed, removed, left), `volunteer_said`,
-  `lead_said`, `matched_skills`, `version`.
+  `lead_said`, `lead_actor_id` (who answered for the lead side), `lead_note`, `invited_at`,
+  `reminded_at`, `matched_skills`, `optional_skills`, `preferred`, `version`.
+- **`placement_events`:** one row per change to a placement: `event`, `actor_id` (empty when the
+  system did it), `note`.
 - **`outbox`:** `kind`, `entity_id`, `attempts`, `next_attempt_at`, `last_error`, `done_at`.
 
 ### 5.3 Graph model (Relate)
@@ -310,7 +315,7 @@ flowchart LR
   V((Volunteer<br/>opaque id)) -- "VOLUNTEERS_WITH<br/>(opted in AND active)" --> O
   V -- "HAS_SKILL / OFFERS_SKILL / EXCLUDES_SKILL" --> S
   V -- "PREFERS_CAUSE / EXCLUDES_CAUSE" --> C
-  V -- "ON_TEAM<br/>(both said yes)" --> P
+  V -- "ON_TEAM<br/>(invited, said yes)" --> P
 ```
 
 The bundled demo graph has **35 nodes and 67 relationships**: 2 organisations, 5 causes,
@@ -359,7 +364,7 @@ those and not to an organisation as a whole.
 | **Moderator** | System | System admin | Vet volunteers: approve, request info, decline, suspend, reinstate (never themselves) |
 | **Org admin** | Their organisation | System admin | Review and withdraw projects, reassign leads, list and remove volunteers, answer candidates |
 | **Reviewer** | Their organisation | System admin | Review suggestions, withdraw active projects |
-| **Project lead** | One project | Author by default; reassigned by an org admin | Accept or decline candidates, remove team members |
+| **Project lead** | One project | Author by default; reassigned by an org admin | Invite or pass over candidates from the ranked list, reopen closed placements, remove team members. On their own team automatically |
 | **Volunteer** | Self | Signup | Edit profile, join organisations, suggest projects, answer offers, leave teams |
 
 Signup never grants a role. Authorisation is resolved by `services.org_access`, which returns an
@@ -467,19 +472,32 @@ stateDiagram-v2
 - Submitting needs at least one offered skill. Moderators and admins are notified when someone
   enters screening (`notify_vetters`).
 
-### 7.4 Volunteer onboarding, step 2: eligible to team
+### 7.4 Volunteer onboarding, step 2: candidate to team
 
 ```mermaid
 stateDiagram-v2
-  [*] --> eligible: sweep finds a match
-  eligible --> eligible: one side says yes
-  eligible --> team: both said yes
-  eligible --> declined: either says no
-  eligible --> lapsed: no longer matches
+  [*] --> eligible: sweep finds a match (candidate)
+  eligible --> eligible: lead side invites · invitation expires
+  eligible --> team: invited volunteer says yes
+  eligible --> declined: lead side passes or withdraws · volunteer says no
+  eligible --> lapsed: no longer matches · volunteer loses standing
   lapsed --> eligible: matches again
-  team --> left: volunteer leaves
-  team --> removed: lead / org admin removes (with reason)
+  team --> left: volunteer leaves the team or the organisation
+  team --> removed: lead / org admin removes (with reason) · suspended · removed from the organisation
+  declined --> lapsed: lead side reopens
+  left --> lapsed: lead side reopens
+  removed --> lapsed: lead side reopens
 ```
+
+- A candidate is shown to the lead side only, ranked by preferred cause, required skills covered
+  and optional skills offered. The volunteer is told when they are invited.
+- The lead side is the project lead while they are active and with the organisation, or any org
+  admin. Their answers are interchangeable; `lead_actor_id` records who gave it. Nobody decides on
+  their own place, except the lead, who is put on their own team by the project projection.
+- A yes is re-checked against SQLite in the same transaction: the project must be published and
+  the volunteer active and opted in.
+- An unanswered invitation is reminded once and then closes, returning the volunteer to the
+  candidate list (`INVITATION_REMINDER_DAYS`, `INVITATION_EXPIRY_DAYS`).
 
 ```mermaid
 sequenceDiagram

@@ -11,7 +11,8 @@
   <h3><a href="/o/{{ m.org }}/projects/{{ m.project }}">{{ m.title }}</a></h3>
   <p class="meta">{% if show_org %}{{ m.org_name }} · {% endif %}{{ m.cause_name }}
     {% if m.preferred %}<span class="chip pref">Preferred cause</span>{% endif %}
-    {% if m.partial %}<span class="chip partial">Partial match: a contribution opportunity</span>{% endif %}</p>
+    {% if m.partial %}<span class="chip partial">Partial match: a contribution opportunity</span>{% endif %}
+    {% if m.placement %}<span class="chip {{ 'ok' if m.placement == 'team' else 'pref' if m.placement == 'invited' else '' }}">{% if m.placement == "invited" %}<a href="/opportunities">Invited: answer now</a>{% else %}{{ m.placement_label }}{% endif %}</span>{% endif %}</p>
   <p>You match: {{ skills(m.matched_names, "ok") }}</p>
   {% if m.optional_names %}<p>Nice to have, you offer: {{ skills(m.optional_names, "opt") }}</p>{% endif %}
   {% if m.remaining_names %}<p>Still needed from others: {{ skills(m.remaining_names, "gap") }}</p>{% endif %}

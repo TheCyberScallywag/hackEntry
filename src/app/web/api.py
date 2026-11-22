@@ -210,6 +210,8 @@ def org_matches(
                 "matched_skills": m["matched_names"],
                 "optional_skills": m["optional_names"],
                 "remaining_skills": m["remaining_names"],
+                "placement": m["placement"],
+                "placement_label": m["placement_label"],
             }
             for m in result.matches
         ],
@@ -249,14 +251,18 @@ def org_coverage(org_id: str, request: Request, session: Api) -> m.Coverage:
                 "project": p["project"],
                 "title": p["title"],
                 "gaps": p["gaps"],
+                "team_gaps": p["team_gaps"],
                 "per_skill": [
                     {
                         "skill": row["skill"],
+                        "team": row["team"],
                         "candidates": [
                             {
                                 "volunteer": c["volunteer"],
                                 "name": c["name"],
                                 "preferred_cause": c["preferred"],
+                                "status": c["status"],
+                                "status_label": c["status_label"],
                             }  # fmt: skip
                             for c in row["candidates"]
                         ],
@@ -389,7 +395,9 @@ def withdraw(
 
 @router.put("/orgs/{org_id}/projects/{sid}/lead", tags=["projects"])
 def set_lead(org_id: str, sid: str, body: m.LeadIn, request: Request, session: Api) -> m.LeadOut:
-    services.set_project_lead(_rt(request).db, session.user_id, org_id, sid, body.user_id)
+    rt = _rt(request)
+    services.set_project_lead(rt.db, session.user_id, org_id, sid, body.user_id)
+    drain(rt)  # the new lead joins the team with the projection
     return {"lead_id": body.user_id}
 
 
@@ -432,9 +440,27 @@ def answer_as_lead(
 ) -> m.PlacementStateOut:
     rt = _rt(request)
     state = placements.lead_respond(
-        rt.db, session.user_id, project_id, volunteer_id, body.answer, version=body.version
-    )
+        rt.db, session.user_id, project_id, volunteer_id, body.answer, version=body.version,
+        note=body.reason,
+    )  # fmt: skip
     drain(rt)
+    return {"state": state}
+
+
+@router.post("/projects/{project_id}/placements/{volunteer_id}/reopen", tags=["placements"])
+def reopen_placement(
+    project_id: str, volunteer_id: str, request: Request, session: Api
+) -> m.PlacementStateOut:
+    """The lead side reopens a declined, left or removed placement. The volunteer becomes a
+    candidate again if they still match; the returned state says whether they did."""
+    rt = _rt(request)
+    placements.reopen(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    with rt.db.read() as conn:
+        state = conn.execute(
+            "SELECT state FROM placements WHERE project_id = ? AND volunteer_id = ?",
+            (project_id, volunteer_id),
+        ).fetchone()[0]
     return {"state": state}
 
 

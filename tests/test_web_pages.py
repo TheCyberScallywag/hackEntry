@@ -60,30 +60,33 @@ def test_healthz_reports_the_outbox(web: Web):
 
 
 # ------------------------------------------------------------------ placements
-def test_volunteer_and_lead_answer_then_the_volunteer_leaves(web: Web):
+def test_lead_invites_the_volunteer_answers_then_the_volunteer_leaves(web: Web):
     dev = USERS["dev"]
     web.sign_in("dev")
     version = placement(web, FOOD_BANK, dev)["version"]
-    r = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "yes", "version": version})
-    assert (r.status_code, r.headers["location"]) == (303, "/opportunities?msg=answered")
-    stale = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "yes", "version": version})
-    assert stale.status_code == 409 and "Already changed" in stale.text
-    bad = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "maybe", "version": "x"})
-    assert bad.status_code == 400 and "Answer yes or no." in bad.text
+    early = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "yes", "version": version})
+    assert early.status_code == 409 and "has not invited you" in early.text
     web.sign_in("cerys")  # the project lead
-    version = placement(web, FOOD_BANK, dev)["version"]
     r = web.post(
         f"/o/{DK}/projects/{FOOD_BANK}/candidates/{dev}/answer",
         {"answer": "yes", "version": version},
     )
-    assert r.headers["location"] == f"/o/{DK}/projects/{FOOD_BANK}?msg=answered"
-    assert placement(web, FOOD_BANK, dev)["state"] == "team"
+    assert r.headers["location"] == f"/o/{DK}/projects/{FOOD_BANK}?msg=invited"
+    assert placement(web, FOOD_BANK, dev)["state"] == "eligible"
     web.sign_in("dev")
+    stale = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "yes", "version": version})
+    assert stale.status_code == 409 and "Already changed" in stale.text
+    bad = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "maybe", "version": "x"})
+    assert bad.status_code == 400 and "Answer yes or no." in bad.text
+    version = placement(web, FOOD_BANK, dev)["version"]
+    r = web.post(f"/opportunities/{FOOD_BANK}/answer", {"answer": "yes", "version": version})
+    assert (r.status_code, r.headers["location"]) == (303, "/opportunities?msg=answered")
+    assert placement(web, FOOD_BANK, dev)["state"] == "team"
     r = web.post(f"/opportunities/{FOOD_BANK}/leave")
     assert (r.status_code, r.headers["location"]) == (303, "/opportunities?msg=left_team")
     assert placement(web, FOOD_BANK, dev)["state"] == "left"
     assert web.post(f"/opportunities/{FOOD_BANK}/leave").status_code == 404  # not on it any more
-    assert "A volunteer left the team" in _messages(web, USERS["cerys"])[0]
+    assert "Dev left the team" in _messages(web, USERS["cerys"])[0]
 
 
 def test_lead_removes_a_team_member_with_a_reason(web: Web):
@@ -102,7 +105,7 @@ def test_lead_removes_a_team_member_with_a_reason(web: Web):
     edges = web.rt.graph.read(
         "MATCH (:Volunteer {id: $v})-[:ON_TEAM]->(p:Project) RETURN p.id AS id", {"v": bryn}
     )
-    assert edges == []  # the drain after the form removed the team edge
+    assert {"id": WINTER} not in edges  # the drain after the form removed the team edge
 
 
 def test_org_admin_removes_a_volunteer_from_the_organisation(web: Web):
@@ -116,7 +119,7 @@ def test_org_admin_removes_a_volunteer_from_the_organisation(web: Web):
     r = web.post(path, {"reason": "No longer available"})
     assert (r.status_code, r.headers["location"]) == (303, f"/o/{DK}/volunteers?msg=removed")
     assert _membership(web, dev, DK) == 0
-    assert placement(web, FOOD_BANK, dev)["state"] == "removed"
+    assert placement(web, FOOD_BANK, dev)["state"] == "lapsed"  # an open offer just closes
     assert _messages(web, dev)[0] == ("DataKind UK removed you as a volunteer: No longer available")
     assert 'data-volunteer="Dev"' not in web.get(f"/o/{DK}/volunteers").text
     assert web.post(path, {"reason": "No longer available"}).status_code == 404  # already gone

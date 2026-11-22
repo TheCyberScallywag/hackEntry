@@ -77,7 +77,7 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
   organisation switcher, explainable matches, a Profile page with accordions for editing skills
   and causes and for active and past projects, suggestion status) with new specs.
 - RBAC (system admin, moderator, org admin, reviewer, project lead), volunteer vetting
-  workflow, eligibility sweep with two-sided acceptance and `ON_TEAM` teams, in-app
+  workflow, candidate sweep with lead invitations and `ON_TEAM` teams, in-app
   notifications (`src/app/services/`, `src/app/placements.py`, `src/app/notify.py`).
 - A JSON API covering every action, with OpenAPI docs (`src/app/web/api.py`).
 - Streamlit admin console as a pure API client: screening, organisation management, users and

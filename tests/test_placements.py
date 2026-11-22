@@ -39,7 +39,8 @@ def settings(tmp_path) -> Settings:
 
 def test_no_offer_lapses_when_an_organisation_has_more_pairs_than_the_row_bound(web: Web):
     before = _states(web)
-    assert sum(1 for (p, _), s in before.items() if p == FOOD_BANK and s == "eligible") == 4
+    assert sum(1 for (p, _), s in before.items() if p == FOOD_BANK and s == "eligible") == 3
+    assert before[(FOOD_BANK, USERS["cerys"])] == "team"  # its lead: four pairs in the graph
     web.sign_in("rhiannon")
     assert _review(web, DK, AUDIT, "approved").status_code == 303  # a second DataKind UK project
     after = _states(web)

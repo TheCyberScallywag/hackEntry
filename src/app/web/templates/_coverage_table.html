@@ -1,13 +1,16 @@
 <table class="coverage">
-  <caption>{{ p.title }}{% if p.gaps %} · <span class="chip gap">{{ p.gaps|length }} skill gap{{ "s" if p.gaps|length != 1 }}</span>{% endif %}</caption>
-  <thead><tr><th>Required skill</th><th>Eligible volunteers (ranked)</th></tr></thead>
+  <caption>{{ p.title }}{% if p.team_gaps %} · <span class="chip gap">{{ p.team_gaps|length }} skill{{ "s" if p.team_gaps|length != 1 }} not yet on the team</span>{% else %} · <span class="chip ok">Team covers every required skill</span>{% endif %}{% if p.gaps %} · <span class="chip gap">{{ p.gaps|length }} with no candidate</span>{% endif %}</caption>
+  <thead><tr><th>Required skill</th><th>On the team</th><th>Candidates (ranked)</th></tr></thead>
   <tbody>
   {% for row in p.per_skill %}
     <tr><td>{{ row.skill }}</td><td>
-      {% for c in row.candidates %}<span class="chip ok" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}</span>
-      {% else %}<span class="chip gap">Coverage gap: no eligible volunteer</span>{% endfor %}
+      {% for name in row.team %}<span class="chip ok">{{ name }}</span>
+      {% else %}<span class="chip gap">Nobody yet</span>{% endfor %}
+    </td><td>
+      {% for c in row.candidates %}<span class="chip" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}{% if c.status != "candidate" %} · {{ c.status_label }}{% endif %}</span>
+      {% else %}{% if not row.team %}<span class="chip gap">Coverage gap: no eligible volunteer</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}
     </td></tr>
   {% endfor %}
   </tbody>
 </table>
-<p class="muted">★ prefers this project's cause. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill.</p>
+<p class="muted">A skill counts as covered once someone who offers it is on the team. ★ prefers this project's cause. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill; the project lead chooses who to invite.</p>

@@ -10,6 +10,7 @@ error responses in app.web.errors and the JSON API in app.web.api.
 
 import logging
 import threading
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -20,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from app.brandkit import tokens_css
 from app.config import BRAND_DIR, ORG_ASSETS_DIR, Settings, get_settings
 from app.meta import get_meta
-from app.runtime import Runtime, bootstrap, build_runtime
+from app.runtime import Runtime, bootstrap, build_runtime, chase_invitations
 from app.web import api, pages
 from app.web.deps import HERE, RT
 from app.web.errors import register_errors
@@ -39,10 +40,17 @@ DOCS_CSP = (  # Swagger UI: its CDN assets and inline bootstrap
 )
 
 
+CHASE_EVERY_SECONDS = 3600  # unanswered invitations are counted in days
+
+
 def _projector_loop(rt: Runtime, stop: threading.Event) -> None:
+    last_chase = time.monotonic()  # bootstrap has just chased
     while not stop.wait(rt.settings.projector_interval_seconds):
         try:
             rt.projector.drain()
+            if time.monotonic() - last_chase >= CHASE_EVERY_SECONDS:
+                last_chase = time.monotonic()
+                chase_invitations(rt)
         except Exception:  # keep the loop alive; errors are recorded per item
             log.exception("background projection failed")
 

@@ -43,6 +43,15 @@ def build_runtime(settings: Settings) -> Runtime:
     return Runtime(settings, db, graph, projector)
 
 
+def chase_invitations(rt: Runtime) -> int:
+    """Remind volunteers of unanswered invitations and close the ones that ran out of time."""
+    return placements.chase(
+        rt.db,
+        remind_days=rt.settings.invitation_reminder_days,
+        expire_days=rt.settings.invitation_expiry_days,
+    )
+
+
 def bootstrap(rt: Runtime) -> None:
     """Create the schema; seed the demo on an empty data dir (test env only); replay the outbox.
 
@@ -67,6 +76,7 @@ def bootstrap(rt: Runtime) -> None:
         prune(conn)
     result = rt.projector.drain(ignore_backoff=True)
     log.info("startup replay: %s done, %s failed", result.done, result.failed)
+    chase_invitations(rt)
 
 
 def seed_catalogue(rt: Runtime) -> None:
@@ -188,7 +198,7 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
             if approved:
                 enqueue(conn, "project", sid)
     rt.projector.drain(ignore_backoff=True)  # also runs the placement sweep
-    # Teams are formed through the real two-sided accept flow.
+    # Teams are formed through the real flow: the lead invites, the volunteer says yes.
     for team in demo.get("teams", []):
         pid, vid = stable_id("p", team["project"]), user_ids[team["volunteer"]]
         with rt.db.read() as conn:
@@ -197,8 +207,8 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                 "SELECT version FROM placements WHERE project_id = ? AND volunteer_id = ?",
                 (pid, vid),
             ).fetchone()[0]
-        placements.volunteer_respond(rt.db, vid, pid, "yes", version=version)
-        placements.lead_respond(rt.db, lead[0], pid, vid, "yes", version=version + 1)
+        placements.lead_respond(rt.db, lead[0], pid, vid, "yes", version=version)
+        placements.volunteer_respond(rt.db, vid, pid, "yes", version=version + 1)
     rt.projector.drain(ignore_backoff=True)
 
 

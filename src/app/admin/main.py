@@ -175,16 +175,23 @@ def _candidates(project_id: str) -> None:
         cols[0].write(p["display_name"])
         cols[1].write(", ".join(p["matched_skills"]))
         cols[2].write(p["state_label"])
-        if p["state"] != "eligible" or p["lead_said"]:
+        if not p["can_decide"]:
             continue
-        for col, answer in ((cols[3], "yes"), (cols[4], "no")):
-            if col.button(answer.title(), key=f"{project_id}-{p['volunteer_id']}-{answer}"):
-                act(
-                    "Candidate",
-                    "POST",
-                    f"/projects/{project_id}/placements/{p['volunteer_id']}/answer",
-                    json={"answer": answer, "version": p["version"]},
-                )
+        base = f"/projects/{project_id}/placements/{p['volunteer_id']}"
+        key = f"{project_id}-{p['volunteer_id']}"
+        if p["status"] == "candidate":  # listed in ranked order: invite or pass over
+            for col, answer, label in ((cols[3], "yes", "Invite"), (cols[4], "no", "Pass")):
+                if col.button(label, key=f"{key}-{answer}"):
+                    act("Candidate", "POST", f"{base}/answer",
+                        json={"answer": answer, "version": p["version"]})  # fmt: skip
+        elif p["status"] == "invited":
+            if cols[3].button("Withdraw", key=f"{key}-withdraw"):
+                act("Invitation", "POST", f"{base}/answer",
+                    json={"answer": "no", "version": p["version"]})  # fmt: skip
+        elif p["state"] in ("declined", "left", "removed") and cols[3].button(
+            "Reopen", key=f"{key}-reopen"
+        ):
+            act("Placement", "POST", f"{base}/reopen")
 
 
 def _volunteers(org: dict) -> None:

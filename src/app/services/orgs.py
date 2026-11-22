@@ -4,6 +4,7 @@ import re
 import sqlite3
 
 from app.notify import notify
+from app.services import teams
 from app.services.access import (
     get_org,
     load_actor,
@@ -16,7 +17,9 @@ from app.sqlstore import Database, enqueue, new_id, now
 
 
 def set_membership(db: Database, user_id: str, org_id: str, *, opted_in: bool) -> None:
-    """Join (opt in) or leave (opt out). Distinct from switching the active organisation."""
+    """Join (opt in) or leave (opt out). Distinct from switching the active organisation.
+
+    Leaving also gives up the volunteer's team places and open offers in that organisation."""
     with db.tx() as conn:
         org = get_org(conn, org_id)
         conn.execute(
@@ -31,6 +34,12 @@ def set_membership(db: Database, user_id: str, org_id: str, *, opted_in: bool) -
                 f"You joined {org['name']}. You will be matched to its projects once your "
                 "account has been vetted.", "/profile",
             )  # fmt: skip
+        if not opted_in:
+            teams.end_for_volunteer(
+                conn, user_id, org_id=org_id, team_state="left", event="left_organisation",
+                actor_id=user_id,
+            )  # fmt: skip
+            teams.flag_leaderless(conn, user_id, org_id)
         enqueue(conn, "volunteer", user_id)
 
 
@@ -68,22 +77,14 @@ def remove_volunteer(
         ).rowcount
         if not updated:
             raise NotFound("volunteer")
-        teams = conn.execute(
-            "SELECT p.project_id FROM placements p JOIN submissions s ON s.id = p.project_id "
-            "WHERE p.volunteer_id = ? AND s.org_id = ? AND p.state IN ('eligible', 'team')",
-            (user_id, org_id),
-        ).fetchall()
-        conn.execute(
-            "UPDATE placements SET state = 'removed', version = version + 1, updated_at = ? "
-            "WHERE volunteer_id = ? AND state IN ('eligible', 'team') AND project_id IN "
-            "(SELECT id FROM submissions WHERE org_id = ?)",
-            (stamp, user_id, org_id),
-        )
+        teams.end_for_volunteer(
+            conn, user_id, org_id=org_id, team_state="removed", event="removed_from_organisation",
+            actor_id=actor_id, note=reason,
+        )  # fmt: skip
+        teams.flag_leaderless(conn, user_id, org_id)
         notify(conn, user_id, "membership",
                f"{org['name']} removed you as a volunteer: {reason}", "/orgs")  # fmt: skip
         enqueue(conn, "volunteer", user_id)
-        for (pid,) in teams:
-            enqueue(conn, "project", pid)
 
 
 def create_organisation(

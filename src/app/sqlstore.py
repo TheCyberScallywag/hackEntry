@@ -173,22 +173,44 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 CREATE INDEX IF NOT EXISTS reviews_submission ON reviews(submission_id);
 
--- A volunteer and a project that Relate found eligible. Both sides must say yes before the
--- volunteer joins the team (state 'team', projected as (:Volunteer)-[:ON_TEAM]->(:Project)).
+-- A volunteer and a project that Relate found eligible: a candidate, shown ranked to the project
+-- lead. The lead side (the lead or an org admin) invites; the volunteer then says yes and joins
+-- the team (state 'team', projected as (:Volunteer)-[:ON_TEAM]->(:Project)). An `eligible` row
+-- with lead_said = 'yes' is an open invitation.
 CREATE TABLE IF NOT EXISTS placements (
-    project_id     TEXT NOT NULL REFERENCES submissions(id),
-    volunteer_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    state          TEXT NOT NULL CHECK (state IN (
-                       'eligible', 'team', 'declined', 'lapsed', 'removed', 'left')),
-    volunteer_said TEXT CHECK (volunteer_said IN ('yes', 'no')),
-    lead_said      TEXT CHECK (lead_said IN ('yes', 'no')),
-    matched_skills TEXT NOT NULL DEFAULT '[]',       -- JSON list, from the Relate match
-    version        INTEGER NOT NULL DEFAULT 1,
-    created_at     TEXT NOT NULL,
-    updated_at     TEXT NOT NULL,
+    project_id        TEXT NOT NULL REFERENCES submissions(id),
+    volunteer_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    state             TEXT NOT NULL CHECK (state IN (
+                          'eligible', 'team', 'declined', 'lapsed', 'removed', 'left')),
+    volunteer_said    TEXT CHECK (volunteer_said IN ('yes', 'no')),
+    volunteer_said_at TEXT,
+    lead_said         TEXT CHECK (lead_said IN ('yes', 'no')),
+    lead_said_at      TEXT,
+    lead_actor_id     TEXT REFERENCES users(id) ON DELETE SET NULL,  -- who answered for the lead
+    lead_note         TEXT NOT NULL DEFAULT '',     -- optional reason with the lead-side answer
+    invited_at        TEXT,                          -- first invitation; never cleared
+    reminded_at       TEXT,                          -- reminder sent for the open invitation
+    matched_skills    TEXT NOT NULL DEFAULT '[]',   -- JSON list, from the Relate match
+    optional_skills   TEXT NOT NULL DEFAULT '[]',   -- JSON list, from the Relate match
+    preferred         INTEGER NOT NULL DEFAULT 0 CHECK (preferred IN (0, 1)),  -- prefers cause
+    version           INTEGER NOT NULL DEFAULT 1,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
     PRIMARY KEY (project_id, volunteer_id)
 );
 CREATE INDEX IF NOT EXISTS placements_volunteer ON placements(volunteer_id, state);
+
+-- Every change to a placement: who did it (NULL: the system), what, and any reason given.
+CREATE TABLE IF NOT EXISTS placement_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id   TEXT NOT NULL REFERENCES submissions(id),
+    volunteer_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+    event        TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS placement_events_pair ON placement_events(project_id, volunteer_id);
 
 CREATE TABLE IF NOT EXISTS notifications (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,7 +268,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class SchemaOutdated(RuntimeError):

@@ -72,9 +72,13 @@ def test_one_candidate_entry_per_eligible_skill(web: Web):
         row["skill"]: [c["name"] for c in row["candidates"]] for row in project["per_skill"]
     }
     assert per_skill == {
-        "Bookkeeping": ["Dev", "Cerys"],
+        "Bookkeeping": ["Dev"],
         "Spreadsheet and data analysis": ["Dev", "Asha", "Kofi"],
     }
+    # Cerys leads the project, so she is on its team and no longer a candidate
+    on_team = {row["skill"]: row["team"] for row in project["per_skill"]}
+    assert on_team == {"Bookkeeping": ["Cerys"], "Spreadsheet and data analysis": []}
+    assert project["team_gaps"] == ["Spreadsheet and data analysis"] and project["gaps"] == []
 
 
 def test_preferred_cause_ranks_ahead_then_coverage_then_optional_then_ids(web: Web):
