@@ -2,7 +2,7 @@
 {% block title %}Opportunities{% endblock %}
 {% block content %}
 <h1>Opportunities</h1>
-<p class="muted">When your skills match an active project, its lead can invite you to the team. Your invitations appear here: say yes and you're on the team. <a href="/matches">My matches</a> shows every project you fit.</p>
+<p class="muted">When your skills match an active project, its lead can invite you to the team. Your invitations appear here: say yes and you're on the team, or you start the project's own onboarding steps if it has them. <a href="/matches">My matches</a> shows every project you fit.</p>
 {% for p in items %}
 <article class="card" data-project="{{ p.title }}">
   <h3>{{ p.title }}</h3>
@@ -17,7 +17,9 @@
       </form>
     {% endfor %}
     </div>
-  {% elif p.state == "team" %}
+  {% elif p.state in ("onboarding", "team", "suspended") %}
+    {% if p.state == "onboarding" %}<p>This project has its own onboarding steps. <a href="/onboarding">See your steps</a>; its lead accepts you onto the team once they are done.</p>{% endif %}
+    {% if p.state == "suspended" %}<p class="pending">The project's lead has suspended your place on this team.</p>{% endif %}
     <form method="post" action="/opportunities/{{ p.project_id }}/leave"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="secondary">Leave the team</button></form>
   {% endif %}
 </article>

@@ -16,6 +16,10 @@ dependencies = [
     # Embedded Relate engine. Pinned to the same version as the tested `relate` CLI (1.0.1), so
     # the bundled data/demo.rl can be opened by either.
     "relate-db==1.0.1",
+    "pydantic-ai-slim[anthropic]>=2.71.0",
+    "pydantic-evals>=2.71.0",
+    "logfire[fastapi,sqlite3]>=6.0.0",
+    "pydantic-graph>=2.71.0",
 ]
 
 [project.optional-dependencies]
@@ -99,6 +103,12 @@ docs = { cmd = "{docs_build}", help = "Build the Zensical portal and the Sphinx 
 docs_serve = { cmd = "{docs_build} && python -m http.server 8200 -d docs/_build/site", help = "Build, then serve the portal (/) and manual (/manual/) on http://localhost:8200" }
 docs_live = { cmd = "{docs_brand} && zensical serve -f docs/zensical.toml -a localhost:8201", help = "Live-reload the Zensical portal on :8201 while writing" }
 docs_live_manual = { cmd = "{docs_brand} && sphinx-autobuild -c docs/sphinx docs/content docs/_build/live-manual --port 8202", help = "Live-reload the Sphinx manual on :8202 while writing" }
+
+# ---------------------------------------------------------------- logfire
+[tool.logfire]
+# Code that runs before app.observability.configure (a service called straight from a test, a
+# one-off script) makes no spans and says nothing about it.
+ignore_no_config = true
 
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]

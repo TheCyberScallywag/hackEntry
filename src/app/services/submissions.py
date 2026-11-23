@@ -424,19 +424,24 @@ def withdraw_project(
                f"/submissions/{sid}")  # fmt: skip
         affected = conn.execute(
             "SELECT volunteer_id, state, lead_said FROM placements WHERE project_id = ? "
-            "AND state IN ('eligible', 'team')",
+            "AND state IN ('eligible', 'onboarding', 'team', 'suspended')",
             (sid,),
         ).fetchall()
         conn.execute(
             "UPDATE placements SET state = 'removed', version = version + 1, updated_at = ? "
-            "WHERE project_id = ? AND state IN ('eligible', 'team')",
+            "WHERE project_id = ? AND state IN ('eligible', 'onboarding', 'team', 'suspended')",
             (stamp, sid),
+        )
+        conn.execute(  # nobody is onboarding for a project that is gone
+            "UPDATE onboarding_runs SET state = 'cancelled' WHERE project_id = ? "
+            "AND state != 'cancelled'",
+            (sid,),
         )
         for row in affected:
             teams.record(conn, sid, row["volunteer_id"], "project_withdrawn",
                          actor_id=reviewer_id, note=reason)  # fmt: skip
             # Candidates who were never invited were never told, so they are not told now.
-            if row["state"] == "team" or row["lead_said"] == "yes":
+            if row["state"] != "eligible" or row["lead_said"] == "yes":
                 notify(conn, row["volunteer_id"], "placement",
                        f"“{sub['title']}” was withdrawn, so your place on it has ended.",
                        "/opportunities")  # fmt: skip

@@ -10,7 +10,7 @@ import pytest
 
 from app import cli
 from app.runtime import DEMO_PASSWORD
-from app.web import api
+from app.web import api, onboarding_api
 from tests.conftest import AUDIT, CS, DK, FOOD_BANK, USERS, WINTER, Web
 from tests.test_rbac_onboarding import NIA, as_, full_profile, placement, status_version
 from tests.test_submissions import DRAFT
@@ -52,7 +52,8 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 50  # a new route must be added to the calls below
+    assert len(api.router.routes) == 53  # a new route must be added to the calls below
+    assert len(onboarding_api.router.routes) == 25
 
 
 def test_every_route_answers_in_the_shape_it_declares(web: Web):
@@ -192,11 +193,94 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
     ok(sam.post("/admin/projection/replay"), "POST", "/admin/projection/replay")
     graph = ok(sam.get("/admin/graph"), "GET", "/admin/graph")
     assert {r["type"] for r in graph["relationships"]} >= {"OWNS_PROJECT", "VOLUNTEERS_WITH"}
+
+    # ---- organisations' onboarding workflows
+    kofi, base = as_(web, "kofi"), f"/orgs/{CS}/onboarding"
+    step, template = "/orgs/{org_id}/onboarding/steps", "/orgs/{org_id}/onboarding/templates"
+    flow = ok(kofi.get(base), "GET", "/orgs/{org_id}/onboarding")
+    text = {"subject": "Hello {{ volunteer_name }}", "body": "See {{ onboarding_url }} for more."}
+    ok(kofi.post(f"{base}/templates/preview", text), "POST", template + "/preview")
+    flow = ok(kofi.post(f"{base}/templates", text | {"name": "Extra", "version": flow["version"]}),
+              "POST", template, 201)  # fmt: skip
+    extra = next(t["id"] for t in flow["templates"] if t["name"] == "Extra")
+    flow = ok(kofi.put(f"{base}/templates/{extra}",
+                       text | {"name": "Extra 2", "version": flow["version"]}),
+              "PUT", template + "/{template_id}")  # fmt: skip
+    ok(kofi.post(f"{base}/templates/{extra}/test"), "POST", template + "/{template_id}/test")
+    flow = ok(kofi.delete(f"{base}/templates/{extra}?version={flow['version']}"),
+              "DELETE", template + "/{template_id}")  # fmt: skip
+    new_step = {"title": "Extra step", "completed_by": "volunteer", "version": flow["version"]}
+    flow = ok(kofi.post(f"{base}/steps", new_step), "POST", step, 201)
+    added = flow["steps"][-1]["id"]
+    flow = ok(kofi.put(f"{base}/steps/{added}", new_step | {"version": flow["version"]}),
+              "PUT", step + "/{step_id}")  # fmt: skip
+    flow = ok(kofi.post(f"{base}/steps/{added}/move",
+                        {"direction": "up", "version": flow["version"]}),
+              "POST", step + "/{step_id}/move")  # fmt: skip
+    flow = ok(kofi.delete(f"{base}/steps/{added}?version={flow['version']}"),
+              "DELETE", step + "/{step_id}")  # fmt: skip
+    flow = ok(kofi.put(base, {"enabled": True, "version": flow["version"]}),
+              "PUT", "/orgs/{org_id}/onboarding")  # fmt: skip
+    ffion.put(f"/orgs/{CS}/membership")
+    run = ok(ffion.get("/me/onboarding"), "GET", "/me/onboarding")[0]
+    ok(ffion.post(f"{base}/steps/{run['steps'][0]['id']}/complete"), "POST",
+       step + "/{step_id}/complete")  # fmt: skip
+    people = ok(kofi.get(f"{base}/volunteers"), "GET", "/orgs/{org_id}/onboarding/volunteers")
+    assert "email" not in people[0]
+    confirm = "/orgs/{org_id}/onboarding/volunteers/{user_id}/steps/{step_id}/complete"
+    ok(kofi.post(f"{base}/volunteers/{ffion_id}/steps/{run['steps'][1]['id']}/complete"),
+       "POST", confirm)  # fmt: skip
+    sent = ok(kofi.get(f"{base}/emails"), "GET", "/orgs/{org_id}/onboarding/emails")
+    assert {e["purpose"] for e in sent} == {"step", "test"} and "@" not in str(sent)
+
+    # ---- a project's own team onboarding, and accepting, suspending and reinstating
+    base, path = (
+        f"/orgs/{DK}/projects/{FOOD_BANK}/onboarding",
+        "/orgs/{org_id}/projects/{project_id}",
+    )
+    step = path + "/onboarding/steps"
+    flow = ok(rhiannon.get(base), "GET", path + "/onboarding")
+    assert [c["value"] for c in flow["completers"]] == ["volunteer", "lead"]
+    new_step = {"title": "Extra step", "completed_by": "lead", "version": flow["version"]}
+    flow = ok(rhiannon.post(f"{base}/steps", new_step), "POST", step, 201)
+    added = flow["steps"][-1]["id"]
+    flow = ok(rhiannon.put(f"{base}/steps/{added}", new_step | {"version": flow["version"]}),
+              "PUT", step + "/{step_id}")  # fmt: skip
+    flow = ok(rhiannon.post(f"{base}/steps/{added}/move",
+                            {"direction": "up", "version": flow["version"]}),
+              "POST", step + "/{step_id}/move")  # fmt: skip
+    flow = ok(rhiannon.delete(f"{base}/steps/{added}?version={flow['version']}"),
+              "DELETE", step + "/{step_id}")  # fmt: skip
+    flow = ok(rhiannon.put(base, {"enabled": True, "version": flow["version"]}),
+              "PUT", path + "/onboarding")  # fmt: skip
+    team = f"/projects/{FOOD_BANK}/placements/{USERS['dev']}"
+    version = placement(web, FOOD_BANK, USERS["dev"])["version"]
+    assert rhiannon.post(f"{team}/answer", {"answer": "yes", "version": version}).status_code == 200
+    joined = dev.post(f"/placements/{FOOD_BANK}/answer", {"answer": "yes", "version": version + 1})
+    assert joined.json() == {"state": "onboarding"}
+    run = next(r for r in dev.get("/me/onboarding").json() if r["project_id"] == FOOD_BANK)
+    ok(dev.post(f"{base}/steps/{run['steps'][0]['id']}/complete"), "POST",
+       step + "/{step_id}/complete")  # fmt: skip
+    people = ok(rhiannon.get(f"{base}/volunteers"), "GET", path + "/onboarding/volunteers")
+    assert "email" not in people[0] and people[0]["awaiting_acceptance"] is False
+    confirm = path + "/onboarding/volunteers/{user_id}/steps/{step_id}/complete"
+    ok(rhiannon.post(f"{base}/volunteers/{USERS['dev']}/steps/{run['steps'][1]['id']}/complete"),
+       "POST", confirm)  # fmt: skip
+    listed = rhiannon.get(f"/projects/{FOOD_BANK}/placements").json()
+    assert next(p for p in listed if p["volunteer_id"] == USERS["dev"])["steps_left"] == 0
+    member = "/projects/{project_id}/placements/{volunteer_id}"
+    assert ok(rhiannon.post(f"{team}/accept"), "POST", member + "/accept") == {"state": "team"}
+    assert ok(rhiannon.post(f"{team}/suspend", {"reason": "Away this term"}),
+              "POST", member + "/suspend") == {"state": "suspended"}  # fmt: skip
+    assert ok(rhiannon.post(f"{team}/reinstate"), "POST", member + "/reinstate") == {
+        "state": "team"
+    }
     ok(asha.delete("/session"), "DELETE", "/session", 204)
 
     declared = {
         (method, route.path.removeprefix("/api/v1"))
-        for route in api.router.routes
+        for router in (api.router, onboarding_api.router)
+        for route in router.routes
         for method in route.methods
     }
     assert declared - called == set()

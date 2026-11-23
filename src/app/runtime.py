@@ -4,8 +4,9 @@ import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from app import placements, services
+from app import observability, placements, services
 from app.auth import hash_password
 from app.catalogue import get_catalogue, load_demo, stable_id
 from app.config import BUNDLED_GRAPH, Settings
@@ -26,6 +27,9 @@ class Runtime:
     db: Database
     graph: GraphStore
     projector: Projector
+    # The Pydantic AI model the assistants use (app.agents); None switches them off. Tests put a
+    # TestModel or FunctionModel here.
+    agent_model: Any = None
 
 
 def build_runtime(settings: Settings) -> Runtime:
@@ -37,10 +41,13 @@ def build_runtime(settings: Settings) -> Runtime:
         scope = None
         if changed is not None:
             scope = placements.Scope(frozenset(changed.volunteers), frozenset(changed.projects))
-        placements.sweep(db, graph, scope)
+        with observability.span("placements sweep", scoped=scope is not None) as span:
+            span.set_attribute("changes", placements.sweep(db, graph, scope))
 
     projector.on_projected = reconcile_placements
-    return Runtime(settings, db, graph, projector)
+    from app.agents.deps import build_model  # imported here: app.agents imports this module
+
+    return Runtime(settings, db, graph, projector, build_model(settings))
 
 
 def chase_invitations(rt: Runtime) -> int:
@@ -73,7 +80,7 @@ def bootstrap(rt: Runtime) -> None:
     else:
         seed_catalogue(rt)
     with rt.db.tx() as conn:
-        prune(conn)
+        prune(conn, audit_days=rt.settings.audit_retention_days)
     result = rt.projector.drain(ignore_backoff=True)
     log.info("startup replay: %s done, %s failed", result.done, result.failed)
     chase_invitations(rt)
@@ -128,6 +135,7 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                  org["description"]),
             )  # fmt: skip
             enqueue(conn, "organisation", org_ids[org["key"]])
+            services.onboarding.install_starter(conn, org_ids[org["key"]])
         for person in demo["people"]:
             uid = user_ids[person["key"]]
             conn.execute(
@@ -209,6 +217,33 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
             ).fetchone()[0]
         placements.lead_respond(rt.db, lead[0], pid, vid, "yes", version=version)
         placements.volunteer_respond(rt.db, vid, pid, "yes", version=version + 1)
+    # One organisation runs its own onboarding workflow, with a volunteer part-way through it,
+    # so the workflow and a volunteer's place in it are in the graph from the start.
+    admin = next(
+        (user_ids[p["key"]] for p in demo["people"] if "admin" in p.get("system_roles", [])), ""
+    )
+    for entry in demo.get("onboarding", []):
+        org_id, uid = org_ids[entry["org"]], user_ids[entry["volunteer"]]
+        with rt.db.tx() as conn:
+            conn.execute("UPDATE onboarding_workflows SET enabled = 1 WHERE org_id = ?", (org_id,))
+            services.onboarding.start(conn, uid, org_id)
+        for _ in range(entry.get("completed", 0)):
+            [run] = [r for r in services.onboarding.my_onboarding(rt.db, uid)
+                     if r["org_id"] == org_id]  # fmt: skip
+            step = next(s for s in run["steps"] if s["state"] == "open")
+            services.onboarding.complete_step(rt.db, admin, org_id, step["id"], user_id=uid)
+        with rt.db.tx() as conn:  # the seed announces nothing by email
+            conn.execute("DELETE FROM email_outbox")
+    # One project has its own team onboarding ready, switched off like every organisation's
+    # starter workflow. Once its lead switches it on, a volunteer who accepts an invitation goes
+    # through these steps, and the lead side then accepts them onto the team.
+    for entry in demo.get("project_onboarding", []):
+        pid = stable_id("p", entry["project"])
+        with rt.db.tx() as conn:
+            org_id = conn.execute("SELECT org_id FROM submissions WHERE id = ?", (pid,)).fetchone()
+            services.onboarding.install_project_flow(
+                conn, org_id[0], pid, entry["steps"], enabled=entry.get("enabled", False)
+            )
     rt.projector.drain(ignore_backoff=True)
 
 

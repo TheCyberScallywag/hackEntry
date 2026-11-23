@@ -7,7 +7,7 @@
   <h1>One volunteer account. Every organisation you choose to help.</h1>
   <p>Keep one skills profile, choose which organisations see you, and get matches that explain
      themselves: which of your skills fit, which cause you share, and what is still needed.</p>
-  <p><a class="button" href="/signup">Create an account</a> <a class="button secondary" href="/signin">Sign in</a></p>
+  <p>{% if signup_enabled %}<a class="button" href="/signup">Create an account</a> {% endif %}<a class="button secondary" href="/signin">Sign in</a></p>
   </div>
 </section>
 <section class="grid">

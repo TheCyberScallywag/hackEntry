@@ -1,10 +1,12 @@
 """Published projects, matches and coverage, and placements: the lead invites, the volunteer
-answers."""
+answers. The lead side (the project's lead, whom the org admins assign, and the org admins)
+also runs the project's own team onboarding and accepts, suspends or removes team members."""
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from app import matching, placements, services
+from app.services import onboarding
 from app.web.deps import (
     RT,
     Org,
@@ -34,16 +36,27 @@ def project_detail(org: Org, project_id: str, request: Request, rt: RT, session:
     access = services.require_access(rt.db, user_id, org_id)
     project = matching.project(rt.db, rt.graph, user_id, org_id, project_id)
     is_lead = project["sql"]["lead_id"] == user_id
-    coverage = mine = team = None
+    coverage = mine = team = flow = progress = people = None
     if access.org_admin or is_lead:
-        team = placements.for_project(rt.db, user_id, project_id)
+        try:
+            side = placements.lead_side(rt.db, user_id, project_id)
+            team, flow, progress = side["team"], side["flow"], side["progress"]
+        except services.Forbidden:
+            # A lead who is suspended or has left the organisation no longer acts for the
+            # project, but may still read its page like any other member.
+            is_lead = False
+            team = flow = progress = None
+    # Only org admins assign the lead, and the people to choose from are loaded on request.
+    if access.org_admin and request.query_params.get("assign") == "lead":
+        people = services.org_volunteers(rt.db, user_id, org_id)
     if access.reviewer:
         coverage = matching.project_coverage(rt.db, rt.graph, user_id, org_id, project_id)
     if access.volunteer:
         mine = matching.volunteer_matches(rt.db, rt.graph, user_id, [org_id])
     return render(
         request, "project.html", session, org=org, project=project, access=access,
-        coverage=coverage, mine=mine, team=team, is_lead=is_lead,
+        coverage=coverage, mine=mine, team=team, is_lead=is_lead, flow=flow,
+        progress=progress, people=people,
     )  # fmt: skip
 
 
@@ -129,3 +142,105 @@ def lead_remove(
     )
     drain(rt)
     return redirect(f"/o/{org_id}/projects/{project_id}", "removed")
+
+
+@router.post("/o/{org_id}/projects/{project_id}/team/{volunteer_id}/accept")
+def lead_accept(
+    org_id: str, project_id: str, volunteer_id: str, rt: RT, session: User, _form: UserForm
+):
+    placements.accept(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "accepted")
+
+
+@router.post("/o/{org_id}/projects/{project_id}/team/{volunteer_id}/suspend")
+def lead_suspend(
+    org_id: str, project_id: str, volunteer_id: str, rt: RT, session: User, form: UserForm
+):
+    placements.suspend(
+        rt.db, session.user_id, project_id, volunteer_id, reason=str(form.get("reason", ""))
+    )
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "suspended")
+
+
+@router.post("/o/{org_id}/projects/{project_id}/team/{volunteer_id}/reinstate")
+def lead_reinstate(
+    org_id: str, project_id: str, volunteer_id: str, rt: RT, session: User, _form: UserForm
+):
+    placements.reinstate(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "reinstated")
+
+
+@router.post("/o/{org_id}/projects/{project_id}/lead")
+def assign_lead(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
+    """An org admin hands the project to a lead."""
+    services.set_project_lead(
+        rt.db, session.user_id, org_id, project_id, str(form.get("lead_id", ""))
+    )
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "lead_set")
+
+
+# ---------------------------------------------------------------- the project's team onboarding
+def _flow_saved(rt: RT, org_id: str, project_id: str):
+    drain(rt)  # the workflow is held in the graph too
+    return redirect(f"/o/{org_id}/projects/{project_id}", "flow_saved")
+
+
+@router.post("/o/{org_id}/projects/{project_id}/onboarding")
+def flow_settings(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
+    onboarding.update_workflow(
+        rt.db, session.user_id, org_id, enabled=form.get("enabled") == "1",
+        completion_template_id=str(form.get("completion_template_id", "")) or None,
+        expected_version=to_int(form.get("version")), project_id=project_id,
+    )  # fmt: skip
+    return _flow_saved(rt, org_id, project_id)
+
+
+@router.post("/o/{org_id}/projects/{project_id}/onboarding/steps")
+def flow_add_step(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
+    onboarding.add_step(
+        rt.db, session.user_id, org_id, title=str(form.get("title", "")),
+        description=str(form.get("description", "")),
+        completed_by=str(form.get("completed_by", "")),
+        email_template_id=str(form.get("email_template_id", "")) or None,
+        expected_version=to_int(form.get("version")), project_id=project_id,
+    )  # fmt: skip
+    return _flow_saved(rt, org_id, project_id)
+
+
+@router.post("/o/{org_id}/projects/{project_id}/onboarding/steps/{step_id}/move")
+def flow_move_step(
+    org_id: str, project_id: str, step_id: str, rt: RT, session: User, form: UserForm
+):
+    onboarding.move_step(
+        rt.db, session.user_id, org_id, step_id, direction=str(form.get("direction", "")),
+        expected_version=to_int(form.get("version")), project_id=project_id,
+    )  # fmt: skip
+    return _flow_saved(rt, org_id, project_id)
+
+
+@router.post("/o/{org_id}/projects/{project_id}/onboarding/steps/{step_id}/delete")
+def flow_delete_step(
+    org_id: str, project_id: str, step_id: str, rt: RT, session: User, form: UserForm
+):
+    onboarding.delete_step(
+        rt.db, session.user_id, org_id, step_id,
+        expected_version=to_int(form.get("version")), project_id=project_id,
+    )  # fmt: skip
+    return _flow_saved(rt, org_id, project_id)
+
+
+@router.post("/o/{org_id}/projects/{project_id}/onboarding/volunteers/{user_id}/steps/{step_id}")
+def flow_confirm_step(
+    org_id: str, project_id: str, user_id: str, step_id: str, rt: RT, session: User,
+    _form: UserForm,
+):  # fmt: skip
+    """The lead side ticks off a volunteer's current step."""
+    onboarding.complete_step(
+        rt.db, session.user_id, org_id, step_id, user_id=user_id, project_id=project_id
+    )
+    drain(rt)
+    return redirect(f"/o/{org_id}/projects/{project_id}", "step_done")

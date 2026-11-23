@@ -2,7 +2,7 @@
 
 import pytest
 
-from app import placements
+from app import placements, sqlstore
 from app.config import Settings
 from app.graph.projector import Changed
 from app.graph.store import GraphStore, GraphTruncated
@@ -136,3 +136,56 @@ def test_an_organisation_change_sweeps_everything(web: Web):
     assert (changed.volunteers, changed.projects, changed.everything) == ({"u_1"}, {"p_1"}, False)
     changed.add("organisation", "org_1")
     assert changed.everything
+
+
+def test_a_restart_sweeps_even_when_nothing_is_queued(web: Web, settings):
+    """A sweep that failed is only remembered in memory. After a restart the outbox is empty, so
+    the first drain of the new process must look at everything of its own accord."""
+    from app.runtime import build_runtime
+
+    restarted = build_runtime(settings)  # the same data directory, a new process's state
+    seen = []
+    restarted.projector.on_projected = seen.append
+    assert restarted.projector.drain().done == 0
+    assert seen == [None]  # a full sweep
+    restarted.projector.drain()
+    assert seen == [None]  # and then only when something changes
+
+
+def test_a_sweep_that_fails_unexpectedly_is_still_owed(web: Web):
+    real = web.rt.projector.on_projected
+
+    def broken(_changed):
+        raise KeyError("a bug in the sweep")
+
+    web.rt.projector.on_projected = broken
+    with web.rt.db.tx() as conn:
+        sqlstore.enqueue(conn, "volunteer", USERS["dev"])
+    with pytest.raises(KeyError):
+        web.rt.projector.drain()
+    seen = []
+    web.rt.projector.on_projected = lambda changed: (seen.append(changed), real(changed))
+    web.rt.projector.drain()  # the item is done; the sweep is not
+    assert seen == [None]
+
+
+def test_a_scoped_sweep_asks_sqlite_only_about_its_own_pairs(web: Web, monkeypatch):
+    statements: list[str] = []
+    real_connect = sqlstore.connect
+
+    def connect(path):
+        conn = real_connect(path)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    monkeypatch.setattr(sqlstore, "connect", connect)
+    placements.sweep(web.rt.db, web.rt.graph, placements.Scope(frozenset({USERS["dev"]})))
+
+    def freshness() -> list[str]:
+        asked = ("SELECT id, lead_id FROM submissions", "SELECT id FROM users WHERE status")
+        return [s for s in statements if s.startswith(asked)]
+
+    assert len(freshness()) == 2 and all(" AND id IN (" in s for s in freshness())
+    statements.clear()
+    placements.sweep(web.rt.db, web.rt.graph)
+    assert len(freshness()) == 2 and not any(" AND id IN (" in s for s in freshness())

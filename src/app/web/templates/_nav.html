@@ -6,7 +6,7 @@
 <a href="{{ href }}"{% if path == href.split("?")[0] %} aria-current="page"{% endif %}>{{ label }}{{ caller() if caller }}</a>
 {%- endmacro %}
 {% set volunteering = orgs|selectattr("opted_in")|list %}
-{% set stay = path if path in ("/home", "/opportunities", "/matches", "/notifications", "/profile", "/orgs", "/showcase", "/submissions") else "" %}
+{% set stay = path if path in ("/home", "/opportunities", "/matches", "/notifications", "/profile", "/orgs", "/showcase", "/submissions", "/onboarding") else "" %}
 <nav aria-label="Main">
   {{ item("/home", "Home") }}
   <details class="menu" name="nav" data-menu="volunteer">
@@ -14,6 +14,7 @@
     <div class="menu-panel">
       {% if volunteering %}{{ item("/opportunities", "Opportunities") }}{% endif %}
       {% if actor.active and active %}{{ item("/submissions/new?org=" ~ active.id, "Suggest a project") }}{% endif %}
+      {% if onboarding_open %}{{ item("/onboarding", "Onboarding") }}{% endif %}
       {{ item("/orgs", "Find organisations") }}
       {{ item("/showcase", "Showcase") }}
     </div>

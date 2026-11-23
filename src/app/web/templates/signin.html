@@ -10,5 +10,5 @@
   <label>Password <input type="password" name="password" required autocomplete="current-password"></label>
   <button type="submit">Sign in</button>
 </form>
-<p>New here? <a href="/signup">Create an account</a>.</p>
+{% if signup_enabled %}<p>New here? <a href="/signup">Create an account</a>.</p>{% endif %}
 {% endblock %}

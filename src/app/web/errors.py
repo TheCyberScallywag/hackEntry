@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app import services
+from app import agents, services
 from app.graph.store import GraphBusy, GraphError
 from app.web.deps import CsrfFailed, LoginRequired, optional_session, redirect, render
 
@@ -59,6 +59,9 @@ _RULES: dict[type[Exception], _Rule] = {
     ),
     services.Conflict: _Rule(409, "Already changed", str),
     GraphError: _Rule(503, "Matching unavailable", _graph_detail),
+    agents.AgentsDisabled: _Rule(503, "Assistants unavailable", str),
+    agents.QuotaExceeded: _Rule(429, "Daily limit reached", str),
+    agents.AgentFailed: _Rule(502, "The assistant could not finish", str),
 }
 
 

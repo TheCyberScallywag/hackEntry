@@ -89,7 +89,7 @@ def test_relate_cli_reads_the_bundled_store():
          "MATCH (n) RETURN count(n) AS nodes"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    assert '"nodes":38' in result.stdout.replace(" ", "")
+    assert '"nodes":46' in result.stdout.replace(" ", "")
 
 
 def test_a_limit_parameter_cannot_hide_truncation(tmp_path):
@@ -113,3 +113,28 @@ def test_every_multi_row_read_statement_is_bounded():
     )  # fmt: skip
     for name in bounded:
         assert getattr(cypher, name).rstrip().endswith("LIMIT $limit"), name
+
+
+def test_a_read_gives_up_on_a_locked_store_within_about_a_second(tmp_path, monkeypatch):
+    """A read waits while holding the in-process lock, so every other request queues behind it.
+    It gives up quickly; a write keeps the longer window."""
+    from app.graph import store as store_module
+
+    path = tmp_path / "busy.rl"
+    store = GraphStore(path)
+    with store.write() as tx:
+        tx.run("CREATE (:Check)")
+    slept: list[float] = []
+    monkeypatch.setattr(store_module.time, "sleep", slept.append)
+    holder = relate.connect(str(path))
+    try:
+        with pytest.raises(GraphBusy):
+            store.read("MATCH (n) RETURN n")
+        waited_reading = sum(slept)
+        slept.clear()
+        with pytest.raises(GraphBusy), store.write():
+            pass
+    finally:
+        holder.close()
+    assert waited_reading <= 1.1 and store.read_attempts == 6
+    assert sum(slept) > 10 and len(slept) == store.attempts == 40

@@ -3,7 +3,7 @@
 import json
 import uuid
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, cached_property
 from pathlib import Path
 from typing import Any
 
@@ -36,19 +36,29 @@ class Catalogue:
     causes: tuple[Cause, ...]
     skills: tuple[Skill, ...]
 
-    @property
-    def cause_ids(self) -> set[str]:
-        return {c.id for c in self.causes}
+    # Looked up once per row on every match, coverage and placement screen, so the lookups are
+    # built once. (cached_property writes to __dict__, which a frozen dataclass still has.)
+    @cached_property
+    def _cause_names(self) -> dict[str, str]:
+        return {c.id: c.name for c in self.causes}
 
-    @property
-    def skill_ids(self) -> set[str]:
-        return {s.id for s in self.skills}
+    @cached_property
+    def _skill_names(self) -> dict[str, str]:
+        return {s.id: s.name for s in self.skills}
+
+    @cached_property
+    def cause_ids(self) -> frozenset[str]:
+        return frozenset(self._cause_names)
+
+    @cached_property
+    def skill_ids(self) -> frozenset[str]:
+        return frozenset(self._skill_names)
 
     def cause_name(self, cause_id: str) -> str:
-        return next((c.name for c in self.causes if c.id == cause_id), cause_id)
+        return self._cause_names.get(cause_id, cause_id)
 
     def skill_name(self, skill_id: str) -> str:
-        return next((s.name for s in self.skills if s.id == skill_id), skill_id)
+        return self._skill_names.get(skill_id, skill_id)
 
 
 def load_catalogue(path: Path | None = None) -> Catalogue:

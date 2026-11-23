@@ -19,10 +19,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app import auth, matching, notify, placements, profile_view, services
+from app import audit, auth, matching, notify, placements, profile_view, services
 from app.graph import cypher
 from app.web import schemas as m
-from app.web.deps import drain
+from app.web.deps import drain, require_signup
 
 router = APIRouter(prefix="/api/v1")
 _bearer = HTTPBearer(auto_error=False)
@@ -42,6 +42,7 @@ def bearer_session(
     )
     if session is None:
         raise HTTPException(401, "Sign in first", headers={"WWW-Authenticate": "Bearer"})
+    request.state.session = session  # the audit middleware reads who made the request
     return session
 
 
@@ -49,9 +50,11 @@ Api = Annotated[auth.Session, Depends(bearer_session)]
 
 
 # ------------------------------------------------------------------ auth
-@router.post("/auth/signup", status_code=201, tags=["auth"])
+@router.post("/auth/signup", status_code=201, tags=["auth"], dependencies=[Depends(require_signup)])
 def sign_up(body: m.SignUp, request: Request) -> m.SignedUp:
-    """Create an account (status `draft`) and sign in. Grants no role and joins nothing."""
+    """Create an account (status `draft`) and sign in. Grants no role and joins nothing.
+
+    403 while the deployment has `SIGNUP_ENABLED` off."""
     rt = _rt(request)
     try:
         user_id = auth.signup(
@@ -69,6 +72,10 @@ def sign_up(body: m.SignUp, request: Request) -> m.SignedUp:
 def sign_in(body: m.SignIn, request: Request) -> m.Token:
     rt = _rt(request)
     user_id = auth.authenticate(rt.db, email=body.email, password=body.password)
+    audit.record_now(
+        rt.db, "auth.sign_in", actor_id=user_id, outcome="ok" if user_id else "denied",
+        source="api",
+    )  # fmt: skip
     if user_id is None:
         raise HTTPException(401, "Wrong email or password")
     token = auth.create_session(
@@ -456,12 +463,51 @@ def reopen_placement(
     rt = _rt(request)
     placements.reopen(rt.db, session.user_id, project_id, volunteer_id)
     drain(rt)
+    return _placement_state(rt, project_id, volunteer_id)
+
+
+def _placement_state(rt, project_id: str, volunteer_id: str) -> dict:
     with rt.db.read() as conn:
         state = conn.execute(
             "SELECT state FROM placements WHERE project_id = ? AND volunteer_id = ?",
             (project_id, volunteer_id),
         ).fetchone()[0]
     return {"state": state}
+
+
+@router.post("/projects/{project_id}/placements/{volunteer_id}/accept", tags=["placements"])
+def accept_onto_team(
+    project_id: str, volunteer_id: str, request: Request, session: Api
+) -> m.PlacementStateOut:
+    """The project lead or an org admin accepts a volunteer who has finished the project's
+    onboarding steps onto the team."""
+    rt = _rt(request)
+    placements.accept(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    return _placement_state(rt, project_id, volunteer_id)
+
+
+@router.post("/projects/{project_id}/placements/{volunteer_id}/suspend", tags=["placements"])
+def suspend_from_team(
+    project_id: str, volunteer_id: str, body: m.ReasonIn, request: Request, session: Api
+) -> m.PlacementStateOut:
+    """The project lead or an org admin suspends a team member, with a reason they are shown.
+    Their place is kept until they are reinstated or removed."""
+    rt = _rt(request)
+    placements.suspend(rt.db, session.user_id, project_id, volunteer_id, reason=body.reason)
+    drain(rt)
+    return _placement_state(rt, project_id, volunteer_id)
+
+
+@router.post("/projects/{project_id}/placements/{volunteer_id}/reinstate", tags=["placements"])
+def reinstate_on_team(
+    project_id: str, volunteer_id: str, request: Request, session: Api
+) -> m.PlacementStateOut:
+    """The project lead or an org admin puts a suspended team member back on the team."""
+    rt = _rt(request)
+    placements.reinstate(rt.db, session.user_id, project_id, volunteer_id)
+    drain(rt)
+    return _placement_state(rt, project_id, volunteer_id)
 
 
 @router.post("/projects/{project_id}/placements/{volunteer_id}/remove", tags=["placements"])

@@ -18,11 +18,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
+from app import audit, mailer, observability
 from app.brandkit import tokens_css
 from app.config import BRAND_DIR, ORG_ASSETS_DIR, Settings, get_settings
 from app.meta import get_meta
 from app.runtime import Runtime, bootstrap, build_runtime, chase_invitations
-from app.web import api, pages
+from app.web import agents_api, api, onboarding_api, pages
 from app.web.deps import HERE, RT
 from app.web.errors import register_errors
 
@@ -40,6 +41,31 @@ DOCS_CSP = (  # Swagger UI: its CDN assets and inline bootstrap
 )
 
 
+# Sign-in is audited where it happens (auth.sign_in), with the account it was for.
+UNAUDITED_PATHS = ("/signin", "/api/v1/session")
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _audit_request(rt: Runtime, request: Request, status: int) -> None:
+    """One audit event for a request that changed something or was refused. The action names
+    the route as declared (`/orgs/{org_id}/membership`), never the IDs in the URL."""
+    session = getattr(request.state, "session", None)
+    route = request.scope.get("route")
+    path = request.url.path
+    api_call = path.startswith("/api/")
+    audit.record_now(
+        rt.db,
+        f"http.{request.method.lower()}",
+        actor_id=session.user_id if session else None,
+        outcome=audit.outcome_for(status),
+        target_kind="route",
+        target_id=getattr(route, "path", "") or "(no route)",
+        org_id=request.path_params.get("org_id") if status < 400 else None,
+        source="api" if api_call else "web",
+        detail={"status": status},
+    )
+
+
 CHASE_EVERY_SECONDS = 3600  # unanswered invitations are counted in days
 
 
@@ -47,7 +73,10 @@ def _projector_loop(rt: Runtime, stop: threading.Event) -> None:
     last_chase = time.monotonic()  # bootstrap has just chased
     while not stop.wait(rt.settings.projector_interval_seconds):
         try:
-            rt.projector.drain()
+            with observability.span("projector drain") as span:
+                result = rt.projector.drain()
+                span.set_attributes({"done": result.done, "failed": result.failed})
+            mailer.deliver(rt.db, rt.settings)  # queued onboarding emails, to the SMTP sidecar
             if time.monotonic() - last_chase >= CHASE_EVERY_SECONDS:
                 last_chase = time.monotonic()
                 chase_invitations(rt)
@@ -57,6 +86,7 @@ def _projector_loop(rt: Runtime, stop: threading.Event) -> None:
 
 def create_app(settings: Settings | None = None, *, background: bool = True) -> FastAPI:
     settings = settings or get_settings()
+    observability.configure(settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -85,6 +115,8 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
     app.mount("/brand", StaticFiles(directory=BRAND_DIR / "images"), name="brand")
     app.mount("/org-assets", StaticFiles(directory=ORG_ASSETS_DIR), name="org-assets")
     app.include_router(api.router)
+    app.include_router(agents_api.router)
+    app.include_router(onboarding_api.router)
     for router in pages.routers:
         app.include_router(router)
 
@@ -114,7 +146,15 @@ def create_app(settings: Settings | None = None, *, background: bool = True) -> 
         response.headers.setdefault("X-Frame-Options", "DENY")
         if path != "/healthz" and not path.startswith(("/static", "/org-assets")):
             response.headers.setdefault("Cache-Control", "no-store")
+        status = response.status_code
+        refused = status in (401, 403)
+        if (request.method not in SAFE_METHODS or refused) and path not in UNAUDITED_PATHS:
+            try:
+                await run_in_threadpool(_audit_request, request.app.state.rt, request, status)
+            except Exception:  # the response matters more than its audit row
+                log.exception("audit event not written")
         return response
 
     register_errors(app)
+    observability.instrument_app(app)
     return app

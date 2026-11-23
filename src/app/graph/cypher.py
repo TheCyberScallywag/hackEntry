@@ -9,9 +9,19 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
     (:Project)-[:REQUIRES_SKILL]->(:Skill)          required skill
     (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)     optional skill
     (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation) only while opted in AND vetted (active)
-    (:Volunteer)-[:ON_TEAM]->(:Project)              invited by the lead side and said yes
+    (:Volunteer)-[:ON_TEAM]->(:Project)              on the team: accepted, not suspended
     (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
     (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
+    (:Organisation)-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
+    (:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
+    (:Volunteer)-[:AT_STEP]->(:OnboardingStep)        the step they have reached
+    (:Volunteer)-[:COMPLETED_STEP]->(:OnboardingStep)
+
+An organisation's onboarding workflow is in the graph as it stands (`onboarding_enabled` on the
+organisation says whether it is switched on), without its email templates: the assistants read
+it from here. A project's own workflow, for volunteers joining its team, hangs off the project
+the same way (HAS_TEAM_STEP, and `onboarding_enabled` on the project). A volunteer is ON_TEAM
+only once the lead side has accepted them, and not while suspended from the team.
 
 Reads that can return many rows end in `LIMIT $limit`. The store binds `$limit` itself
 (app.graph.store.Tx.read) so that a result larger than the configured bound raises instead of
@@ -23,7 +33,7 @@ from typing import Any
 # ------------------------------------------------------------------ schema
 # The one definition of the graph's shape: relationship type -> (source label, target label).
 # The reconcile statements below, the projector and the AuraDB push are all derived from it.
-LABELS = ("Organisation", "Project", "Cause", "Skill", "Volunteer")
+LABELS = ("Organisation", "Project", "Cause", "Skill", "Volunteer", "OnboardingStep")
 VOLUNTEER_RELS = {
     "VOLUNTEERS_WITH": "Organisation",
     "HAS_SKILL": "Skill",
@@ -42,6 +52,11 @@ RELATIONSHIPS: dict[str, tuple[str, str]] = {
     **{rel: ("Project", label) for rel, label in PROJECT_RELS.items()},
     "OWNS_PROJECT": ("Organisation", "Project"),
     "ON_TEAM": ("Volunteer", "Project"),
+    "HAS_ONBOARDING_STEP": ("Organisation", "OnboardingStep"),
+    "HAS_TEAM_STEP": ("Project", "OnboardingStep"),
+    "NEXT_STEP": ("OnboardingStep", "OnboardingStep"),
+    "AT_STEP": ("Volunteer", "OnboardingStep"),
+    "COMPLETED_STEP": ("Volunteer", "OnboardingStep"),
 }
 
 
@@ -108,6 +123,11 @@ PROJECT_EDGE_MERGE = {
 }
 
 PROJECT_REMOVE = "MATCH (p:Project {id: $id}) DETACH DELETE p"
+# Run first: a removed project takes its own onboarding steps with it.
+PROJECT_STEPS_REMOVE = """
+MATCH (:Project {id: $id})-[:HAS_TEAM_STEP]->(s:OnboardingStep)
+DETACH DELETE s
+"""
 
 # Team membership: both the volunteer and the project lead said yes (app.placements).
 PROJECT_TEAM_PRUNE = """
@@ -126,6 +146,144 @@ MERGE (v)-[:ON_TEAM]->(p)
 PROJECT_OWNED = """
 MATCH (:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project {id: $id})
 RETURN count(p) AS n
+"""
+
+
+# ------------------------------------------------------------------ onboarding reconcile
+# One organisation's workflow at a time (app.services.onboarding): its switch, its steps in
+# order, and where each volunteer is. Stale steps and edges are removed, then the current ones
+# are merged, so a replay changes nothing.
+ONBOARDING_ORG = """
+MATCH (o:Organisation {id: $org})
+SET o.onboarding_enabled = $enabled
+RETURN count(o) AS n
+"""
+
+ONBOARDING_STEPS_PRUNE = """
+MATCH (:Organisation {id: $org})-[:HAS_ONBOARDING_STEP]->(s:OnboardingStep)
+WHERE NOT s.id IN $ids
+DETACH DELETE s
+"""
+
+ONBOARDING_STEPS_UPSERT = """
+MATCH (o:Organisation {id: $org})
+UNWIND $rows AS row
+MERGE (s:OnboardingStep {id: row.id})
+SET s.title = row.title, s.description = row.description, s.position = row.position,
+    s.completed_by = row.completed_by, s.sends_email = row.sends_email
+MERGE (o)-[:HAS_ONBOARDING_STEP]->(s)
+"""
+
+ONBOARDING_EDGES_CLEAR = {
+    "NEXT_STEP": """
+MATCH (:Organisation {id: $org})-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)-[r:NEXT_STEP]->()
+DELETE r
+""",
+    "AT_STEP": """
+MATCH (:Organisation {id: $org})-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)<-[r:AT_STEP]-()
+DELETE r
+""",
+    "COMPLETED_STEP": """
+MATCH (:Organisation {id: $org})-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)<-[r:COMPLETED_STEP]-()
+DELETE r
+""",
+}
+
+ONBOARDING_NEXT_MERGE = """
+UNWIND $rows AS row
+MATCH (a:OnboardingStep {id: row.a})
+MATCH (b:OnboardingStep {id: row.b})
+MERGE (a)-[:NEXT_STEP]->(b)
+"""
+
+ONBOARDING_PROGRESS_MERGE = {
+    rel: f"""
+UNWIND $rows AS row
+MATCH (s:OnboardingStep {{id: row.step}})
+MERGE (v:Volunteer {{id: row.volunteer}})
+MERGE (v)-[:{rel}]->(s)
+"""
+    for rel in ("AT_STEP", "COMPLETED_STEP")
+}
+
+# A project's own workflow, reconciled with the project (Projector._project_project). Its steps
+# are OnboardingStep nodes too, so NEXT_STEP and the progress edges above are shared.
+PROJECT_ONBOARDING = """
+MATCH (p:Project {id: $id})
+SET p.onboarding_enabled = $enabled
+"""
+
+PROJECT_STEPS_PRUNE = """
+MATCH (:Project {id: $id})-[:HAS_TEAM_STEP]->(s:OnboardingStep)
+WHERE NOT s.id IN $ids
+DETACH DELETE s
+"""
+
+PROJECT_STEPS_UPSERT = """
+MATCH (p:Project {id: $id})
+UNWIND $rows AS row
+MERGE (s:OnboardingStep {id: row.id})
+SET s.title = row.title, s.description = row.description, s.position = row.position,
+    s.completed_by = row.completed_by, s.sends_email = row.sends_email
+MERGE (p)-[:HAS_TEAM_STEP]->(s)
+"""
+
+PROJECT_STEP_EDGES_CLEAR = {
+    "NEXT_STEP": """
+MATCH (:Project {id: $id})-[:HAS_TEAM_STEP]->(:OnboardingStep)-[r:NEXT_STEP]->()
+DELETE r
+""",
+    "AT_STEP": """
+MATCH (:Project {id: $id})-[:HAS_TEAM_STEP]->(:OnboardingStep)<-[r:AT_STEP]-()
+DELETE r
+""",
+    "COMPLETED_STEP": """
+MATCH (:Project {id: $id})-[:HAS_TEAM_STEP]->(:OnboardingStep)<-[r:COMPLETED_STEP]-()
+DELETE r
+""",
+}
+
+# ------------------------------------------------------------------ onboarding reads
+# The steps of the organisations whose workflow is switched on.
+ONBOARDING_FLOWS = """
+MATCH (o:Organisation)-[:HAS_ONBOARDING_STEP]->(s:OnboardingStep)
+WHERE o.onboarding_enabled AND o.id IN $orgs
+RETURN o.id AS org, s.id AS step, s.position AS position, s.title AS title,
+       s.description AS description, s.completed_by AS completed_by
+ORDER BY org, position
+LIMIT $limit
+"""
+
+# One volunteer's onboarding: every step of each organisation whose workflow they are in, and
+# whether they have completed it or have reached it.
+ONBOARDING_FOR_VOLUNTEER = """
+MATCH (v:Volunteer {id: $volunteer})-[:AT_STEP|COMPLETED_STEP]->(:OnboardingStep)
+      <-[:HAS_ONBOARDING_STEP]-(o:Organisation)
+WITH DISTINCT v, o
+MATCH (o)-[:HAS_ONBOARDING_STEP]->(s:OnboardingStep)
+RETURN o.id AS org, o.name AS organisation, s.id AS step, s.position AS position,
+       s.title AS title, s.description AS description, s.completed_by AS completed_by,
+       EXISTS { MATCH (v)-[:COMPLETED_STEP]->(s) } AS done,
+       EXISTS { MATCH (v)-[:AT_STEP]->(s) } AS current
+ORDER BY organisation, org, position
+LIMIT $limit
+"""
+
+# The same for the projects whose teams the volunteer is joining or has joined. `on_team` says
+# whether the lead side has accepted them: steps all done and not on the team means waiting.
+PROJECT_ONBOARDING_FOR_VOLUNTEER = """
+MATCH (v:Volunteer {id: $volunteer})-[:AT_STEP|COMPLETED_STEP]->(:OnboardingStep)
+      <-[:HAS_TEAM_STEP]-(p:Project)<-[:OWNS_PROJECT]-(o:Organisation)
+WITH DISTINCT v, p, o
+MATCH (p)-[:HAS_TEAM_STEP]->(s:OnboardingStep)
+RETURN o.id AS org, o.name AS organisation, p.id AS project, p.title AS project_title,
+       s.id AS step, s.position AS position, s.title AS title, s.description AS description,
+       s.completed_by AS completed_by,
+       EXISTS { MATCH (v)-[:COMPLETED_STEP]->(s) } AS done,
+       EXISTS { MATCH (v)-[:AT_STEP]->(s) } AS current,
+       EXISTS { MATCH (v)-[:ON_TEAM]->(p) } AS on_team
+ORDER BY organisation, org, project, position
+LIMIT $limit
 """
 
 

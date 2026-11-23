@@ -7,7 +7,7 @@ import logging
 from app import notify, sqlstore
 from app.graph.store import GraphBusy
 from app.runtime import DEMO_PASSWORD
-from app.web import api, pages
+from app.web import agents_api, api, pages
 from tests.conftest import AUDIT, CS, DK, FOOD_BANK, USERS, WINTER, Web
 from tests.test_rbac_onboarding import placement
 from tests.test_submissions import DRAFT, _review, _state
@@ -34,16 +34,16 @@ def _messages(web: Web, user: str) -> list[str]:
 def test_no_page_or_api_handler_runs_on_the_event_loop(web: Web):
     """Handlers do blocking work (SQLite, Relate, Argon2), so each must be a plain function that
     FastAPI runs in its thread pool. Only the form dependencies may be coroutines."""
-    routers = [api.router, *pages.routers]
+    routers = [api.router, agents_api.router, *pages.routers]
     endpoints = [route.endpoint for router in routers for route in router.routes]
     endpoints += [r.endpoint for r in web.client.app.routes if getattr(r, "path", "") == "/healthz"]
-    assert len(endpoints) > 80
+    assert len(endpoints) > 95
     blocking = [e.__name__ for e in endpoints if inspect.iscoroutinefunction(e)]
     assert blocking == []
     ours = [  # FastAPI's own three default handlers are coroutines and do no blocking work
         h for h in web.client.app.exception_handlers.values() if h.__module__.startswith("app.")
     ]
-    assert len(ours) == 7
+    assert len(ours) == 10  # the assistants add three
     assert [h.__name__ for h in ours if inspect.iscoroutinefunction(h)] == []
 
 
@@ -374,3 +374,19 @@ def test_switching_from_a_personal_page_stays_on_it(web: Web):
     assert 'name="next" value=""' in _nav(web, f"/o/{DK}/projects")
     r = web.post("/orgs/switch", {"org_id": CS, "next": "/opportunities"})
     assert r.headers["location"].startswith("/opportunities")
+
+
+def test_a_lead_out_of_standing_can_still_read_their_project_page(web: Web):
+    """Cerys leads Food Bank. Once she has left the organisation she no longer acts for the
+    project, but the page must not fail for her while she can still see the organisation."""
+    with web.rt.db.tx() as conn:  # a reviewer role keeps her access; she is no longer a volunteer
+        conn.execute("UPDATE memberships SET opted_in = 0 WHERE user_id = ?", (USERS["cerys"],))
+        conn.execute(
+            "INSERT INTO org_roles (user_id, org_id, role, granted_at) "
+            "VALUES (?, ?, 'reviewer', ?)",
+            (USERS["cerys"], DK, sqlstore.now()),
+        )
+    web.sign_in("cerys")
+    r = web.get(f"/o/{DK}/projects/{FOOD_BANK}")
+    assert r.status_code == 200 and "Food Bank Demand Dashboard" in r.text
+    assert "Invite" not in r.text  # the lead's controls are gone

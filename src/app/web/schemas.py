@@ -16,7 +16,9 @@ VolunteerStatus = Literal["draft", "screening", "info_requested", "active", "dec
 SubmissionState = Literal[
     "draft", "submitted", "changes_requested", "rejected", "approved", "published", "withdrawn"
 ]
-PlacementState = Literal["eligible", "team", "declined", "lapsed", "removed", "left"]
+PlacementState = Literal[
+    "eligible", "onboarding", "team", "suspended", "declined", "lapsed", "removed", "left"
+]
 SkillState = Literal["none", "has", "offers", "exclude"]
 CauseStance = Literal["neutral", "prefer", "exclude"]
 Answer = Literal["yes", "no"]
@@ -419,6 +421,9 @@ class ProjectPlacement(_Placement):
     decided_by: str | None  # who gave the lead-side answer: the lead or an org admin
     lead_said_at: str | None
     lead_note: str
+    # Still going through the project's onboarding: the steps they have left (0: ready to be
+    # accepted onto the team). Null in every other state.
+    steps_left: int | None
     is_lead: bool  # this is the project's lead, who is on the team automatically
     can_decide: bool  # false on my own row: someone else decides on my place
 

@@ -39,7 +39,7 @@ export interface Placement {
   title: string;
   org_id: string;
   org_name: string;
-  state: 'eligible' | 'team' | 'declined' | 'lapsed' | 'removed' | 'left';
+  state: 'eligible' | 'onboarding' | 'team' | 'suspended' | 'declined' | 'lapsed' | 'removed' | 'left';
   state_label: string;
   volunteer_said: 'yes' | 'no' | null;
   lead_said: 'yes' | 'no' | null;

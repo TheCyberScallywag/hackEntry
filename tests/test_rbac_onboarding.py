@@ -397,7 +397,8 @@ def test_api_errors_are_json_and_docs_are_published(web: Web):
     assert web.get("/api/v1/me").json()["detail"] == "Sign in first"
     spec = web.get("/api/openapi.json").json()
     tags = {t for path in spec["paths"].values() for op in path.values() for t in op["tags"]}
-    assert tags == {"auth", "me", "organisations", "projects", "placements", "moderation", "admin"}
+    assert tags == {"auth", "me", "organisations", "projects", "placements", "moderation", "admin",
+                    "assistants", "audit", "onboarding"}  # fmt: skip
     docs = web.get("/api/docs")
     assert docs.status_code == 200 and "cdn.jsdelivr.net" in docs.headers["content-security-policy"]
     assert "cdn.jsdelivr.net" not in web.get("/").headers["content-security-policy"]

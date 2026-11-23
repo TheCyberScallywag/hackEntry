@@ -12,7 +12,12 @@ import sqlite3
 
 from app.notify import notify
 from app.services.access import org_access
+from app.services.errors import Forbidden, NotFound
 from app.sqlstore import enqueue, now
+
+# Placement states in which a volunteer holds a place on a team or is on the way to one:
+# going through the project's onboarding, on the team, or suspended from it.
+HOLDING = ("onboarding", "team", "suspended")
 
 
 def record(
@@ -49,6 +54,48 @@ def lead_in_standing(conn: sqlite3.Connection, lead_id: str | None, org_id: str)
     if not lead_id:
         return False
     return org_access(conn, lead_id, org_id).org_admin or in_standing(conn, lead_id, org_id)
+
+
+def project_info(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT s.id, s.org_id, s.lead_id, s.state, s.title, o.name AS org_name "
+        "FROM submission_current s JOIN organisations o ON o.id = s.org_id WHERE s.id = ?",
+        (project_id,),
+    ).fetchone()
+
+
+def check_lead_side(
+    conn: sqlite3.Connection, actor_id: str, project_id: str, volunteer_id: str = ""
+) -> sqlite3.Row:
+    """The actor may act for the project's lead side: an org admin (or system admin), or the
+    project's lead while they are still in standing with the organisation. Org admins assign
+    the lead (app.services.submissions.set_project_lead), so a lead's powers come from, and
+    stay inside, the organisation.
+
+    With a `volunteer_id`, the actor must also not be deciding on their own place; only the
+    project's lead may, since the lead is on their own team anyway."""
+    info = project_info(conn, project_id)
+    if info is None:
+        raise NotFound("project")
+    access = org_access(conn, actor_id, info["org_id"])
+    is_lead = info["lead_id"] == actor_id and in_standing(conn, actor_id, info["org_id"])
+    if not (is_lead or access.org_admin):
+        if access.any:
+            raise Forbidden("Only the project lead or an org admin can do that.")
+        raise NotFound("project")
+    if volunteer_id and volunteer_id == actor_id and info["lead_id"] != actor_id:
+        raise Forbidden("Someone else must decide on your own place on a team.")
+    return info
+
+
+def end_project_run(conn: sqlite3.Connection, volunteer_id: str, project_id: str) -> None:
+    """The volunteer's place on the project has ended, so their run through the project's own
+    onboarding ends with it. Coming back starts a new one. The caller queues the projection."""
+    conn.execute(
+        "UPDATE onboarding_runs SET state = 'cancelled' "
+        "WHERE user_id = ? AND project_id = ? AND state != 'cancelled'",
+        (volunteer_id, project_id),
+    )
 
 
 def notify_deciders(
@@ -133,6 +180,7 @@ def end_for_volunteer(
 ) -> None:
     """A volunteer lost their standing (suspended, left or removed from an organisation): close
     their open offers and take them off their teams, in one organisation or in all of them.
+    A place they were still onboarding for, or were suspended from, ends the same way.
 
     Team places end in `team_state` ('left' or 'removed'); a lead or org admin can reopen them
     later. Open offers become 'lapsed', so they come back by themselves if the volunteer
@@ -141,8 +189,8 @@ def end_for_volunteer(
     rows = conn.execute(
         "SELECT p.project_id, p.state, s.title, s.org_id, s.lead_id FROM placements p "
         "JOIN submission_current s ON s.id = p.project_id "
-        "WHERE p.volunteer_id = ? AND p.state IN ('eligible', 'team') AND (? IS NULL OR "
-        "s.org_id = ?) ORDER BY p.project_id",
+        "WHERE p.volunteer_id = ? AND p.state IN ('eligible', 'onboarding', 'team', 'suspended') "
+        "AND (? IS NULL OR s.org_id = ?) ORDER BY p.project_id",
         (volunteer_id, org_id, org_id),
     ).fetchall()
     if not rows:
@@ -152,7 +200,7 @@ def end_for_volunteer(
     ]
     stamp = now()
     for row in rows:
-        on_team = row["state"] == "team"
+        on_team = row["state"] in HOLDING
         conn.execute(
             "UPDATE placements SET state = ?, version = version + 1, updated_at = ? "
             "WHERE project_id = ? AND volunteer_id = ?",
@@ -160,6 +208,7 @@ def end_for_volunteer(
         )
         record(conn, row["project_id"], volunteer_id, event, actor_id=actor_id, note=note)
         if on_team:
+            end_project_run(conn, volunteer_id, row["project_id"])
             notify_deciders(
                 conn, row["org_id"], row["lead_id"],
                 f"{name} is no longer on the team for “{row['title']}”.",

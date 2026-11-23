@@ -139,3 +139,33 @@ def test_reset_and_json_inspect(seeded, capsys):
 def test_graph_errors_become_a_message_and_exit_code(tmp_path, capsys):
     assert cli.main(["inspect", "--store", str(tmp_path / "missing.rl")]) == 1
     assert "Relate:" in capsys.readouterr().err
+
+
+def test_a_failed_bundle_build_leaves_the_old_bundle_in_place(tmp_path, monkeypatch):
+    out = tmp_path / "demo.rl"
+    out.write_bytes(b"the previous bundle")
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(data_dir=tmp_path, _env_file=None))
+
+    def fails(_out):
+        raise SystemExit("bundle aborted: 1 projections still pending")
+
+    monkeypatch.setattr(cli, "build_bundle", fails)
+    with pytest.raises(SystemExit):
+        cli.main(["bundle", "--out", str(out)])
+    assert out.read_bytes() == b"the previous bundle"
+    monkeypatch.undo()
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(data_dir=tmp_path, _env_file=None))
+    assert cli.main(["bundle", "--out", str(out)]) == 0
+    assert out.stat().st_size > 1000 and not (tmp_path / "demo.rl.new").exists()
+
+
+def test_matches_command_finds_an_organisation_created_at_runtime(tmp_path, monkeypatch, capsys):
+    settings = Settings(data_dir=tmp_path, _env_file=None)
+    rt = reset_demo(settings)
+    with rt.db.tx() as conn:  # as if it had been created in the console: a random ID
+        conn.execute("UPDATE organisations SET key = 'renamed-later' WHERE key = 'datakind-uk'")
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    assert cli.main(["matches", "--org", "renamed-later"]) == 0
+    assert "Food Bank Demand Dashboard" in capsys.readouterr().out
+    assert cli.main(["matches", "--org", "no-such-organisation"]) == 0
+    assert capsys.readouterr().out.strip() == "(no rows)"

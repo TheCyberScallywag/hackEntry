@@ -4,6 +4,8 @@ Staff sign in with their own account. What they see follows their roles, enforce
 API on every call:
   * moderator / system admin: volunteer screening queue and decisions
   * org admin (or system admin): the organisation's suggestions, volunteers, candidates and teams
+    (assign a project's lead; accept, suspend, reinstate or remove team members), its own
+    onboarding workflow (steps and email templates) and each project's team onboarding
   * system admin: users and roles, new organisations, projection health and the Relate graph
 
 One function per tab. A list shows its rows from one call; the detail of a row is fetched only
@@ -37,17 +39,29 @@ class ApiError(RuntimeError):
     pass
 
 
+def client() -> httpx.Client:
+    """One HTTP client per signed-in session, kept across reruns, so a click does not open a
+    new connection for every call it makes."""
+    if "client" not in st.session_state:
+        st.session_state["client"] = httpx.Client(timeout=10)
+    return st.session_state["client"]
+
+
 def call(method: str, path: str, **kwargs) -> object:
     headers = {"Authorization": f"Bearer {st.session_state['token']}"}
     try:
-        r = httpx.request(method, API + path, headers=headers, timeout=10, **kwargs)
+        r = client().request(method, API + path, headers=headers, **kwargs)
     except httpx.HTTPError as error:
         raise ApiError(f"API unreachable: {error}") from error
     if r.status_code == 401:
         st.session_state.clear()
         st.rerun()
     if r.status_code >= 400:
-        raise ApiError(r.json().get("detail", r.text) if r.content else str(r.status_code))
+        try:  # a proxy's error page is not JSON
+            detail = r.json().get("detail", r.text)
+        except ValueError:
+            detail = f"The API answered {r.status_code}."
+        raise ApiError(str(detail) if r.content else str(r.status_code))
     return r.json() if r.content else None
 
 
@@ -63,15 +77,15 @@ def act(label: str, method: str, path: str, **kwargs) -> None:
 
 
 def tabs_for(me: dict) -> list[str]:
-    """The tabs a signed-in member of staff may see, from their roles."""
+    """The sections a signed-in member of staff may see, from their roles."""
     roles = set(me["system_roles"])
     tabs = []
     if roles & {"admin", "moderator"}:
         tabs.append("Volunteer screening")
     if any(o["org_admin"] for o in me["organisations"]):
-        tabs.append("Organisations")
+        tabs += ["Organisations", "Onboarding"]
     if "admin" in roles:
-        tabs += ["Users and roles", "System"]
+        tabs += ["Users and roles", "Audit", "System"]
     return tabs
 
 
@@ -85,9 +99,7 @@ def sign_in() -> None:
     if not submitted:
         return
     try:
-        r = httpx.request(
-            "POST", f"{API}/session", json={"email": email, "password": password}, timeout=10
-        )
+        r = client().request("POST", f"{API}/session", json={"email": email, "password": password})
     except httpx.HTTPError as error:
         st.error(f"API unreachable: {error}")
         return
@@ -165,7 +177,24 @@ def _suggestion(org: dict, sub: dict) -> None:
                     },
                 )
     if sub["state"] == "published":
+        _lead(org, sub, detail)
         _candidates(sub["id"])
+
+
+def _lead(org: dict, sub: dict, detail: dict) -> None:
+    """Org admins assign the project's lead: an active volunteer or admin of the organisation."""
+    people = [p for p in call("GET", f"/orgs/{org['id']}/volunteers") if p["status"] == "active"]
+    if not people:
+        return
+    at = next((i for i, p in enumerate(people) if p["id"] == detail["lead_id"]), 0)
+    with st.form(f"lead-{sub['id']}"):
+        lead = st.selectbox(
+            "Project lead", people, index=at, format_func=lambda p: p["display_name"],
+            key=f"lead-pick-{sub['id']}",
+        )  # fmt: skip
+        if st.form_submit_button("Assign lead"):
+            act("Project lead", "PUT", f"/orgs/{org['id']}/projects/{sub['id']}/lead",
+                json={"user_id": lead["id"]})  # fmt: skip
 
 
 def _candidates(project_id: str) -> None:
@@ -188,10 +217,29 @@ def _candidates(project_id: str) -> None:
             if cols[3].button("Withdraw", key=f"{key}-withdraw"):
                 act("Invitation", "POST", f"{base}/answer",
                     json={"answer": "no", "version": p["version"]})  # fmt: skip
-        elif p["state"] in ("declined", "left", "removed") and cols[3].button(
-            "Reopen", key=f"{key}-reopen"
-        ):
-            act("Placement", "POST", f"{base}/reopen")
+        elif p["state"] in ("declined", "left", "removed"):
+            if cols[3].button("Reopen", key=f"{key}-reopen"):
+                act("Placement", "POST", f"{base}/reopen")
+        elif p["state"] in ("onboarding", "team", "suspended"):
+            _team_member(p, base, key, cols)
+
+
+def _team_member(p: dict, base: str, key: str, cols: list) -> None:
+    """Someone with a place on the team, or on the way to one: accept them once the project's
+    onboarding steps are done, suspend or reinstate them, or remove them."""
+    if p["state"] == "onboarding":
+        if p["steps_left"]:
+            cols[3].caption(f"{p['steps_left']} steps left")
+        elif cols[3].button("Accept", key=f"{key}-accept"):
+            act("Team", "POST", f"{base}/accept")
+    elif p["state"] == "suspended" and cols[3].button("Reinstate", key=f"{key}-reinstate"):
+        act("Team", "POST", f"{base}/reinstate")
+    with cols[4].popover("More"):
+        reason = st.text_input("Reason (shown to the volunteer)", key=f"{key}-reason")
+        if p["state"] == "team" and not p["is_lead"] and st.button("Suspend", key=f"{key}-suspend"):
+            act("Team", "POST", f"{base}/suspend", json={"reason": reason})
+        if st.button("Remove", key=f"{key}-remove"):
+            act("Team", "POST", f"{base}/remove", json={"reason": reason})
 
 
 def _volunteers(org: dict) -> None:
@@ -231,6 +279,245 @@ def organisations_tab(me: dict) -> None:
     cov = call("GET", f"/orgs/{org['id']}/coverage")
     st.subheader("Coverage gaps")
     st.write({p["title"]: p["gaps"] or "none" for p in cov["projects"]})
+
+
+# ------------------------------------------------------------------ org admin: onboarding
+COMPLETED_BY = {
+    "volunteer": "The volunteer",
+    "org_admin": "An organisation admin",
+    "lead": "The project lead or an org admin",
+}
+EMAIL_STATUS = {
+    "queued": "Queued",
+    "sent": "Sent",
+    "failed": "Failed",
+    "not_configured": "Not sent: no mail server is configured",
+}
+NO_EMAIL = {"id": None, "name": "(no email)"}
+NEW = {"id": None}
+
+
+def _template_choice(label: str, templates: list[dict], current: str | None, key: str) -> dict:
+    options = [NO_EMAIL, *templates]
+    at = next((i for i, t in enumerate(options) if t["id"] == current), 0)
+    return st.selectbox(label, options, index=at, format_func=lambda t: t["name"], key=key)
+
+
+def _workflow_settings(base: str, flow: dict) -> None:
+    with st.form("onboarding-settings"):
+        enabled = st.checkbox(
+            "Switched on: volunteers who join from now on go through these steps",
+            value=flow["enabled"],
+            key=f"onboarding-enabled-{flow['version']}",
+        )
+        done = _template_choice(
+            "Email when a volunteer finishes", flow["templates"],
+            flow["completion_template_id"], f"onboarding-completion-{flow['version']}",
+        )  # fmt: skip
+        if st.form_submit_button("Save settings"):
+            body = {"enabled": enabled, "completion_template_id": done["id"],
+                    "version": flow["version"]}  # fmt: skip
+            act("Workflow", "PUT", base, json=body)
+
+
+def _workflow_steps(base: str, flow: dict) -> None:
+    st.markdown("**Steps**, in the order a volunteer goes through them")
+    names = {t["id"]: t["name"] for t in flow["templates"]}
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"step": s["position"], "title": s["title"],
+                 "completed by": COMPLETED_BY[s["completed_by"]],
+                 "email": names.get(s["email_template_id"], "")}
+                for s in flow["steps"]
+            ]
+        ),
+        hide_index=True, width="stretch",
+    )  # fmt: skip
+    step = st.selectbox(
+        "Step", [NEW, *flow["steps"]],
+        format_func=lambda s: f"{s['position']}. {s['title']}" if s["id"] else "New step",
+        key="onboarding-step",
+    )  # fmt: skip
+    version = flow["version"]
+    # Widget keys carry the version: after a saved edit the form starts afresh from what was
+    # saved, and after a refused one it keeps what was typed.
+    key = f"{step['id']}-{version}"
+    with st.form(f"onboarding-step-{step['id']}"):
+        title = st.text_input("Title", value=step.get("title", ""), key=f"step-title-{key}")
+        description = st.text_area("What the volunteer is asked to do",
+                                   value=step.get("description", ""),
+                                   key=f"step-description-{key}")  # fmt: skip
+        # The workflow says who may complete its steps: an organisation's differs from a project's.
+        who_options = [c["value"] for c in flow["completers"]]
+        who = st.radio(
+            "Completed by", who_options, format_func=COMPLETED_BY.get, horizontal=True,
+            index=who_options.index(step.get("completed_by", "volunteer")),
+            key=f"step-who-{key}",
+        )  # fmt: skip
+        email = _template_choice(
+            "Email sent when the volunteer reaches this step", flow["templates"],
+            step.get("email_template_id"), f"step-email-{key}",
+        )  # fmt: skip
+        if st.form_submit_button("Save step" if step["id"] else "Add step"):
+            body = {"title": title, "description": description, "completed_by": who,
+                    "email_template_id": email["id"], "version": version}  # fmt: skip
+            if step["id"]:
+                act("Step", "PUT", f"{base}/steps/{step['id']}", json=body)
+            else:
+                act("Step", "POST", f"{base}/steps", json=body)
+    if not step["id"]:
+        return
+    cols = st.columns(3)
+    for col, label, direction in ((cols[0], "Move up", "up"), (cols[1], "Move down", "down")):
+        if col.button(label, key=f"onboarding-{direction}"):
+            act("Step", "POST", f"{base}/steps/{step['id']}/move",
+                  json={"direction": direction, "version": version})  # fmt: skip
+    if cols[2].button("Delete step", key="onboarding-delete-step"):
+        act("Step", "DELETE", f"{base}/steps/{step['id']}", params={"version": version})
+
+
+def _workflow_templates(base: str, flow: dict) -> None:
+    st.markdown("**Email templates**")
+    st.caption(
+        "Plain text. Placeholders: "
+        + "; ".join(f"{{{{ {p['name']} }}}}: {p['meaning']}" for p in flow["placeholders"])
+    )
+    template = st.selectbox(
+        "Template", [NEW, *flow["templates"]],
+        format_func=lambda t: t["name"] if t["id"] else "New template",
+        key="onboarding-template",
+    )  # fmt: skip
+    with st.form(f"onboarding-template-{template['id']}"):
+        key = f"{template['id']}-{flow['version']}"  # as for the steps
+        name = st.text_input("Name", value=template.get("name", ""), key=f"tpl-name-{key}")
+        subject = st.text_input(
+            "Subject", value=template.get("subject", ""), key=f"tpl-subject-{key}"
+        )
+        body = st.text_area(
+            "Text", value=template.get("body", ""), height=260, key=f"tpl-body-{key}"
+        )
+        save = st.form_submit_button("Save template" if template["id"] else "Add template")
+        preview = st.form_submit_button("Preview")
+    if save:
+        payload = {"name": name, "subject": subject, "body": body, "version": flow["version"]}
+        if template["id"]:
+            act("Template", "PUT", f"{base}/templates/{template['id']}", json=payload)
+        else:
+            act("Template", "POST", f"{base}/templates", json=payload)
+    if preview:
+        shown = call("POST", f"{base}/templates/preview", json={"subject": subject, "body": body})
+        st.markdown(f"**Subject:** {shown['subject']}")
+        st.code(shown["body"], language=None)
+    if not template["id"]:
+        return
+    cols = st.columns(2)
+    if cols[0].button("Send a test to me", key="onboarding-test"):
+        act("Test email", "POST", f"{base}/templates/{template['id']}/test")
+    if cols[1].button("Delete template", key="onboarding-delete-template"):
+        act("Template", "DELETE", f"{base}/templates/{template['id']}",
+              params={"version": flow["version"]})  # fmt: skip
+
+
+def _onboarding_progress(base: str) -> None:
+    people = call("GET", f"{base}/volunteers")
+    if not people:
+        st.caption("Nobody has started onboarding yet. It starts when a volunteer joins.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"volunteer": p["display_name"], "status": p["state_label"],
+                 "steps done": f"{p['steps_done']} of {p['steps_total']}",
+                 "current step": p["current_step"] or "",
+                 "waiting for": COMPLETED_BY.get(p["waiting_for"], ""),
+                 "started": p["started_at"]}
+                for p in people
+            ]
+        ),
+        hide_index=True, width="stretch",
+    )  # fmt: skip
+    waiting = [p for p in people if p["current_step_id"]]
+    if not waiting:
+        return
+    with st.form("onboarding-complete"):
+        who = st.selectbox(
+            "Confirm a volunteer's current step", waiting,
+            format_func=lambda p: f"{p['display_name']}: {p['current_step']}",
+        )  # fmt: skip
+        if st.form_submit_button("Mark step as done"):
+            step = f"{who['user_id']}/steps/{who['current_step_id']}"
+            act("Onboarding step", "POST", f"{base}/volunteers/{step}/complete")
+
+
+def _onboarding_emails(base: str) -> None:
+    emails = call("GET", f"{base}/emails")
+    if not emails:
+        st.caption("No emails yet.")
+        return
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"when": e["created_at"], "to": e["recipient"], "template": e["template_name"],
+                 "subject": e["subject"], "status": EMAIL_STATUS[e["status"]],
+                 "sent": e["sent_at"] or ""}
+                for e in emails
+            ]
+        ),
+        hide_index=True, width="stretch",
+    )  # fmt: skip
+
+
+ONBOARDING_VIEWS = ["Workflow", "Volunteers", "Emails"]
+
+
+WHOLE_ORG = {"id": None}
+ONBOARDING_SCOPES = ["Volunteers joining the organisation", "Volunteers joining a project's team"]
+
+
+def onboarding_tab(me: dict) -> None:
+    """An organisation's own onboarding: its steps, its emails, and who is where. And the same
+    for each of its active projects: the steps a volunteer takes before joining the team."""
+    admin_orgs = [o for o in me["organisations"] if o["org_admin"]]
+    org = st.selectbox(
+        "Organisation", admin_orgs, format_func=lambda o: o["name"], key="onboarding-org"
+    )
+    project = WHOLE_ORG
+    # The organisation's projects are fetched only when a project's workflow is asked for.
+    if (
+        st.radio("Workflow for", ONBOARDING_SCOPES, horizontal=True, key="onboarding-scope")
+        != (ONBOARDING_SCOPES[0])
+    ):
+        queue = call("GET", f"/orgs/{org['id']}/submissions")
+        live = [s for s in queue if s["state"] == "published"]
+        if not live:
+            st.caption("This organisation has no active projects yet.")
+            return
+        project = st.selectbox(
+            "Project", live, format_func=lambda s: s["title"],
+            key=f"onboarding-project-{org['id']}",
+        )  # fmt: skip
+    base = f"/orgs/{org['id']}/onboarding"
+    if project["id"]:
+        base = f"/orgs/{org['id']}/projects/{project['id']}/onboarding"
+        st.caption(
+            "A volunteer goes through these steps after accepting an invitation; the project "
+            "lead or an org admin then accepts them onto the team. The organisation's own "
+            "onboarding comes first, and the emails are the organisation's templates."
+        )
+    # One view at a time, for the same reason as the sections: only its calls are made.
+    views = ONBOARDING_VIEWS[:2] if project["id"] else ONBOARDING_VIEWS
+    view = st.radio("Show", views, horizontal=True, key="onboarding-view")
+    if view == "Volunteers":
+        _onboarding_progress(base)
+    elif view == "Emails":
+        _onboarding_emails(base)
+    else:
+        flow = call("GET", base)
+        _workflow_settings(base, flow)
+        _workflow_steps(base, flow)
+        if not project["id"]:  # templates belong to the organisation
+            _workflow_templates(base, flow)
 
 
 # ------------------------------------------------------------------ system admin
@@ -307,6 +594,92 @@ def system_tab() -> None:
     )
 
 
+AUDIT_FILTERS = {
+    "Role changes": "role.",
+    "Refusals": "",
+    "Sign-ins": "auth.",
+    "Assistants": "agent.",
+    "Requests": "http.",
+    "Everything": "",
+}
+
+
+def audit_tab() -> None:
+    """Who can do what, how the application is used, and what the checks found."""
+    days = st.selectbox("Period (days)", [7, 1, 30, 90])
+    usage = call("GET", "/admin/audit/usage", params={"days": days})
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Allowed", usage["outcomes"]["ok"])
+    c2.metric("Refused", usage["outcomes"]["denied"])
+    c3.metric("Invalid", usage["outcomes"]["invalid"])
+    c4.metric("Errors", usage["outcomes"]["error"])
+
+    st.subheader("Checks")
+    checks = call("GET", "/admin/audit/checks", params={"days": days})
+    if checks:
+        st.dataframe(
+            pd.DataFrame([{k: c[k] for k in ("severity", "title", "evidence")} for c in checks]),
+            hide_index=True, width="stretch",
+        )  # fmt: skip
+    else:
+        st.success("No findings.")
+    if st.button("Ask the audit assistant", key="audit-assistant"):
+        run = call("POST", "/agents/audit", json={"days": days})
+        st.session_state["audit_report"] = run["output"]
+    if report := st.session_state.get("audit_report"):
+        st.write(f"**{report['overall'].replace('_', ' ').title()}.** {report['summary']}")
+        for item in report["findings"]:
+            st.markdown(
+                f"- **{item['severity']}: {item['title']}.** {item['explanation']} "
+                f"*{item['recommendation']}*"
+            )
+        for note in report["usage_notes"]:
+            st.caption(note)
+
+    st.subheader("Who holds which role")
+    roles = call("GET", "/admin/audit/rbac")
+    holders = [
+        {"scope": "system", "name": r["display_name"], "role": r["role"],
+         "account": r["status"], "granted": r["granted_at"]}
+        for r in roles["system_roles"]
+    ] + [
+        {"scope": o["name"], "name": r["display_name"], "role": r["role"],
+         "account": r["status"], "granted": r["granted_at"]}
+        for o in roles["organisations"] for r in o["roles"]
+    ]  # fmt: skip
+    st.dataframe(pd.DataFrame(holders), hide_index=True, width="stretch")
+
+    if usage["agents"]:
+        st.subheader("Assistants")
+        st.dataframe(pd.DataFrame(usage["agents"]), hide_index=True, width="stretch")
+    if usage["most_refused"]:
+        st.subheader("Refused most often")
+        st.dataframe(
+            pd.DataFrame([{"name": r["display_name"], "refusals": r["refusals"]}
+                          for r in usage["most_refused"]]),
+            hide_index=True, width="stretch",
+        )  # fmt: skip
+
+    st.subheader("Audit trail")
+    shown = st.selectbox("Show", list(AUDIT_FILTERS))
+    params = {"action": AUDIT_FILTERS[shown], "limit": 200}
+    if shown == "Refusals":
+        params["outcome"] = "denied"
+    events = call("GET", "/admin/audit/events", params=params)
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"when": e["created_at"], "who": e["actor"] or "(not signed in)",
+                 "action": e["action"], "outcome": e["outcome"],
+                 "what": f"{e['target_kind']} {e['target_id']}".strip(),
+                 "organisation": e["org"] or "", "detail": str(e["detail"])}
+                for e in events
+            ]
+        ),
+        hide_index=True, width="stretch",
+    )  # fmt: skip
+
+
 # ------------------------------------------------------------------ page
 def main() -> None:
     # The colours and fonts are the brand's too: app.serve passes them to `streamlit run`.
@@ -347,15 +720,18 @@ def main() -> None:
     render = {
         "Volunteer screening": screening_tab,
         "Organisations": lambda: organisations_tab(me),
+        "Onboarding": lambda: onboarding_tab(me),
         "Users and roles": lambda: users_tab(me),
+        "Audit": audit_tab,
         "System": system_tab,
     }
-    for tab, name in zip(st.tabs(names), names, strict=True):
-        with tab:
-            try:
-                render[name]()
-            except ApiError as error:  # one tab's failure does not take the others down
-                st.error(str(error))
+    # One section at a time: st.tabs would run every section's API calls on every click.
+    name = st.sidebar.radio("Section", names)
+    st.subheader(name)
+    try:
+        render[name]()
+    except ApiError as error:
+        st.error(str(error))
 
 
 if __name__ == "__main__":  # `streamlit run` executes this file as __main__

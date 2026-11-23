@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Onboarding{% endblock %}
+{% block content %}
+<h1>Onboarding</h1>
+<p>Each organisation you join can have its own steps before you start, and so can a project when you join its team. They are separate from the vetting of your account.</p>
+{% for run in runs %}
+{% set confirmer = "The project lead" if run.project_id else run.organisation %}
+<section class="card" data-org="{{ run.org_id }}" data-project="{{ run.project_id }}" data-state="{{ run.state }}">
+  <h2>{% if run.project_id %}{{ run.project }} <span class="muted">· {{ run.organisation }}</span>{% else %}{{ run.organisation }}{% endif %}</h2>
+  <p class="meta"><span class="chip {{ 'ok' if run.state == 'completed' and not run.awaiting_acceptance else 'pref' }}">{{ run.state_label }}</span> {{ run.steps_done }} of {{ run.steps_total }} steps done</p>
+  {% if run.awaiting_acceptance %}<p class="pending">You have finished every step. The project lead will now confirm your place on the team.</p>{% endif %}
+  <ol class="steps">
+  {% for step in run.steps %}
+    <li data-step="{{ step.state }}"{% if step.state == "open" and run.state == "in_progress" %} aria-current="step"{% endif %}>
+      <strong>{{ step.title }}</strong>
+      {% if step.state == "done" %}<span class="chip ok">Done</span>{% elif step.state == "open" and run.state == "in_progress" %}<span class="chip pref">Current step</span>{% endif %}
+      {% if step.description %}<br>{{ step.description }}{% endif %}
+      {% if step.can_complete %}
+      <form method="post" action="/onboarding/{{ run.org_id }}/steps/{{ step.id }}/complete">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="project_id" value="{{ run.project_id }}">
+        <button type="submit">Mark as done</button>
+      </form>
+      {% elif step.state == "open" and run.state == "in_progress" %}<br><span class="muted">{{ confirmer }} will confirm this step.</span>{% endif %}
+    </li>
+  {% endfor %}
+  </ol>
+</section>
+{% else %}
+<p class="muted">Nothing to do. You will see an organisation's steps here after you <a href="/orgs">join one</a> that has them, and a project's after you accept an invitation to its team.</p>
+{% endfor %}
+{% endblock %}

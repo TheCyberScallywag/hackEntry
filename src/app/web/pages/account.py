@@ -1,9 +1,9 @@
 """Signing up, in and out; the user's own profile, vetting and notifications."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 
-from app import auth, notify, profile_view, services
+from app import audit, auth, notify, profile_view, services
 from app.catalogue import get_catalogue
 from app.web.deps import (
     RT,
@@ -15,6 +15,7 @@ from app.web.deps import (
     drain,
     redirect,
     render,
+    require_signup,
     safe_next,
     set_session_cookie,
     to_int,
@@ -40,12 +41,12 @@ def _start_session(request: Request, rt: RT, user_id: str, target: str, msg: str
     return response
 
 
-@router.get("/signup")
+@router.get("/signup", dependencies=[Depends(require_signup)])
 def signup_form(request: Request):
     return render(request, "signup.html")
 
 
-@router.post("/signup")
+@router.post("/signup", dependencies=[Depends(require_signup)])
 def signup(request: Request, rt: RT, form: AnonForm):
     # Only these three fields are read: a posted "role" or "org" is ignored by design.
     email, name = str(form.get("email", "")), str(form.get("display_name", ""))
@@ -69,6 +70,10 @@ def signin(request: Request, rt: RT, form: AnonForm):
     email = str(form.get("email", ""))
     user_id = auth.authenticate(rt.db, email=email, password=str(form.get("password", "")))
     nxt = str(form.get("next", ""))
+    audit.record_now(
+        rt.db, "auth.sign_in", actor_id=user_id, outcome="ok" if user_id else "denied",
+        source="web",
+    )  # fmt: skip
     if user_id is None:
         return render(request, "signin.html", error="Wrong email or password.", email=email,
                       next=nxt, status_code=400)  # fmt: skip

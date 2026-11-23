@@ -197,6 +197,7 @@ Settings come from environment variables or a local `.env` file (`src/app/config
 | `DATA_DIR` | `var` | Where the SQLite database and the writable Relate store live |
 | `ORG_NAMES` | `{}` | JSON map from organisation key to display name, applied when the demo is seeded |
 | `SESSION_TTL_HOURS` | `12` | How long a sign-in lasts |
+| `SIGNUP_ENABLED` | `true` | Let anyone create an account; `false` makes the sign-up page and `POST /api/v1/auth/signup` answer 403 and hides the links |
 | `COOKIE_SECURE` | unset | Forces the Secure cookie flag; unset means "whenever the request came over HTTPS" |
 | `TRUST_PROXY_HEADERS` | `false` | Honour `X-Forwarded-Proto` behind a TLS-terminating proxy |
 | `API_URL` | `http://127.0.0.1:8080` | Where the admin console reaches the JSON API |

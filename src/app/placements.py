@@ -10,12 +10,23 @@
    (app.services.teams.ensure_lead_on_team).
 3. The invited volunteer answers. Yes puts them on the team (`team`), projected to Relate as
    (:Volunteer)-[:ON_TEAM]->(:Project). A no from either side ends it (`declined`).
+   If the project has its own onboarding workflow (app.services.onboarding), yes starts that
+   first (`onboarding`): the volunteer works through the project's steps, and the lead side
+   then accepts them onto the team (`accept`). The organisation's rules come first: a volunteer
+   still part-way through the organisation's own onboarding cannot say yes yet, and nobody is
+   accepted, or reinstated, who is not an active volunteer of the organisation.
 4. A pair that stops matching before the volunteer joined is `lapsed`; it becomes a candidate
    again if it matches again. Team members are never removed by a sweep. They are removed when
    they lose their standing (suspended, or no longer with the organisation): app.services.teams.
 5. An invitation left unanswered is chased: one reminder, then it closes and the volunteer goes
    back to the candidate list (`chase`).
 6. The lead side can reopen a declined, left or removed placement (`reopen`).
+7. The lead side can suspend a team member (`suspended`: off the team, and out of the graph's
+   ON_TEAM, until reinstated) or remove them, whether they are on the team, still onboarding
+   or suspended.
+
+The lead side is always the same two: the project's lead, whom the org admins assign
+(app.services.submissions.set_project_lead), and the org admins themselves.
 
 Every change is written to `placement_events` with who made it, and the people it affects are
 notified in-app.
@@ -38,7 +49,9 @@ log = logging.getLogger(__name__)
 
 STATE_LABELS = {
     "eligible": "Candidate",
+    "onboarding": "Onboarding for the team",
     "team": "On the team",
+    "suspended": "Suspended from the team",
     "declined": "Declined",
     "lapsed": "No longer eligible",
     "removed": "Removed",
@@ -48,12 +61,8 @@ INVITED_LABEL = "Invited: awaiting the volunteer's answer"
 REOPENABLE = ("declined", "left", "removed")
 
 
-def _project_info(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row:
-    return conn.execute(
-        "SELECT s.id, s.org_id, s.lead_id, s.state, s.title, o.name AS org_name "
-        "FROM submission_current s JOIN organisations o ON o.id = s.org_id WHERE s.id = ?",
-        (project_id,),
-    ).fetchone()
+_project_info = teams.project_info
+_check_lead = teams.check_lead_side  # the project's lead while in standing, or an org admin
 
 
 @dataclass(frozen=True)
@@ -138,11 +147,26 @@ def sweep(db: Database, graph: GraphStore, scope: Scope | None = None) -> int:
     stamp = now()
     with db.tx() as conn:
         existing = _existing(conn, scope)
+        # SQL freshness for the pairs in hand. A scoped sweep asks only about those projects and
+        # volunteers, so its cost follows the change; a full sweep reads both tables once.
+        projects = sorted({pid for pid, _ in current})
+        volunteers = sorted({vid for _, vid in current})
+        only_p = f" AND id IN ({_marks(projects)})" if scope is not None else ""
+        only_v = f" AND id IN ({_marks(volunteers)})" if scope is not None else ""
         live = {
             r["id"]: r["lead_id"]
-            for r in conn.execute("SELECT id, lead_id FROM submissions WHERE state = 'published'")
+            for r in conn.execute(
+                f"SELECT id, lead_id FROM submissions WHERE state = 'published'{only_p}",
+                projects if scope is not None else (),
+            )
         }
-        active = {r["id"] for r in conn.execute("SELECT id FROM users WHERE status = 'active'")}
+        active = {
+            r["id"]
+            for r in conn.execute(
+                f"SELECT id FROM users WHERE status = 'active'{only_v}",
+                volunteers if scope is not None else (),
+            )
+        }
         fresh: dict[str, list[str]] = {}  # project -> new candidates, for one notification each
         for (pid, vid), match in sorted(current.items()):
             if pid not in live or vid not in active:
@@ -260,11 +284,20 @@ def _respond(
                 raise services.Conflict(
                     "This volunteer is not an active volunteer of the organisation any more."
                 )
+            if side == "volunteer" and services.onboarding.pending_with_org(
+                conn, volunteer_id, info["org_id"]
+            ):
+                raise services.Conflict(
+                    f"Finish your onboarding with {info['org_name']} first. The invitation "
+                    "stays open meanwhile."
+                )
         said = {"volunteer": row["volunteer_said"], "lead": row["lead_said"]} | {side: answer}
         if "no" in said.values():
             state = "declined"
         elif said["volunteer"] == "yes" and said["lead"] == "yes":
-            state = "team"
+            # The project's own onboarding comes before the team, if it has one switched on.
+            started = services.onboarding.start(conn, volunteer_id, info["org_id"], project_id)
+            state = "onboarding" if started else "team"
         else:
             state = "eligible"
         if side == "lead":
@@ -286,7 +319,7 @@ def _respond(
         event = {
             ("lead", "yes"): "invited",
             ("lead", "no"): "invitation_withdrawn" if was_invited else "passed_over",
-            ("volunteer", "yes"): "joined",
+            ("volunteer", "yes"): "onboarding_started" if state == "onboarding" else "joined",
             ("volunteer", "no"): "declined",
         }[(side, answer)]
         teams.record(conn, project_id, volunteer_id, event, actor_id=actor_id, note=note)
@@ -306,6 +339,11 @@ def _respond(
                    f"You are on the team for “{title}”.", "/opportunities")  # fmt: skip
             tell_deciders(f"{name} joined the team for “{title}”.")
             enqueue(conn, "project", project_id)  # adds the ON_TEAM edge in Relate
+        elif state == "onboarding":  # the volunteer was told of their first step by the run
+            tell_deciders(
+                f"{name} said yes to “{title}” and has started its onboarding steps. You "
+                "accept them onto the team once they have finished."
+            )
         elif state == "declined":
             if side == "volunteer":
                 tell_deciders(f"{name} declined the invitation to “{title}”.")
@@ -328,33 +366,6 @@ def volunteer_respond(
     """The invited volunteer answers for themselves (their own placement only)."""
     services.require_active(db, user_id)
     return _respond(db, project_id, user_id, "volunteer", answer, version, actor_id=user_id)
-
-
-def _check_lead(
-    conn: sqlite3.Connection, actor_id: str, project_id: str, volunteer_id: str = ""
-) -> sqlite3.Row:
-    """The actor may act for the project's lead side: an org admin (or system admin), or the
-    project's lead while they are still in standing with the organisation.
-
-    With a `volunteer_id`, the actor must also not be deciding on their own place; only the
-    project's lead may, since the lead is on their own team anyway."""
-    info = _project_info(conn, project_id)
-    if info is None:
-        raise services.NotFound("project")
-    access = services.org_access(conn, actor_id, info["org_id"])
-    is_lead = info["lead_id"] == actor_id and teams.in_standing(conn, actor_id, info["org_id"])
-    if not (is_lead or access.org_admin):
-        if access.any:
-            raise services.Forbidden("Only the project lead or an org admin can do that.")
-        raise services.NotFound("project")
-    if volunteer_id and volunteer_id == actor_id and info["lead_id"] != actor_id:
-        raise services.Forbidden("Someone else must decide on your own place on a team.")
-    return info
-
-
-def _require_lead(db: Database, actor_id: str, project_id: str) -> sqlite3.Row:
-    with db.read() as conn:
-        return _check_lead(conn, actor_id, project_id)
 
 
 def lead_respond(
@@ -464,22 +475,140 @@ def chase(db: Database, *, remind_days: int, expire_days: int) -> int:
     return changes
 
 
+def _name(conn: sqlite3.Connection, user_id: str) -> str:
+    return conn.execute("SELECT display_name FROM users WHERE id = ?", (user_id,)).fetchone()[0]
+
+
+def _may_hold_place(conn: sqlite3.Connection, info: sqlite3.Row, volunteer_id: str) -> None:
+    """The organisation's rules for a place on one of its teams, checked before the lead side
+    puts anyone on a team: a live project, an active volunteer of the organisation, and the
+    organisation's own onboarding finished."""
+    if info["state"] != "published":
+        raise services.Conflict("This project is not active any more.")
+    if not teams.in_standing(conn, volunteer_id, info["org_id"]):
+        raise services.Invalid(
+            "They are not an active volunteer of this organisation at the moment."
+        )
+    if services.onboarding.pending_with_org(conn, volunteer_id, info["org_id"]):
+        raise services.Invalid(
+            f"They have not finished onboarding with {info['org_name']} yet. That comes first."
+        )
+
+
+def _lead_decision(
+    conn: sqlite3.Connection, project_id: str, volunteer_id: str, *, from_state: str,
+    to_state: str, actor_id: str, note: str = "",
+) -> None:  # fmt: skip
+    """Move a placement from one state to another on the lead side's say, or Conflict."""
+    changed = conn.execute(
+        "UPDATE placements SET state = ?, lead_actor_id = ?, lead_note = ?, "
+        "version = version + 1, updated_at = ? "
+        "WHERE project_id = ? AND volunteer_id = ? AND state = ?",
+        (to_state, actor_id, note, now(), project_id, volunteer_id, from_state),
+    ).rowcount
+    if not changed:
+        known = conn.execute(
+            "SELECT 1 FROM placements WHERE project_id = ? AND volunteer_id = ?",
+            (project_id, volunteer_id),
+        ).fetchone()
+        if known is None:
+            raise services.NotFound("placement")
+        raise services.Conflict("Their place on this team has changed. Reload and try again.")
+    enqueue(conn, "project", project_id)  # ON_TEAM in Relate follows the state
+
+
+def accept(db: Database, actor_id: str, project_id: str, volunteer_id: str) -> None:
+    """The lead side accepts a volunteer who has finished the project's onboarding steps: they
+    are on the team from here. Steps still open must be finished (or confirmed for them) first."""
+    with db.tx() as conn:
+        info = _check_lead(conn, actor_id, project_id, volunteer_id)
+        _may_hold_place(conn, info, volunteer_id)
+        name = _name(conn, volunteer_id)
+        left = services.onboarding.steps_left(conn, volunteer_id, info["org_id"], project_id)
+        if left:
+            raise services.Invalid(
+                f"{name} still has {left} onboarding step{'s' if left != 1 else ''} to finish "
+                "for this project."
+            )
+        _lead_decision(conn, project_id, volunteer_id, from_state="onboarding", to_state="team",
+                       actor_id=actor_id)  # fmt: skip
+        teams.record(conn, project_id, volunteer_id, "accepted", actor_id=actor_id)
+        notify(conn, volunteer_id, "placement",
+               f"You have been accepted onto the team for “{info['title']}”.",
+               "/opportunities")  # fmt: skip
+        teams.notify_deciders(
+            conn, info["org_id"], info["lead_id"], f"{name} is now on the team for "
+            f"“{info['title']}”.", teams.project_link(info["org_id"], project_id),
+            exclude=(volunteer_id, actor_id),
+        )  # fmt: skip
+
+
+def suspend(
+    db: Database, actor_id: str, project_id: str, volunteer_id: str, *, reason: str = ""
+) -> None:
+    """The lead side suspends a team member: off the team, with their place kept, until they
+    are reinstated or removed. The project's lead cannot be suspended from their own team; an
+    org admin assigns a new lead first."""
+    reason = services.require_reason(reason)
+    with db.tx() as conn:
+        info = _check_lead(conn, actor_id, project_id, volunteer_id)
+        if volunteer_id == actor_id:
+            raise services.Forbidden("Someone else must decide on your own place on a team.")
+        if volunteer_id == info["lead_id"]:
+            raise services.Invalid(
+                "They lead this project. An org admin assigns a new lead before suspending them."
+            )
+        _lead_decision(conn, project_id, volunteer_id, from_state="team", to_state="suspended",
+                       actor_id=actor_id, note=reason)  # fmt: skip
+        teams.record(conn, project_id, volunteer_id, "suspended", actor_id=actor_id, note=reason)
+        notify(conn, volunteer_id, "placement",
+               f"You have been suspended from the team for “{info['title']}”: {reason}",
+               "/opportunities")  # fmt: skip
+        teams.notify_deciders(
+            conn, info["org_id"], info["lead_id"], f"{_name(conn, volunteer_id)} has been "
+            f"suspended from the team for “{info['title']}”.",
+            teams.project_link(info["org_id"], project_id), exclude=(volunteer_id, actor_id),
+        )  # fmt: skip
+
+
+def reinstate(db: Database, actor_id: str, project_id: str, volunteer_id: str) -> None:
+    """The lead side puts a suspended team member back on the team, if the organisation's rules
+    still allow them a place."""
+    with db.tx() as conn:
+        info = _check_lead(conn, actor_id, project_id, volunteer_id)
+        _may_hold_place(conn, info, volunteer_id)
+        _lead_decision(conn, project_id, volunteer_id, from_state="suspended", to_state="team",
+                       actor_id=actor_id)  # fmt: skip
+        teams.record(conn, project_id, volunteer_id, "reinstated", actor_id=actor_id)
+        notify(conn, volunteer_id, "placement",
+               f"You are back on the team for “{info['title']}”.", "/opportunities")  # fmt: skip
+        teams.notify_deciders(
+            conn, info["org_id"], info["lead_id"], f"{_name(conn, volunteer_id)} is back on "
+            f"the team for “{info['title']}”.", teams.project_link(info["org_id"], project_id),
+            exclude=(volunteer_id, actor_id),
+        )  # fmt: skip
+
+
 def end_team_membership(
     db: Database, actor_id: str, project_id: str, volunteer_id: str, *, reason: str = ""
 ) -> None:
-    """The volunteer leaves, or the lead or an org admin removes them from the team."""
+    """The volunteer leaves, or the lead or an org admin removes them from the team. It ends a
+    place on the team, one they were still onboarding for, and one they were suspended from."""
     leaving = actor_id == volunteer_id
     if not leaving:
-        _require_lead(db, actor_id, project_id)
         reason = services.require_reason(reason)
     with db.tx() as conn:
+        if not leaving:  # authorised in the same transaction as the removal
+            _check_lead(conn, actor_id, project_id)
         updated = conn.execute(
             "UPDATE placements SET state = ?, version = version + 1, updated_at = ? "
-            "WHERE project_id = ? AND volunteer_id = ? AND state = 'team'",
+            "WHERE project_id = ? AND volunteer_id = ? "
+            "AND state IN ('onboarding', 'team', 'suspended')",
             ("left" if leaving else "removed", now(), project_id, volunteer_id),
         ).rowcount
         if not updated:
             raise services.NotFound("team member")
+        teams.end_project_run(conn, volunteer_id, project_id)
         info = _project_info(conn, project_id)
         teams.record(conn, project_id, volunteer_id, "left" if leaving else "removed",
                      actor_id=actor_id, note="" if leaving else reason)  # fmt: skip
@@ -511,7 +640,8 @@ def for_volunteer(db: Database, user_id: str) -> list[dict]:
             "JOIN organisations o ON o.id = s.org_id WHERE p.volunteer_id = ? "
             "AND CASE p.state WHEN 'eligible' THEN p.lead_said = 'yes' WHEN 'team' THEN 1 "
             "    ELSE p.invited_at IS NOT NULL END "
-            "ORDER BY CASE p.state WHEN 'eligible' THEN 0 WHEN 'team' THEN 1 ELSE 2 END, "
+            "ORDER BY CASE p.state WHEN 'eligible' THEN 0 WHEN 'onboarding' THEN 1 "
+            "WHEN 'team' THEN 2 WHEN 'suspended' THEN 3 ELSE 4 END, "
             "p.updated_at DESC",
             (user_id,),
         ).fetchall()
@@ -522,19 +652,47 @@ def for_project(db: Database, actor_id: str, project_id: str) -> list[dict]:
     """Candidates and team for the lead side (display names, no emails). Candidates come in
     the matching order: preferred cause, required skills covered, optional skills offered."""
     with db.read() as conn:
-        info = _check_lead(conn, actor_id, project_id)
-        rows = conn.execute(
-            "SELECT p.*, u.display_name, d.display_name AS decided_by FROM placements p "
-            "JOIN users u ON u.id = p.volunteer_id LEFT JOIN users d ON d.id = p.lead_actor_id "
-            "WHERE p.project_id = ? ORDER BY CASE p.state WHEN 'eligible' THEN 0 "
-            "WHEN 'team' THEN 1 ELSE 2 END, p.preferred DESC, "
-            "json_array_length(p.matched_skills) DESC, json_array_length(p.optional_skills) DESC, "
-            "u.display_name, u.id",
-            (project_id,),
-        ).fetchall()
+        return _for_project(conn, actor_id, project_id)
+
+
+def lead_side(db: Database, actor_id: str, project_id: str) -> dict:
+    """Everything the lead side works with on a project's page, read together: the candidates
+    and team, the project's own onboarding workflow, and where each volunteer is in it."""
+    with db.read() as conn:
+        team = _for_project(conn, actor_id, project_id)
+        org_id = _project_info(conn, project_id)["org_id"]
+        return {
+            "team": team,
+            "flow": services.onboarding.load_workflow(conn, actor_id, org_id, project_id),
+            "progress": services.onboarding.load_progress(conn, actor_id, org_id, project_id),
+        }
+
+
+def _for_project(conn: sqlite3.Connection, actor_id: str, project_id: str) -> list[dict]:
+    info = _check_lead(conn, actor_id, project_id)
+    rows = conn.execute(
+        "SELECT p.*, u.display_name, d.display_name AS decided_by FROM placements p "
+        "JOIN users u ON u.id = p.volunteer_id LEFT JOIN users d ON d.id = p.lead_actor_id "
+        "WHERE p.project_id = ? ORDER BY CASE p.state WHEN 'eligible' THEN 0 "
+        "WHEN 'onboarding' THEN 1 WHEN 'team' THEN 2 WHEN 'suspended' THEN 3 ELSE 4 END, "
+        "p.preferred DESC, "
+        "json_array_length(p.matched_skills) DESC, json_array_length(p.optional_skills) DESC, "
+        "u.display_name, u.id",
+        (project_id,),
+    ).fetchall()
+    left = {
+        r["volunteer_id"]: services.onboarding.steps_left(
+            conn, r["volunteer_id"], info["org_id"], project_id
+        )
+        for r in rows
+        if r["state"] == "onboarding"
+    }
     return [
         _shape(r)
         | {
+            # Still onboarding: how many of the project's steps they have left (0: ready to
+            # be accepted). None for everyone else.
+            "steps_left": left.get(r["volunteer_id"]),
             "is_lead": r["volunteer_id"] == info["lead_id"],
             # Nobody decides on their own place (the lead's own is automatic).
             "can_decide": r["volunteer_id"] != actor_id or info["lead_id"] == actor_id,

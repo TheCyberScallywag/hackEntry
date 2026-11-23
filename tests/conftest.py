@@ -1,17 +1,24 @@
 """Shared fixtures: every test gets its own temporary SQLite database and real Relate store,
 seeded from data/fixtures/demo.json through the same code path as the demo."""
 
+import os
 import re
 from collections.abc import Iterator
 from pathlib import Path
 
+import logfire
 import pytest
 from fastapi.testclient import TestClient
+from pydantic_ai import models
 
+from app import observability
 from app.catalogue import stable_id
 from app.config import Settings
 from app.runtime import DEMO_PASSWORD, Runtime
 from app.web.main import create_app
+
+models.ALLOW_MODEL_REQUESTS = False  # no test may reach a real model
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
@@ -26,6 +33,15 @@ FOOD_BANK = stable_id("p", "food-bank-dashboard")
 WINTER = stable_id("p", "winter-outreach")
 AUDIT = stable_id("p", "outreach-data-audit")  # submitted, awaiting DataKind UK review
 PHISHING = stable_id("p", "phishing-workshop")  # rejected
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _observability() -> None:
+    """Logfire configured once for the run, sending nothing. The app's own `configure` then
+    does nothing, so a test's `capfire` fixture keeps hold of the spans."""
+    logfire.configure(send_to_logfire=False, console=False, inspect_arguments=False)
+    logfire.instrument_pydantic_ai()
+    observability.mark_configured()
 
 
 @pytest.fixture

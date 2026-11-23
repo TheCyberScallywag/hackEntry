@@ -125,7 +125,10 @@ commands, including the tasks, the pre-commit hooks, CI and the docs toolchain.
 | Config | pydantic-settings | 2.16 | Typed settings from env and `.env` |
 | Passwords | argon2-cffi | 25.1 | Argon2id hashing |
 | Graph engine | **Relate** (`relate-db`), a Neo4j Labs project | **1.0.1** | Embedded, single-file `.rl` graph; Cypher; PEP 249 driver. See [Relate in this application](relate.md). |
-| Transactional store | SQLite (stdlib) | bundled | WAL mode, `BEGIN IMMEDIATE`, schema version 2 |
+| Transactional store | SQLite (stdlib) | bundled | WAL mode, `BEGIN IMMEDIATE`, schema version 5 |
+| Assistants | Pydantic AI (`pydantic-ai-slim[anthropic]`), `pydantic-graph` | 2.71 | Six agents over the service layer; off until `AGENT_MODEL` is set. See [7.7](#77-assistants). |
+| Evaluation | `pydantic-evals` | 2.71 | Evaluators on every live run, and offline datasets (`app.cli evals`) |
+| Observability | Pydantic Logfire | 6.0 | Traces, metrics and evaluation results; sent only when `LOGFIRE_TOKEN` is set |
 | Optional graph | Neo4j Python driver → AuraDB | 6.4 | `aura-push` and `aura-parity` only |
 | Admin console | Streamlit + httpx + pandas | 1.67 / 0.28 / 3.1 | Staff UI, a client of the JSON API only |
 
@@ -248,7 +251,7 @@ flowchart LR
 | Notifications | ✔ | ✘ | ✘ |
 | Matching and coverage queries | ✘ | ✔ | parity check only |
 
-### 5.2 Relational model (SQLite, schema version 2)
+### 5.2 Relational model (SQLite, schema version 5)
 
 ```mermaid
 flowchart LR
@@ -605,13 +608,96 @@ describes, so a user is never told about something that didn't happen. Clients r
 `GET /notifications`, and the unread count is part of `GET /me`, shown as a badge on the web nav
 and the mobile menu.
 
+### 7.7 Assistants
+
+Six Pydantic AI agents (`src/app/agents/`) sit on the service layer. They are a fourth client of
+it, beside the pages, the API and the console, and they follow the same rules: the graph decides
+who matches, SQLite holds the truth, and every change goes through a service function that
+checks the caller's role. With no `AGENT_MODEL` they are switched off and nothing else changes.
+
+| Assistant | For | Reads | Can change (only after the user approves) |
+|---|---|---|---|
+| `volunteer-onboarding` | a volunteer, own profile | catalogue, own profile, organisations | profile; submit for vetting |
+| `project-scoping` | an active member of the organisation | catalogue, the organisation's active projects, own suggestions | a private draft |
+| `project-review` | the organisation's reviewers | the suggestion and its review history, active projects | nothing |
+| `match-shortlist` | the project's lead side | the project, its team, the graph's ranked candidates | an invitation |
+| `match-explainer` | a volunteer, own matches | own matches and exclusions | nothing |
+| `audit` | system admins | role holders, usage figures, checks, audit events | nothing |
+
+```mermaid
+sequenceDiagram
+  participant U as User (API)
+  participant R as runner
+  participant A as Agent
+  participant S as services / placements
+  U->>R: POST /agents/{assistant}
+  R->>S: authorise for this user and subject
+  R->>R: daily quota, insert agent_runs row
+  R->>A: run (usage limits, timeout)
+  A->>S: read tools, as the user
+  A->>S: write tool: validate arguments
+  A-->>R: ApprovalRequired
+  R-->>U: awaiting_approval + what would be done
+  U->>R: POST /agents/runs/{id}/approval
+  R->>A: resume with the answer
+  A->>S: the write, as the user
+  A-->>R: validated output
+  R-->>U: completed + output
+```
+
+The controls are in code, not in the prompt:
+
+- **Identity** comes from the session (`AgentDeps.actor_id`); no tool takes a user ID for "me".
+- **Authorisation** runs twice: once before the model is asked anything, and again inside every
+  tool, because each tool calls the same service function as the API.
+- **Approval**: a write tool validates its arguments, then raises `ApprovalRequired`. The run
+  stops with its conversation stored; only the person who started it can answer, once. The
+  conversation is deleted when the run ends, or after two days unanswered.
+- **Grounding**: output validators re-read the data and reject any skill, cause, person or
+  project the application did not return, and any change to an exclusion. A shortlist's
+  remaining gaps and the audit's overall verdict are computed.
+- **Limits**: requests, tool calls, tokens and wall-clock time per run; runs per account per day.
+- **The audit assistant is a `pydantic_graph` pipeline**: three steps of plain code gather the
+  role holders, the usage figures and the checks, and only the fourth asks the model.
+
+### 7.8 Audit trail
+
+`audit_log` records who did what and whether it was allowed (`src/app/audit.py`):
+
+- role grants and removals, in the transaction that makes them;
+- every request that changes something and every request that is refused, written by the web
+  app's middleware with the acting account, the route as declared and the outcome;
+- sign-ins, and assistant runs, approvals and refused tool calls.
+
+A row describes an action, never its content: no email address, password or form text. From the
+trail and the role tables the application derives **checks** it can prove: a suspended or
+declined account that still holds a role, an organisation with no admin, a single system admin,
+an account refused repeatedly, a burst of failed sign-ins, a self-granted role, an assistant that
+keeps failing. System admins read all of this in the console's Audit section or under
+`/admin/audit/*`; `python -m app.cli audit` prints the checks. `agent_runs` holds one row per
+assistant run: who, which assistant, tokens, tools called, how it ended, and its trace ID.
+
+### 7.9 Observability and evaluation
+
+`src/app/observability.py` configures Pydantic Logfire once per process. A request is one trace:
+the HTTP span, the assistant run, each model request and tool call, and the placement sweep.
+Counters cover audit events and assistant runs, with a histogram of tokens per run. Request
+headers, bodies and endpoint arguments are not recorded, and prompts and model output are left
+off the spans in production unless `LOGFIRE_INCLUDE_CONTENT` is set.
+
+Evaluation happens in two places. **Online**, two deterministic evaluators run in the background
+on every live run and report on the run's own trace: no contact details in an output, and a
+reason with every suggestion. **Offline**, `python -m app.cli evals` runs each assistant's
+dataset against a disposable copy of the demo with the configured model and exits 1 if an
+assertion fails, so it can gate a change of model or instructions.
+
 ---
 
 ## 8. API surface
 
 Interactive documentation: **`/api/docs`** (OpenAPI at `/api/openapi.json`). Errors are JSON:
 422 invalid, 403 forbidden, 404 not found or not visible, 409 conflict or stale version, 503
-graph busy.
+graph busy or assistants not configured, 429 assistant quota used, 502 assistant run failed.
 
 | Tag | Endpoints |
 |---|---|
@@ -621,6 +707,8 @@ graph busy.
 | **projects** | `GET/POST /submissions` · `POST /submissions/drafts` · `PUT /submissions/{sid}/draft` · `POST /submissions/{sid}/submit` · `GET/DELETE /submissions/{sid}` · `POST /submissions/{sid}/revisions` · `GET /orgs/{org}/submissions` · `POST /orgs/{org}/submissions/{sid}/decision` · `POST /orgs/{org}/projects/{sid}/withdraw` · `PUT /orgs/{org}/projects/{sid}/lead` |
 | **placements** | `GET /placements` · `POST /placements/{pid}/answer` · `POST /placements/{pid}/leave` · `GET /projects/{pid}/placements` · `POST /projects/{pid}/placements/{vid}/answer` · `POST /projects/{pid}/placements/{vid}/remove` |
 | **moderation** | `GET /moderation/volunteers` · `GET /moderation/volunteers/{uid}` · `POST /moderation/volunteers/{uid}/decision` |
+| **assistants** | `GET /agents` · `POST /agents/volunteer-onboarding` · `POST /agents/project-scoping` · `POST /agents/project-review` · `POST /agents/match-shortlist` · `POST /agents/match-explainer` · `POST /agents/audit` · `POST /agents/runs/{run}/approval` · `GET /agents/runs` · `GET /agents/runs/{run}` |
+| **audit** | `GET /admin/audit/events` · `GET /admin/audit/rbac` · `GET /admin/audit/usage` · `GET /admin/audit/checks` |
 | **admin** | `GET /admin/users` · `PUT/DELETE /admin/users/{uid}/system-roles/{role}` · `PUT/DELETE /admin/orgs/{org}/roles/{uid}/{role}` · `POST /admin/orgs` · `GET /admin/projection` · `POST /admin/projection/replay` · `GET /admin/graph` |
 
 All paths are prefixed with `/api/v1`.
@@ -696,7 +784,16 @@ and build explanations.
 - **`runtime.py`:** `build_runtime`, `bootstrap`, `seed_catalogue`, `seed_demo` (which forms the
   team through the real accept flow), `reset_demo`.
 - **`cli.py` commands:** `reset`, `bundle`, `inspect`, `matches`, `status`, `drain`,
-  `grant-reviewer`, `openapi`, `aura-push`, `aura-parity`.
+  `grant-reviewer`, `openapi`, `aura-push`, `aura-parity`, `evals`, `audit`.
+
+### `agents/`, `audit.py` and `observability.py`
+- **`agents/runner.py`:** `start`, `resume`, `my_runs`, `get_run`; the registry of assistants.
+- **`agents/deps.py`:** `AgentDeps`, `build_model`, the tool guard, the shared toolsets.
+- **`agents/onboarding.py`, `projects.py`, `match.py`, `audit.py`:** one agent each (two in
+  `projects.py` and `match.py`), with its tools, output type and output validator.
+- **`agents/evaluators.py`, `evals.py`:** the evaluators, the online capability, the datasets.
+- **`audit.py`:** `record`, `list_events`, `rbac_snapshot`, `usage_summary`, `checks`.
+- **`observability.py`:** `configure`, `instrument_app`, `span`, the counters.
 
 ---
 
@@ -726,12 +823,12 @@ flowchart LR
 | **Projection health** | `python -m app.cli status` / `drain`, or the console's *System* tab |
 | **AuraDB** | `python -m app.cli aura-push` then `aura-parity` (needs `AURA_*` credentials) |
 
-**Configuration** (env or `.env`): `DATA_DIR`, `ORG_NAMES`, `SESSION_TTL_HOURS`,
+**Configuration** (env or `.env`): `DATA_DIR`, `ORG_NAMES`, `SESSION_TTL_HOURS`, `SIGNUP_ENABLED`,
 `COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `API_URL`, `PROJECTOR_INTERVAL_SECONDS`,
-`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`. [Tooling](tooling.md) gives the
+`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`; for the assistants `AGENT_MODEL`, `AGENT_FALLBACK_MODEL`, `ANTHROPIC_API_KEY`, `AGENT_REQUEST_LIMIT`, `AGENT_TOOL_CALLS_LIMIT`, `AGENT_TOTAL_TOKENS_LIMIT`, `AGENT_TIMEOUT_SECONDS`, `AGENT_DAILY_RUNS`; and `LOGFIRE_TOKEN`, `LOGFIRE_INCLUDE_CONTENT`, `AUDIT_RETENTION_DAYS`. [Tooling](tooling.md) gives the
 default and meaning of each.
 
-**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (3), or the app stops with
+**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (5), or the app stops with
 a `SchemaOutdated` message pointing to the reset commands. The demo data is disposable, so there
 are no migrations.
 
@@ -781,4 +878,6 @@ Details are in [verification.md](verification.md).
 | AuraDB | Push and parity built, not verified | Run with credentials and record parity output |
 | Migrations | Reset on schema change | Add migrations before any real data |
 | Mobile | Browser build served by nginx | Capacitor native builds, offline cache |
-| Observability | Logs plus projection status | Metrics for outbox lag and Relate lock waits |
+| Observability | Logfire traces and counters; projection status | Metrics for outbox lag and Relate lock waits |
+| Assistants | JSON API, and the audit assistant in the console; verified with stand-in models only | Run the evals against a real model; add panels to the web pages and the mobile app |
+| Sign-in | Failed attempts are audited and a burst is a check | A lock-out or rate limit |

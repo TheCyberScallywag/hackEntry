@@ -47,7 +47,13 @@ MESSAGES = {
     "reopened": "Reopened. They are a candidate again if they still match the project.",
     "left_team": "You left the team.",
     "removed": "Volunteer removed.",
+    "accepted": "Accepted. They are on the team now.",
+    "suspended": "Suspended from the team. Reinstate them when you are ready.",
+    "reinstated": "Reinstated. They are back on the team.",
+    "lead_set": "Project lead assigned.",
+    "flow_saved": "Team onboarding saved.",
     "read": "Notifications marked as read.",
+    "step_done": "Step completed.",
 }
 
 
@@ -106,6 +112,14 @@ def require_session(request: Request) -> auth.Session:
 
 
 RT = Annotated[Runtime, Depends(get_rt)]
+
+
+def require_signup(request: Request) -> None:
+    """Guard for the sign-up routes, web and API: 403 while SIGNUP_ENABLED is off."""
+    if not get_rt(request).settings.signup_enabled:
+        raise services.Forbidden("Creating new accounts is switched off.")
+
+
 MaybeUser = Annotated[auth.Session | None, Depends(optional_session)]
 User = Annotated[auth.Session, Depends(require_session)]
 
@@ -166,6 +180,7 @@ class Nav:
     orgs: list[dict]  # organisations the user volunteers with or reviews for
     pending: int  # the user's own profile changes not yet in the graph
     unread: int
+    onboarding: int  # organisations whose onboarding steps the user has not finished
 
     @property
     def volunteering(self) -> list[dict]:
@@ -189,6 +204,7 @@ def nav_for(request: Request, session: auth.Session) -> Nav:
                     (session.user_id,),
                 ).fetchone()[0],
                 unread=notify.count_unread(conn, session.user_id),
+                onboarding=services.onboarding.open_count(conn, session.user_id),
             )
         request.state.nav = cached
     return cached
@@ -259,10 +275,12 @@ def render(
             "pending_mine": nav.pending if nav else None,
             "actor": nav.actor if nav else None,
             "unread": nav.unread if nav else None,
+            "onboarding_open": nav.onboarding if nav else 0,
             "status_labels": services.VOLUNTEER_STATUS_LABELS,
             "csrf": session.csrf_token if session else _anon_csrf(request),
             "message": MESSAGES.get(request.query_params.get("msg", "")),
             "meta": get_meta(),
+            "signup_enabled": get_rt(request).settings.signup_enabled,
             "path": request.url.path,
             **ctx,
         },

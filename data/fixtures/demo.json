@@ -308,5 +308,31 @@
       "project": "winter-outreach",
       "volunteer": "bryn"
     }
+  ],
+  "onboarding": [
+    {
+      "org": "interlinkrct",
+      "volunteer": "bryn",
+      "completed": 1
+    }
+  ],
+  "project_onboarding": [
+    {
+      "project": "food-bank-dashboard",
+      "enabled": false,
+      "steps": [
+        {
+          "title": "Read the project brief",
+          "description": "Read what the food bank needs from the dashboard and the data you will be working with.",
+          "completed_by": "volunteer",
+          "template": "Next step"
+        },
+        {
+          "title": "Intro call with the project lead",
+          "description": "A short call to agree what you will take on. The lead will get in touch to arrange it.",
+          "completed_by": "lead"
+        }
+      ]
+    }
   ]
 }

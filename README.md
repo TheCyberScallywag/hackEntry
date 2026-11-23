@@ -30,6 +30,7 @@ saying yes.
 | Mobile companion (matches, opportunities, notifications, profile, suggestion status) | Ionic + Angular, JSON API only | http://localhost:8100 (Compose) |
 | Admin console (screening, org management, users and roles, projection, graph) | Streamlit, JSON API only | http://localhost:8501 |
 | Docs portal and reference manual | Zensical (portal) + Sphinx/Furo (manual at `/manual/`) | http://localhost:8200 |
+| Mail sidecar (onboarding emails; catches everything, delivers nothing) | Mailpit, SMTP on `mail:1025` | http://localhost:8025 (Compose) |
 | Matching graph | Relate 1.0.1, embedded single-file `.rl` store | `data/demo.rl` (bundled, read-only) |
 | Transactional store | SQLite (WAL) | `var/dvn.sqlite3` (runtime, ignored) |
 
@@ -40,6 +41,8 @@ saying yes.
 - [Demo accounts and walkthrough](#demo-accounts)
 - [Roles and onboarding](#roles-and-onboarding)
 - [The API](#the-api)
+- [Assistants (Pydantic AI)](#assistants-pydantic-ai)
+- [Audit, Logfire and evals](#audit-logfire-and-evals)
 - [Inspect the bundled graph](#inspect-the-bundled-graph)
 - [How are you using Relate, and why?](#how-are-you-using-relate-and-why)
 - [Matching rules](#matching-rules)
@@ -88,13 +91,13 @@ uv run task docs_serve           # http://localhost:8200 (task docs_live: live r
 ```sh
 docker compose up -d --build --wait     # or: uv run task up
 # web http://localhost:8080 · mobile http://localhost:8100 · admin http://localhost:8501
-# docs http://localhost:8200
+# docs http://localhost:8200 · mail inbox http://localhost:8025
 docker compose exec web python -m app.cli inspect
 docker compose down -v                  # removes the demo volume
 ```
 
 If those ports are already in use, run
-`WEB_PORT=18080 ADMIN_PORT=18501 MOBILE_PORT=18100 DOCS_PORT=18200 docker compose up -d --build --wait`.
+`WEB_PORT=18080 ADMIN_PORT=18501 MOBILE_PORT=18100 DOCS_PORT=18200 MAIL_PORT=18025 docker compose up -d --build --wait`.
 The web container copies the bundled `data/demo.rl` into the `dvn-data` volume on its first start
 and seeds the demo accounts. The admin container shares that volume. The mobile image runs the
 Ionic lint and unit tests while it builds. Its nginx then proxies `/api/` to the web app.
@@ -128,8 +131,8 @@ never when `APP_ENV=production`.
 | `kofi@cyberscallywags.uk` | **Org admin**, Cyber Scallywags | DataKind UK | admin in one organisation and volunteer in another |
 | `nia@cyberscallywags.uk` | volunteer, **in screening** | Cyber Scallywags | not matchable until vetted; her first aid fills a gap once Mo approves her |
 | `asha@cyberscallywags.uk` | volunteer; lead of Winter Outreach Kitchen | DataKind UK, Cyber Scallywags | one profile across two organisations; author of the pending suggestion |
-| `bryn@cyberscallywags.uk` | volunteer | Cyber Scallywags | already on the Winter Outreach team; author of a rejected suggestion |
-| `cerys@cyberscallywags.uk` | volunteer; lead of Food Bank Demand Dashboard | DataKind UK | no cause preference, so matched on skills alone |
+| `bryn@cyberscallywags.uk` | volunteer | Cyber Scallywags, InterLinkRCT | already on the Winter Outreach team; author of a rejected suggestion; part-way through InterLinkRCT's own onboarding workflow (one step done, waiting for the welcome call to be confirmed) |
+| `cerys@cyberscallywags.uk` | volunteer; lead of Food Bank Demand Dashboard | DataKind UK | no cause preference, so matched on skills alone; her project has a two-step team onboarding ready to switch on |
 | `gwen@cyberscallywags.uk` | volunteer | Cyber Scallywags | a hard exclusion: offers cooking and driving but excludes *active listening* |
 | `dev@cyberscallywags.uk`, `farah@cyberscallywags.uk` | volunteers | DataKind UK | preferred-cause ranking; Farah's first aid is outside Cyber Scallywags |
 
@@ -171,9 +174,9 @@ Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/
 |---|---|---|
 | System `admin` | everything | everything below, in every organisation; grant and revoke all roles; create organisations; projection replay; graph overview; see emails |
 | System `moderator` | all volunteers | the screening queue: approve, request more information, decline, suspend, reinstate (never their own account) |
-| `org_admin` | one organisation | review its project suggestions; withdraw projects and reassign project leads; list and remove its volunteers; accept or decline candidates for any of its projects |
+| `org_admin` | one organisation | review its project suggestions; withdraw projects and assign project leads; list and remove its volunteers; everything a project lead can do, for any of its projects; edit its onboarding workflow (steps and email templates) and confirm volunteers' steps |
 | `reviewer` | one organisation | review its project suggestions |
-| Project lead | one project (the author by default) | accept or decline candidates; remove team members |
+| Project lead | one project (the author by default; org admins assign it) | invite or pass over candidates; run the project's own team onboarding and confirm its steps; accept volunteers onto the team; suspend, reinstate or remove team members |
 | Volunteer | themselves | profile, joining organisations, submitting for vetting, answering offers, leaving teams, suggesting projects once active (as a private draft first, if they wish) |
 
 Roles come only from the seed, a system admin (API or console) or `python -m app.cli
@@ -191,7 +194,8 @@ match which active projects (the same matching query as everywhere else). Each n
 candidate, shown to the project lead in ranked order: preferred cause, then required skills
 covered, then optional skills. The volunteer is not told yet. The lead (or an org admin, whose
 answer counts the same) invites the candidates they want, and each invited volunteer is notified.
-When the volunteer says yes they are on the team, and Relate records an `ON_TEAM` edge. A no from
+When the volunteer says yes they are on the team, and Relate records an `ON_TEAM` edge (or, if
+the project has its own team onboarding switched on, they start its steps first: see below). A no from
 either side declines the pair, and the lead side can reopen it later. A candidate who stops
 matching lapses, and comes back if they match again.
 
@@ -203,6 +207,86 @@ the lead's powers and the org admins are told. An invitation left unanswered get
 returning the volunteer to the candidate list. Every change is kept in `placement_events` with who
 made it. The coverage page counts a required skill as covered only once someone who offers it is
 on the team.
+
+**Each organisation's own onboarding.** Vetting is done once, for the whole network. On top of
+it, every organisation has its own workflow for the volunteers who join it: ordered steps, each
+ticked off either by the volunteer or by one of the organisation's admins, and each optionally
+announced by an email. Org admins edit all of it in the admin console's *Onboarding* section:
+the steps and their order, the email templates, and the switch that turns the workflow on. The
+same section shows where each volunteer is and which emails went out. A new organisation starts
+with a two-step starter workflow, switched off.
+
+- Switching a workflow on applies to volunteers who join from then on. Current members are not
+  enrolled. Leaving, or being removed, cancels an unfinished run; joining again starts a new one.
+- A volunteer sees their steps on the web app's *Onboarding* page (and at `GET /me/onboarding`)
+  and is notified in-app at each one. Steps are taken in order.
+- A template is plain text with placeholders from a fixed list (`{{ volunteer_name }}`,
+  `{{ organisation_name }}`, `{{ project_title }}`, `{{ step_title }}`, `{{ step_description }}`,
+  `{{ steps_done }}`,
+  `{{ steps_total }}`, `{{ onboarding_url }}`). Anything else in curly brackets is refused when
+  the template is saved, so a template cannot reach other data. *Preview* fills it with sample
+  values and *Send a test to me* queues it to the admin's own address.
+- Emails are written to an outbox in SQLite in the same transaction as the step they announce,
+  and the web app sends them over SMTP (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
+  `SMTP_PASSWORD`, `SMTP_STARTTLS`, `EMAIL_FROM`, `PUBLIC_URL`), retrying a failure five times
+  with a growing delay. In the Compose stack the SMTP server is the `mail` sidecar
+  ([Mailpit](https://mailpit.axllent.org/)), which catches every message and delivers none: read
+  them at http://localhost:8025. Any SMTP relay can take its place. With no `SMTP_HOST`
+  (`uv run task web`) nothing is sent and the console shows the messages as not sent.
+- Org admins see recipients by name. Addresses are read only when a message is sent.
+- The workflow is held in Relate as well as SQLite: each step is an `(:OnboardingStep)` node
+  owned by its organisation and chained with `NEXT_STEP`, `onboarding_enabled` on the
+  organisation says whether it is switched on, and a volunteer's place is an `AT_STEP` edge plus
+  one `COMPLETED_STEP` edge per finished step. It is projected through the same outbox as
+  everything else, with the request that made the change. Email templates and addresses stay in
+  SQLite.
+- The onboarding assistant follows the workflow from the graph. It tells a volunteer what an
+  organisation asks of new joiners, which step they have reached and who completes it, and it
+  can tick off a step that is theirs, after approval. It cannot skip ahead or confirm a step
+  that belongs to the organisation: the tool checks the graph and the service checks again.
+- In the demo, InterLinkRCT's workflow is switched on and Bryn is part-way through it; the
+  other two organisations' are switched off.
+- The workflow does not decide who is matched: the matching query is unchanged.
+
+**Each project's own team onboarding.** A project can have the same kind of workflow for the
+volunteers joining its team: ordered steps, each ticked off by the volunteer or confirmed by
+the lead side, each optionally announced by an email. With it switched on, an invited volunteer
+who says yes starts the steps instead of joining at once. When the steps are done the lead side
+*accepts* them onto the team, and only then does Relate record `ON_TEAM`. With it switched off
+(every project starts that way) saying yes still joins the team directly.
+
+The lead side is the project's lead and the organisation's admins, and nobody else. Org admins
+assign the lead: on the project's page (*Assign the project lead*), in the admin console's
+*Organisations* section, or with `PUT /orgs/{org}/projects/{id}/lead`. The lead side can:
+
+- edit the project's steps and switch them on, on the project's page (*Team onboarding*); org
+  admins can also do it in the admin console (*Onboarding* → *Volunteers joining a project's
+  team*);
+- confirm a volunteer's step, and **accept** them once no step is left;
+- **suspend** a team member, with a reason the volunteer is shown: they are off the team, and
+  out of `ON_TEAM`, until **reinstated**;
+- **remove** someone who is on the team, still onboarding or suspended.
+
+The organisation's rules hold throughout:
+
+- A project's workflow uses the organisation's email templates. Only org admins write them, and
+  another organisation's template is refused.
+- The organisation's own onboarding comes first. A volunteer who is still part-way through it
+  cannot say yes to an invitation (the invitation stays open), and cannot be accepted or
+  reinstated.
+- Only an active volunteer of the organisation is accepted or reinstated. Leaving the
+  organisation, being removed from it or being suspended from the network ends a place on a
+  team in any of these states, and the project's onboarding with it.
+- A lead who loses their standing loses these powers, a lead cannot hand the project on, and
+  nobody accepts or suspends themselves. The lead is not suspended from their own team: an org
+  admin assigns a new lead first.
+- A project's steps are held in Relate like the organisation's:
+  `(:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)`, `onboarding_enabled` on the project, and the
+  same `NEXT_STEP`, `AT_STEP` and `COMPLETED_STEP` edges. The onboarding assistant reads them
+  there and treats them the same way: it can tick off the volunteer's own current step after
+  approval, and it has no tool to accept anyone onto a team.
+- In the demo, Food Bank Demand Dashboard has two steps ready, switched off. Sign in as Cerys,
+  switch them on under *Team onboarding*, invite Dev, and follow it through as Dev.
 
 **Project onboarding:** *In review* → (*Scoping: more detail requested* → revised) →
 *Approved (activating…)* → *Active* (visible and matching once projected to Relate), with
@@ -227,9 +311,12 @@ in-process, so roles, states and version checks are enforced in one place
 | me | `GET /me`, `PUT /me/active-org`, `GET/PUT /profile`, `POST /me/vetting`, `GET /notifications`, `POST /notifications/{id}/read`, `POST /notifications/read-all` |
 | organisations | `GET /orgs`, `PUT/DELETE /orgs/{org}/membership`, `GET /orgs/{org}/matches`, `GET /orgs/{org}/projects`, `GET /orgs/{org}/coverage`, `GET /orgs/{org}/volunteers`, `POST /orgs/{org}/volunteers/{user}/remove` |
 | projects | `GET/POST /submissions`, `POST /submissions/drafts`, `PUT /submissions/{id}/draft`, `POST /submissions/{id}/submit`, `GET/DELETE /submissions/{id}`, `POST /submissions/{id}/revisions`, `GET /orgs/{org}/submissions`, `POST /orgs/{org}/submissions/{id}/decision`, `POST /orgs/{org}/projects/{id}/withdraw`, `PUT /orgs/{org}/projects/{id}/lead` |
-| placements | `GET /placements`, `POST /placements/{project}/answer`, `POST /placements/{project}/leave`, `GET /projects/{project}/placements`, `POST /projects/{project}/placements/{volunteer}/answer`, `POST /projects/{project}/placements/{volunteer}/remove` |
+| placements | `GET /placements`, `POST /placements/{project}/answer`, `POST /placements/{project}/leave`, `GET /projects/{project}/placements`, `POST /projects/{project}/placements/{volunteer}/answer`, `POST /projects/{project}/placements/{volunteer}/accept`, `POST /projects/{project}/placements/{volunteer}/suspend`, `POST /projects/{project}/placements/{volunteer}/reinstate`, `POST /projects/{project}/placements/{volunteer}/remove` |
 | moderation | `GET /moderation/volunteers?status=`, `GET /moderation/volunteers/{user}`, `POST /moderation/volunteers/{user}/decision` |
 | admin | `GET /admin/users`, `PUT/DELETE /admin/users/{user}/system-roles/{role}`, `PUT/DELETE /admin/orgs/{org}/roles/{user}/{role}`, `POST /admin/orgs`, `GET /admin/projection`, `POST /admin/projection/replay`, `GET /admin/graph` |
+| onboarding | `GET /me/onboarding`, `POST /orgs/{org}/onboarding/steps/{step}/complete`, `GET/PUT /orgs/{org}/onboarding`, `POST /orgs/{org}/onboarding/steps`, `PUT/DELETE /orgs/{org}/onboarding/steps/{step}`, `POST /orgs/{org}/onboarding/steps/{step}/move`, `POST /orgs/{org}/onboarding/templates`, `PUT/DELETE /orgs/{org}/onboarding/templates/{template}`, `POST /orgs/{org}/onboarding/templates/preview`, `POST /orgs/{org}/onboarding/templates/{template}/test`, `GET /orgs/{org}/onboarding/volunteers`, `POST /orgs/{org}/onboarding/volunteers/{user}/steps/{step}/complete`, `GET /orgs/{org}/onboarding/emails`; and for a project's team onboarding, under `/orgs/{org}/projects/{project}/onboarding`: `GET/PUT` on it, `POST /steps`, `PUT/DELETE /steps/{step}`, `POST /steps/{step}/move`, `POST /steps/{step}/complete`, `GET /volunteers`, `POST /volunteers/{user}/steps/{step}/complete` |
+| assistants | `GET /agents`, `POST /agents/volunteer-onboarding`, `POST /agents/project-scoping`, `POST /agents/project-review`, `POST /agents/match-shortlist`, `POST /agents/match-explainer`, `POST /agents/audit`, `POST /agents/runs/{run}/approval`, `GET /agents/runs`, `GET /agents/runs/{run}` |
+| audit | `GET /admin/audit/events`, `GET /admin/audit/rbac`, `GET /admin/audit/usage`, `GET /admin/audit/checks` |
 
 ```sh
 TOKEN=$(curl -s -X POST localhost:8080/api/v1/session -H 'content-type: application/json' \
@@ -238,7 +325,86 @@ curl -s localhost:8080/api/v1/moderation/volunteers -H "Authorization: Bearer $T
 ```
 
 Errors are JSON: 401 signed out, 403 role missing, 404 unknown or not visible to you, 409 stale
-`version` or wrong state, 422 invalid input.
+`version` or wrong state, 422 invalid input. The assistants add 429 (daily quota used), 502 (the
+model failed or a limit stopped the run) and 503 (no model configured).
+
+## Assistants (Pydantic AI)
+
+Six [Pydantic AI](https://ai.pydantic.dev/) agents sit on top of the same services as the pages
+and the API (`src/app/agents/`). They are **off until `AGENT_MODEL` is set** (for example
+`AGENT_MODEL=anthropic:claude-sonnet-5-5` with `ANTHROPIC_API_KEY`); without it their endpoints
+answer 503 and nothing else changes. The Relate graph still decides every match: the assistants
+explain and advise, and never decide who is eligible.
+
+| Assistant | Who can run it | What it does | Can it change anything? |
+|---|---|---|---|
+| `volunteer-onboarding` | any signed-in volunteer, own profile only | maps "what I can do" to catalogue skills and causes, with a reason for each | saves the profile; submits for vetting; ticks off the volunteer's current step in an organisation's onboarding workflow, or in a project's team onboarding, both of which it reads from the Relate graph. Each waits for approval. It cannot accept anyone onto a team |
+| `project-scoping` | active volunteers, for an organisation they belong to | drafts title, summary, cause and skills; flags overlap with active projects | saves a private draft, after approval. Never submits for review |
+| `project-review` | the organisation's reviewers and admins, on a suggestion awaiting review | checks clarity, fit, skills and overlap; recommends a decision with a reason for the author | no. The reviewer decides |
+| `match-shortlist` | the project's lead, or an admin of its organisation | recommends which of the graph's candidates to invite to cover the uncovered skills; names any gap left | sends an invitation, after approval |
+| `match-explainer` | a volunteer, for an organisation they volunteer with | explains why each project matches and what their own exclusions rule out | no |
+| `audit` | system admins | explains the automatic access and usage checks in order of severity | no |
+
+What holds for all of them, in code rather than in a prompt:
+
+- **Who is acting comes from the session.** No tool takes a user ID for "me", so a prompt cannot
+  point an assistant at someone else's data.
+- **Every tool calls the same service function as the API**, with the caller's ID, so each role
+  check runs again inside the tool. A run is also authorised before a model is asked anything.
+- **Writes wait for approval.** A tool that changes something validates its arguments, then
+  stops the run (`ApprovalRequired`). The API answers `awaiting_approval` with exactly what
+  would be done; `POST /agents/runs/{run}/approval` continues or refuses it. Only whoever
+  started a run can answer it, once.
+- **Outputs are checked against the data** by output validators: every skill, cause, person and
+  project must be one the application returned; an exclusion cannot be changed; a shortlist's
+  remaining gaps and the audit's overall verdict are computed, not taken from the model.
+- **Runs are limited**: requests, tool calls, tokens and wall-clock time per run, and runs per
+  account per day (`AGENT_*` in `.env.example`).
+- **The audit assistant is a pipeline** (`pydantic_graph`): three plain-code steps gather the
+  roles, the usage figures and the checks; only the last step asks the model.
+
+```sh
+TOKEN=...   # asha@cyberscallywags.uk, as above
+curl -s -X POST localhost:8080/api/v1/agents/volunteer-onboarding \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"message":"I do bookkeeping for a small charity and would like to help with fundraising."}'
+# -> {"status":"awaiting_approval","pending":[{"tool":"save_profile","summary":"Save to your profile: ..."}]}
+curl -s -X POST localhost:8080/api/v1/agents/runs/$RUN/approval \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{"approve":true}'
+```
+
+The assistants are available over the JSON API and, for the audit assistant, in the admin
+console. The server-rendered pages and the mobile app do not call them yet.
+
+## Audit, Logfire and evals
+
+**Audit trail** (`src/app/audit.py`, table `audit_log`). Role grants and removals are written in
+the transaction that makes them. Every request that changes something, and every request that is
+refused, is recorded with the acting account, the route as declared (never the IDs or anything
+typed) and the outcome. Sign-ins and assistant runs, approvals and refused tool calls are
+recorded too. System admins read it in the console's **Audit** section or under `/admin/audit/*`:
+the trail, who holds which role, usage by action and by assistant (runs, failures, tokens), and
+the **checks**: a suspended account that still holds a role, an organisation with no admin, a
+single system admin, repeated refusals, bursts of failed sign-ins, self-granted roles.
+`uv run python -m app.cli audit` prints the checks and exits 1 if any is high.
+
+**Logfire** (`src/app/observability.py`). Set `LOGFIRE_TOKEN` and each request is one trace:
+the HTTP span, the assistant run, each model request and tool call with token counts, and the
+placement sweep. Counters cover audit events and assistant runs. Each run's row keeps its trace
+ID. With no token everything still runs and is sent nowhere. Request headers, bodies and
+endpoint arguments are not recorded, and prompts and model output are left off the spans when
+`APP_ENV=production` unless `LOGFIRE_INCLUDE_CONTENT=true`.
+
+**Evals** (`src/app/agents/evaluators.py`, `evals.py`).
+
+- *Online*: two deterministic evaluators run in the background on every live run and send their
+  result to Logfire on the run's own trace: `NoContactDetails` (no email or phone number in an
+  output) and `ReasonsGiven` (every suggestion says why).
+- *Offline*: `uv run python -m app.cli evals [--agent NAME] [--judge]` runs each assistant's
+  dataset against a disposable copy of the demo with the configured model, scores it
+  (expected skills, recommendation, approval behaviour, request and tool-call limits; `--judge`
+  adds an LLM judge for tone), and exits 1 if an assertion fails. With `LOGFIRE_TOKEN` set each
+  dataset is an experiment in Logfire.
 
 ## Inspect the bundled graph
 
@@ -273,9 +439,9 @@ relate --database data/demo.rl --read-only --mode table \
   "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS nodes ORDER BY label"
 ```
 
-The bundled store has 35 nodes (5 causes, 15 skills, 2 organisations, 2 projects, 11 volunteer
-IDs, of which Sam and Mo have no edges and Nia, still in screening, has no membership edge) and 67
-relationships, including one `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
+The bundled store has 46 nodes (5 causes, 15 skills, 3 organisations, 4 projects, 8 onboarding
+steps and 11 volunteer IDs, of which Sam and Mo have no edges and Nia, still in screening, has no
+membership edge) and 96 relationships, including five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
 prints the ranked candidates for one organisation: Dev, Asha, Cerys, then Kofi.
 
 The app's writable store is `var/graph.rl` (or `/data/graph.rl` in Compose). The app opens the
@@ -303,9 +469,12 @@ match by following relationships:
 (:Organisation)-[:OWNS_PROJECT]->(:Project)-[:SERVES_CAUSE]->(:Cause)
 (:Project)-[:REQUIRES_SKILL]->(:Skill)        (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)
 (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation)          only while opted in AND vetted (active)
-(:Volunteer)-[:ON_TEAM]->(:Project)                       invited by the lead side and said yes
+(:Volunteer)-[:ON_TEAM]->(:Project)                       on the team: accepted, and not suspended
 (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
 (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
+(:Organisation)-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
+(:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
+(:Volunteer)-[:AT_STEP|COMPLETED_STEP]->(:OnboardingStep)  their place in a workflow
 ```
 
 The same query returns the explanation fields: matched required skills, matched optional skills,
@@ -470,6 +639,11 @@ version, configuration file and commands. In short:
   `no-store` on dynamic pages.
 - `APP_ENV=production` disables demo seeding and refuses to start on a database that holds demo
   (`@cyberscallywags.uk`) accounts.
+- The assistants act only as the signed-in user, through the same service functions, and every
+  change they propose waits for that user's approval (see
+  [Assistants](#assistants-pydantic-ai)). Their tools return display names, never contact
+  details. What a volunteer types to an assistant is sent to the configured model provider.
+- The audit trail records actions, not content: no email address, password or form text.
 
 ## Optional AuraDB
 
@@ -525,6 +699,15 @@ The suite covers:
 - the graph schema against the bundled store, the AuraDB push and parity check against a
   stand-in driver, and the placement sweep beyond the row bound
 - the admin console for each role, and the operator CLI
+- each assistant with scripted stand-in models (no test reaches a real model): what it may read,
+  what waits for approval, what each output validator sends back, refusal before any model is
+  asked, run limits, the daily quota, and that only whoever started a run can answer it
+- the audit trail: role changes, changed and refused requests, sign-ins, the checks, retention,
+  and that no email reaches it
+- Logfire, captured in memory: one trace from request to tool call, the online evaluators'
+  results, the counters, and that request arguments stay off the spans
+- the evaluators and the offline suites: a well-behaved stand-in passes each suite, a
+  misbehaving one is caught by name, and the suites change nothing in the demo
 
 Latest results are in [docs/content/project/verification.md](docs/content/project/verification.md).
 

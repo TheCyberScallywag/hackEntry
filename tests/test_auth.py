@@ -3,6 +3,7 @@
 from fastapi.testclient import TestClient
 
 from app import auth
+from app.config import Settings
 from app.web.main import create_app
 from tests.conftest import Web
 
@@ -25,6 +26,40 @@ def test_signup_normalises_and_uniquely_constrains_email(web: Web):
     web.client.cookies.clear()
     r = _signup(web, email="FFION@cyberscallywags.uk")
     assert r.status_code == 400 and "already exists" in r.text
+
+
+def test_signup_can_be_switched_off(settings: Settings):
+    off = settings.model_copy(update={"signup_enabled": False})
+    with TestClient(create_app(off, background=False)) as client:
+        web = Web(client)
+        assert "/signup" not in client.get("/").text
+        assert "/signup" not in client.get("/signin").text
+        assert client.get("/signup").status_code == 403
+        r = _signup_post(web)
+        assert r.status_code == 403 and "switched off" in r.text
+        r = client.post(
+            "/api/v1/auth/signup",
+            json={
+                "display_name": "Ffion",
+                "email": "ffion@cyberscallywags.uk",
+                "password": "long-enough-pw",
+            },
+        )
+        assert r.status_code == 403 and "switched off" in r.json()["detail"]
+        with web.rt.db.read() as conn:
+            assert not conn.execute(
+                "SELECT 1 FROM users WHERE email = 'ffion@cyberscallywags.uk'"
+            ).fetchone()
+        web.sign_in("asha")  # existing accounts are unaffected
+
+
+def _signup_post(web: Web):
+    data = {
+        "display_name": "Ffion",
+        "email": "ffion@cyberscallywags.uk",
+        "password": "long-enough-pw",
+    }
+    return web.post("/signup", data, csrf_from="/signin")
 
 
 def test_signup_never_grants_a_role_or_membership(web: Web):

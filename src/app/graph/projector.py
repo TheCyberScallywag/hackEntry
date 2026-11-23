@@ -1,6 +1,8 @@
 """Outbox projector: makes Relate catch up with SQLite.
 
-Each outbox item names an entity (a volunteer, a project, an organisation or the catalogue).
+Each outbox item names an entity (a volunteer, a project, an organisation, an organisation's
+onboarding workflow or the catalogue). A project's own onboarding workflow is part of the
+project: it is reconciled whenever the project is.
 The projector reads that entity's *current* state from SQLite and reconciles the graph to it
 with idempotent upserts and removal of stale edges, all inside one Relate transaction. Only
 then is the item marked done. A failure leaves the item pending with its error and a backoff,
@@ -48,6 +50,8 @@ class Changed:
             self.volunteers.add(entity_id)
         elif kind == "project":
             self.projects.add(entity_id)
+        elif kind == "onboarding":
+            pass  # an organisation's own workflow decides no match
         else:
             self.everything = True
 
@@ -67,7 +71,9 @@ class Projector:
         # Called after a drain that projected something, with what changed (app.runtime wires
         # the placement sweep). `None` means "anything may have changed".
         self.on_projected: Callable[[Changed | None], object] | None = None
-        self._hook_due = False
+        # True until the hook has run once in this process: a sweep that failed before a restart
+        # was only remembered in memory, so the first drain always looks at everything.
+        self._hook_due = True
 
     # ------------------------------------------------------------------ public
     def drain(self, *, limit: int = 500, ignore_backoff: bool = False) -> DrainResult:
@@ -89,7 +95,13 @@ class Projector:
             for row in rows:
                 groups.setdefault((row["kind"], row["entity_id"]), []).append(row["id"])
             # Catalogue and organisations first so volunteer/project edges have targets.
-            order = {"catalogue": 0, "organisation": 1, "volunteer": 2, "project": 3}
+            order = {
+                "catalogue": 0,
+                "organisation": 1,
+                "volunteer": 2,
+                "project": 3,
+                "onboarding": 4,
+            }
             changed = Changed()
             for (kind, entity_id), ids in sorted(
                 groups.items(), key=lambda g: (order[g[0][0]], min(g[1]))
@@ -108,11 +120,13 @@ class Projector:
                 # A replay, a retry after a failed hook, or a catalogue or organisation change
                 # can affect any pair, so those look at everything.
                 everything = ignore_backoff or self._hook_due or changed.everything
+                # Due again until it has finished: the items are already marked done, so nothing
+                # else would bring a failed sweep back, whatever it failed with.
+                self._hook_due = True
                 try:
                     self.on_projected(None if everything else changed)
                     self._hook_due = False
                 except (GraphError, sqlite3.Error) as error:
-                    self._hook_due = True  # retried on the next drain, even if nothing is queued
                     log.warning("post-projection hook failed: %s", error)
             if result.done:
                 with self.db.tx() as conn:
@@ -174,6 +188,8 @@ class Projector:
                 self._project_volunteer(entity_id)
             case "project":
                 self._project_project(entity_id)
+            case "onboarding":
+                self._project_onboarding(entity_id)
             case _:
                 raise ValueError(f"unknown outbox kind {kind!r}")
 
@@ -263,8 +279,10 @@ class Projector:
                         (submission_id,),
                     )
                 ]
+                flow = self._workflow(conn, sub["org_id"], submission_id)
         if not live:
             with self.graph.write() as tx:
+                tx.run(cypher.PROJECT_STEPS_REMOVE, {"id": submission_id})
                 tx.run(cypher.PROJECT_REMOVE, {"id": submission_id})
             return
         targets = {
@@ -276,6 +294,14 @@ class Projector:
             self._upsert_project(tx, sub, rev, targets)
             tx.run(cypher.PROJECT_TEAM_PRUNE, {"id": submission_id, "targets": team})
             tx.run(cypher.PROJECT_TEAM_MERGE, {"id": submission_id, "targets": team})
+            # The project's own onboarding: its switch, its steps and who is where in them.
+            key = {"id": submission_id}
+            tx.run(cypher.PROJECT_ONBOARDING, key | {"enabled": flow["enabled"]})
+            tx.run(cypher.PROJECT_STEPS_PRUNE, key | {"ids": flow["ids"]})
+            tx.run(cypher.PROJECT_STEPS_UPSERT, key | {"rows": flow["steps"]})
+            for statement in cypher.PROJECT_STEP_EDGES_CLEAR.values():
+                tx.run(statement, key)
+            self._merge_workflow_edges(tx, flow)
         if sub["state"] == "approved":
             stamp = now()
             with self.db.tx() as conn:
@@ -292,6 +318,68 @@ class Projector:
                     notify(conn, author, "project",
                            f"“{rev['title']}” is now active: visible and matching volunteers.",
                            f"/o/{sub['org_id']}/projects/{submission_id}")  # fmt: skip
+
+    @staticmethod
+    def _workflow(conn: sqlite3.Connection, org_id: str, project_id: str = "") -> dict:
+        """One workflow as the graph holds it: the organisation's own, or one project's. Its
+        switch, its steps in order, and the step each volunteer has reached or completed.
+        Email templates stay in SQLite."""
+        scope = (org_id, project_id)
+        flow = conn.execute(
+            "SELECT enabled FROM onboarding_workflows WHERE org_id = ? AND project_id = ?", scope
+        ).fetchone()
+        steps = [
+            dict(r) | {"sends_email": r["sends_email"] == 1}
+            for r in conn.execute(
+                "SELECT id, title, description, position, completed_by, "
+                "email_template_id IS NOT NULL AS sends_email FROM onboarding_steps "
+                "WHERE org_id = ? AND project_id = ? ORDER BY position, id",
+                scope,
+            )
+        ]
+        progress = conn.execute(
+            "SELECT p.user_id, p.step_id, p.state FROM onboarding_progress p "
+            "JOIN onboarding_steps s ON s.id = p.step_id "
+            "JOIN onboarding_runs r ON r.user_id = p.user_id AND r.org_id = s.org_id "
+            "  AND r.project_id = s.project_id "
+            "WHERE s.org_id = ? AND s.project_id = ? AND r.state != 'cancelled' "
+            "AND (p.state = 'done' OR r.state = 'in_progress') ORDER BY p.user_id, p.step_id",
+            scope,
+        ).fetchall()
+        return {
+            "enabled": bool(flow and flow["enabled"]),
+            "steps": steps,
+            "ids": [s["id"] for s in steps],
+            "edges": {
+                "AT_STEP": [r for r in progress if r["state"] == "open"],
+                "COMPLETED_STEP": [r for r in progress if r["state"] == "done"],
+            },
+        }
+
+    @staticmethod
+    def _merge_workflow_edges(tx: Tx, flow: dict) -> None:
+        ids = flow["ids"]
+        pairs = [{"a": a, "b": b} for a, b in zip(ids, ids[1:], strict=False)]
+        tx.run(cypher.ONBOARDING_NEXT_MERGE, {"rows": pairs})
+        for rel, rows in flow["edges"].items():
+            tx.run(
+                cypher.ONBOARDING_PROGRESS_MERGE[rel],
+                {"rows": [{"volunteer": r["user_id"], "step": r["step_id"]} for r in rows]},
+            )
+
+    def _project_onboarding(self, org_id: str) -> None:
+        """One organisation's own onboarding workflow."""
+        with self.db.read() as conn:
+            flow = self._workflow(conn, org_id)
+        with self.graph.write() as tx:
+            found = tx.read(cypher.ONBOARDING_ORG, {"org": org_id, "enabled": flow["enabled"]})
+            if not found or found[0]["n"] == 0:
+                raise GraphError(f"organisation {org_id} is not in the graph yet")
+            tx.run(cypher.ONBOARDING_STEPS_PRUNE, {"org": org_id, "ids": flow["ids"]})
+            tx.run(cypher.ONBOARDING_STEPS_UPSERT, {"org": org_id, "rows": flow["steps"]})
+            for statement in cypher.ONBOARDING_EDGES_CLEAR.values():
+                tx.run(statement, {"org": org_id})
+            self._merge_workflow_edges(tx, flow)
 
     @staticmethod
     def _upsert_project(tx: Tx, sub: sqlite3.Row, rev: sqlite3.Row, targets: dict) -> None:

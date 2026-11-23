@@ -4,7 +4,7 @@ import re
 import sqlite3
 
 from app.notify import notify
-from app.services import teams
+from app.services import onboarding, teams
 from app.services.access import (
     get_org,
     load_actor,
@@ -22,6 +22,10 @@ def set_membership(db: Database, user_id: str, org_id: str, *, opted_in: bool) -
     Leaving also gives up the volunteer's team places and open offers in that organisation."""
     with db.tx() as conn:
         org = get_org(conn, org_id)
+        was_in = conn.execute(
+            "SELECT 1 FROM memberships WHERE user_id = ? AND org_id = ? AND opted_in = 1",
+            (user_id, org_id),
+        ).fetchone()
         conn.execute(
             "INSERT INTO memberships (user_id, org_id, opted_in, updated_at) VALUES (?, ?, ?, ?) "
             "ON CONFLICT (user_id, org_id) DO UPDATE SET opted_in = excluded.opted_in, "
@@ -34,7 +38,10 @@ def set_membership(db: Database, user_id: str, org_id: str, *, opted_in: bool) -
                 f"You joined {org['name']}. You will be matched to its projects once your "
                 "account has been vetted.", "/profile",
             )  # fmt: skip
+        if opted_in and not was_in:
+            onboarding.start(conn, user_id, org_id)  # the organisation's own workflow, if on
         if not opted_in:
+            onboarding.cancel(conn, user_id, org_id)
             teams.end_for_volunteer(
                 conn, user_id, org_id=org_id, team_state="left", event="left_organisation",
                 actor_id=user_id,
@@ -82,6 +89,7 @@ def remove_volunteer(
             actor_id=actor_id, note=reason,
         )  # fmt: skip
         teams.flag_leaderless(conn, user_id, org_id)
+        onboarding.cancel(conn, user_id, org_id)
         notify(conn, user_id, "membership",
                f"{org['name']} removed you as a volunteer: {reason}", "/orgs")  # fmt: skip
         enqueue(conn, "volunteer", user_id)
@@ -101,6 +109,7 @@ def create_organisation(
                 "INSERT INTO organisations (id, key, name, description) VALUES (?, ?, ?, ?)",
                 (org_id, key, name, description.strip()[:500]),
             )
+            onboarding.install_starter(conn, org_id)
             enqueue(conn, "organisation", org_id)
     except sqlite3.IntegrityError as error:
         raise Conflict("An organisation with that key already exists.") from error

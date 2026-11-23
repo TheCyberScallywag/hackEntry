@@ -23,7 +23,18 @@
 
 {% if team is not none %}
 <h2>Candidates and team <span class="muted">({{ "you lead this project" if is_lead else "org admins" }})</span></h2>
-<p class="muted">Candidates are ranked: preferred cause first, then required skills covered, then optional skills. They are not told about the match until you invite them. An invited volunteer joins the team when they say yes.</p>
+<p class="muted">Candidates are ranked: preferred cause first, then required skills covered, then optional skills. They are not told about the match until you invite them. An invited volunteer joins the team when they say yes{% if flow and flow.enabled %}, has finished this project's onboarding steps and you have accepted them{% endif %}. You can suspend or remove a team member at any time.</p>
+{% if access.org_admin and people is none %}<p><a href="?assign=lead#lead">Assign the project lead</a> <span class="muted">(org admins)</span></p>{% endif %}
+{% if people is not none %}
+<form method="post" action="/o/{{ org.id }}/projects/{{ project.project }}/lead" class="inline" data-form="lead" id="lead">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <label>Project lead <span class="muted">(org admins assign it)</span>
+  <select name="lead_id">
+    {% for person in people if person.status == "active" %}<option value="{{ person.id }}"{% if person.id == project.sql.lead_id %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
+  </select></label>
+  <button type="submit" class="secondary">Assign lead</button>
+</form>
+{% endif %}
 <table class="placements">
   <thead><tr><th>Volunteer</th><th>Skills</th><th>Status</th><th>Decided by</th><th></th></tr></thead>
   <tbody>
@@ -49,10 +60,24 @@
           <input name="reason" maxlength="1000" placeholder="Reason (optional)" aria-label="Reason for withdrawing the invitation to {{ p.display_name }}">
           <button type="submit" class="secondary">Withdraw invitation</button>
         </form>
-      {% elif p.state == "team" and p.volunteer_id != session.user_id %}
-        <form method="post" action="/o/{{ org.id }}/projects/{{ project.project }}/team/{{ p.volunteer_id }}/remove" class="inline">
+      {% elif p.state in ("onboarding", "team", "suspended") and p.volunteer_id != session.user_id %}
+        {% set team_url = "/o/" ~ org.id ~ "/projects/" ~ project.project ~ "/team/" ~ p.volunteer_id %}
+        {% if p.state == "onboarding" %}
+          {% if p.steps_left %}<span class="muted">{{ p.steps_left }} onboarding step{{ "s" if p.steps_left != 1 }} left</span>
+          {% else %}
+          <form method="post" action="{{ team_url }}/accept" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit">Accept onto the team</button>
+          </form>
+          {% endif %}
+        {% elif p.state == "suspended" %}
+          <form method="post" action="{{ team_url }}/reinstate" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit">Reinstate</button>
+          </form>
+        {% endif %}
+        <form method="post" action="{{ team_url }}/remove" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf }}">
-          <input name="reason" required minlength="3" placeholder="Reason" aria-label="Reason for removing {{ p.display_name }}">
+          <input name="reason" required minlength="3" maxlength="1000" placeholder="Reason" aria-label="Reason for suspending or removing {{ p.display_name }}">
+          {% if p.state == "team" and not p.is_lead %}<button type="submit" formaction="{{ team_url }}/suspend" class="secondary">Suspend</button>{% endif %}
           <button type="submit" class="secondary">Remove</button>
         </form>
       {% elif p.state in ("declined", "left", "removed") %}
@@ -64,6 +89,65 @@
   {% else %}<tr><td colspan="5" class="muted">No eligible volunteers yet.</td></tr>{% endfor %}
   </tbody>
 </table>
+{% endif %}
+
+{% if flow is not none %}
+{% set flow_url = "/o/" ~ org.id ~ "/projects/" ~ project.project ~ "/onboarding" %}
+<h2 id="team-onboarding">Team onboarding <span class="muted">({{ "switched on" if flow.enabled else "switched off" }})</span></h2>
+<p class="muted">Steps a volunteer goes through after accepting an invitation and before you accept them onto the team. They come after {{ org.name }}'s own onboarding, and their emails are chosen from {{ org.name }}'s templates.</p>
+<table class="placements" data-table="flow">
+  <thead><tr><th>Step</th><th>Completed by</th><th>Email</th><th></th></tr></thead>
+  <tbody>
+  {% for step in flow.steps %}
+    <tr data-step="{{ step.title }}"><td>{{ step.position }}. <strong>{{ step.title }}</strong>{% if step.description %}<br><span class="muted">{{ step.description }}</span>{% endif %}</td>
+      <td>{{ "The volunteer" if step.completed_by == "volunteer" else "The lead or an org admin" }}</td>
+      <td>{% for t in flow.templates if t.id == step.email_template_id %}{{ t.name }}{% else %}—{% endfor %}</td>
+      <td>
+        {% for direction, label in (("up", "↑"), ("down", "↓")) %}
+        <form method="post" action="{{ flow_url }}/steps/{{ step.id }}/move" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ flow.version }}">
+          <input type="hidden" name="direction" value="{{ direction }}"><button type="submit" class="secondary" aria-label="Move {{ step.title }} {{ direction }}">{{ label }}</button>
+        </form>
+        {% endfor %}
+        <form method="post" action="{{ flow_url }}/steps/{{ step.id }}/delete" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ flow.version }}">
+          <button type="submit" class="secondary">Delete</button>
+        </form>
+      </td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No steps yet. Without steps, an invited volunteer joins the team as soon as they say yes.</td></tr>{% endfor %}
+  </tbody>
+</table>
+<form method="post" action="{{ flow_url }}/steps" class="card" data-form="add-step">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ flow.version }}">
+  <label>New step <input name="title" required minlength="3" maxlength="120" placeholder="Title"></label>
+  <label>What the volunteer is asked to do <textarea name="description" maxlength="1000" rows="2"></textarea></label>
+  <label>Completed by <select name="completed_by">{% for c in flow.completers %}<option value="{{ c.value }}">{{ c.label }}</option>{% endfor %}</select></label>
+  <label>Email when the volunteer reaches it <select name="email_template_id"><option value="">(no email)</option>{% for t in flow.templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+  <button type="submit">Add step</button>
+</form>
+<form method="post" action="{{ flow_url }}" class="card" data-form="flow-settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="version" value="{{ flow.version }}">
+  <label><input type="checkbox" name="enabled" value="1"{% if flow.enabled %} checked{% endif %}> Switched on: volunteers who accept an invitation from now on go through these steps</label>
+  <label>Email when a volunteer finishes <select name="completion_template_id"><option value="">(no email)</option>{% for t in flow.templates %}<option value="{{ t.id }}"{% if t.id == flow.completion_template_id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}</select></label>
+  <button type="submit">Save</button>
+</form>
+{% if progress %}
+<h3>Volunteers onboarding</h3>
+<table class="placements" data-table="progress">
+  <thead><tr><th>Volunteer</th><th>Status</th><th>Current step</th><th></th></tr></thead>
+  <tbody>
+  {% for r in progress %}
+    <tr data-volunteer="{{ r.display_name }}"><td>{{ r.display_name }}</td>
+      <td>{{ r.state_label }} · {{ r.steps_done }} of {{ r.steps_total }}</td>
+      <td>{{ r.current_step or "—" }}{% if r.current_step and r.waiting_for == "volunteer" %} <span class="muted">(theirs to complete)</span>{% endif %}</td>
+      <td>{% if r.current_step_id and r.user_id != session.user_id %}
+        <form method="post" action="{{ flow_url }}/volunteers/{{ r.user_id }}/steps/{{ r.current_step_id }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit" class="secondary">Mark step as done</button>
+        </form>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 {% endif %}
 
 {% if coverage %}

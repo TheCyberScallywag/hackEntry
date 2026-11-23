@@ -4,7 +4,10 @@ Relate takes an exclusive lock on the store for any opener, read-only included, 
 adapter opens the store per unit of work and closes it straight after (well under a millisecond
 on the demo graph). Within a process a lock serialises access, making the app a single writer;
 across processes (the Streamlit admin, the CLI, or `relate --database ... --read-only`) a locked
-store is retried a bounded number of times before giving up with `GraphBusy`.
+store is retried a bounded number of times before giving up with `GraphBusy`. A read gives up
+after about a second: it waits while holding the in-process lock, so a long wait would queue
+every other request behind it, and a page can say "try again shortly". A write keeps the longer
+window, because the projector retries nothing sooner than its next pass.
 
 Every statement is parameterised; reads are bounded by `max_rows` and never silently
 truncated. The adapter owns the bound: `Tx.read` binds `$limit` to `max_rows + 1`, so a statement
@@ -78,16 +81,18 @@ class GraphStore:
         *,
         max_rows: int = 500,
         attempts: int = 40,
+        read_attempts: int = 6,
         backoff_seconds: float = 0.05,
     ) -> None:
         self.path = Path(path).resolve()
         self.max_rows = max_rows
         self.attempts = attempts
+        self.read_attempts = min(read_attempts, attempts)
         self.backoff_seconds = backoff_seconds
 
     def _open(self, *, read_only: bool) -> Any:
         last: Exception | None = None
-        for attempt in range(self.attempts):
+        for attempt in range(self.read_attempts if read_only else self.attempts):
             try:
                 return relate.connect(str(self.path), read_only=read_only)
             except relate.OperationalError as error:

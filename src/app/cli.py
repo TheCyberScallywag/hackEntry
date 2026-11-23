@@ -22,6 +22,7 @@ import tempfile
 import urllib.request
 from pathlib import Path
 
+from app import audit, observability
 from app.catalogue import load_demo, stable_id
 from app.config import BRAND_DIR, BUNDLED_GRAPH, get_settings
 from app.graph import cypher
@@ -55,8 +56,10 @@ def build_bundle(out: Path) -> None:
         if status.pending:
             raise SystemExit(f"bundle aborted: {status.pending} projections still pending")
         out.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(rt.graph.path, out)
-        out.chmod(0o444)  # read-only: the app always works on a writable copy
+        fresh = out.with_name(out.name + ".new")
+        shutil.copyfile(rt.graph.path, fresh)
+        fresh.chmod(0o444)  # read-only: the app always works on a writable copy
+        os.replace(fresh, out)  # the previous bundle stays until this one is complete
 
 
 def openapi_document() -> str:
@@ -126,8 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     contributors.add_argument("--repo", required=True, help="GitHub repository, OWNER/NAME")
     sub.add_parser("aura-push")
     sub.add_parser("aura-parity")
+    evals = sub.add_parser("evals", help="evaluate the assistants against a copy of the demo")
+    evals.add_argument("--agent", default="", help="one assistant, e.g. match-shortlist")
+    evals.add_argument("--judge", action="store_true", help="add an LLM judge per assistant")
+    audit_cmd = sub.add_parser("audit", help="print the automatic access and usage checks")
+    audit_cmd.add_argument("--days", type=int, default=7)
     args = parser.parse_args(argv)
     settings = get_settings()
+    observability.configure(settings)
 
     def store(path: Path | None) -> GraphStore:
         return GraphStore(path or settings.graph_path, max_rows=settings.graph_max_rows)
@@ -138,9 +147,6 @@ def main(argv: list[str] | None = None) -> int:
                 rt = reset_demo(settings)
                 print(f"Demo reset in {settings.data_dir}: {rt.projector.status().pending} pending")
             case "bundle":
-                if args.out.exists():
-                    args.out.chmod(0o644)
-                    args.out.unlink()
                 build_bundle(args.out)
                 print(f"Wrote {args.out}")
             case "inspect":
@@ -154,7 +160,15 @@ def main(argv: list[str] | None = None) -> int:
                         ] or ["— coverage gap —"]
                 print(json.dumps(rows, indent=2) if args.json else _table(rows))
             case "matches":
-                params = cypher.match_params(orgs=[stable_id("org", args.org)])
+                org_id = stable_id("org", args.org)  # a seeded organisation's ID
+                if not args.store and settings.sqlite_path.exists():
+                    # One created at runtime has a random ID, so ask the database by key.
+                    with build_runtime(settings).db.read() as conn:
+                        row = conn.execute(
+                            "SELECT id FROM organisations WHERE key = ?", (args.org,)
+                        ).fetchone()
+                    org_id = row["id"] if row else org_id
+                params = cypher.match_params(orgs=[org_id])
                 rows = store(args.store).read(cypher.MATCH_CANDIDATES, params)
                 names = _demo_names()
                 for row in rows:
@@ -241,6 +255,29 @@ def main(argv: list[str] | None = None) -> int:
                 report = aura.parity(settings, store(None), orgs)
                 print(json.dumps(report, indent=2))
                 return 0 if report["match"] else 1
+            case "evals":
+                from app.agents import evals
+
+                if not settings.agents_enabled:
+                    print("Set AGENT_MODEL (and its API key) to run the evals.", file=sys.stderr)
+                    return 1
+                reports = evals.run(
+                    evals.demo_runtime(settings), only=args.agent, judge=args.judge, progress=True
+                )
+                problems = []
+                for name, report in reports.items():
+                    report.print(include_reasons=True, include_durations=False)
+                    problems += [f"{name}: {p}" for p in evals.failed(report)]
+                for problem in problems:
+                    print(f"FAILED {problem}", file=sys.stderr)
+                return 1 if problems or not reports else 0
+            case "audit":
+                rt = build_runtime(settings)
+                rt.db.init()
+                found = audit.system_checks(rt.db, days=args.days)
+                print(_table([{"severity": c.severity, "check": c.id, "evidence": c.evidence}
+                              for c in found]))  # fmt: skip
+                return 1 if any(c.severity == "high" for c in found) else 0
     except GraphError as error:
         print(f"Relate: {error}", file=sys.stderr)
         return 1

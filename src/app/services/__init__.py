@@ -6,7 +6,7 @@ same SQLite transaction (app.sqlstore.enqueue).
 The package is split by area; callers import the names from here (`services.get_submission`).
 """
 
-from app.services import teams
+from app.services import onboarding, teams
 from app.services.access import (
     Access,
     Actor,
@@ -118,6 +118,7 @@ __all__ = [
     "load_actor",
     "load_directory",
     "my_submissions",
+    "onboarding",
     "org_access",
     "org_volunteers",
     "published_state",
