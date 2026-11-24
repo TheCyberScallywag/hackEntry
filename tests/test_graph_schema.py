@@ -9,7 +9,9 @@ import pytest
 
 from app.config import BUNDLED_GRAPH, Settings
 from app.graph import aura, cypher
-from app.graph.store import GraphStore
+from app.graph.projector import Projector
+from app.graph.store import GraphError, GraphStore
+from app.sqlstore import enqueue
 from tests.conftest import CS, DK
 
 SHAPES = "MATCH (a)-[r]->(b) RETURN DISTINCT labels(a)[0] AS a, type(r) AS t, labels(b)[0] AS b"
@@ -55,6 +57,50 @@ def test_schema_covers_exactly_what_the_demo_graph_contains(demo_graph: GraphSto
     assert found == cypher.RELATIONSHIPS  # ON_TEAM included; no entry the graph never uses
     labels = {r["label"] for r in demo_graph.read(cypher.COUNT_LABELS)}
     assert labels == set(cypher.LABELS)
+
+
+def test_every_label_has_a_uniqueness_constraint_in_the_bundled_graph(demo_graph: GraphStore):
+    found = {r["name"]: r for r in demo_graph.read(cypher.SHOW_CONSTRAINTS)}
+    assert set(found) == set(cypher.CONSTRAINTS)
+    assert {r["labels"][0] for r in found.values()} == set(cypher.LABELS)
+    assert all(
+        r["type"] == "NODE_PROPERTY_UNIQUENESS" and r["properties"] == ["id"]
+        for r in found.values()
+    )
+    indexes = {r["name"]: r for r in demo_graph.read(cypher.SHOW_INDEXES)}
+    assert set(cypher.INDEXES) <= set(indexes)  # each constraint also owns an index
+    assert all(r["state"] == "ONLINE" for r in indexes.values())
+
+
+def test_a_duplicate_id_is_refused(demo_graph: GraphStore):
+    with pytest.raises(GraphError, match="uniqueness"), demo_graph.write() as tx:
+        tx.run("CREATE (:Skill {id: 'python'})")
+    assert demo_graph.read("MATCH (s:Skill {id: 'python'}) RETURN count(s) AS n") == [{"n": 1}]
+
+
+def test_a_store_made_before_the_schema_gains_it_on_the_next_drain(rt, tmp_path):
+    old = GraphStore(tmp_path / "old.rl")
+    with old.write() as tx:
+        tx.run("CREATE (:Skill {id: 'python', name: 'Python programming'})")
+    assert old.read(cypher.SHOW_CONSTRAINTS) == []
+    projector = Projector(rt.db, old)
+    assert projector.drain().failed == 0  # nothing is pending: the schema is still declared
+    assert {r["name"] for r in old.read(cypher.SHOW_CONSTRAINTS)} == set(cypher.CONSTRAINTS)
+    projector.ensure_schema()  # idempotent
+    assert len(old.read(cypher.SHOW_CONSTRAINTS)) == len(cypher.CONSTRAINTS)
+
+
+def test_a_store_whose_schema_cannot_be_declared_is_not_written_to(rt, tmp_path):
+    bad = GraphStore(tmp_path / "bad.rl")
+    with bad.write() as tx:  # two skills with one id: the constraint cannot be created
+        tx.run("CREATE (:Skill {id: 'python'}), (:Skill {id: 'python'})")
+    with rt.db.tx() as conn:
+        enqueue(conn, "catalogue", "catalogue")
+    projector = Projector(rt.db, bad)
+    assert projector.drain(ignore_backoff=True).failed == 1
+    status = projector.status()
+    assert status.pending == 1 and status.items[0]["last_error"]
+    assert bad.read("MATCH (n) RETURN count(n) AS n") == [{"n": 2}]
 
 
 def test_reconcile_statements_are_generated_for_every_schema_entry():

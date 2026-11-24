@@ -76,7 +76,12 @@ def test_bundled_demo_graph_matches_a_fresh_build(tmp_path):
     build_bundle(fresh)
     bundled_copy = tmp_path / "bundled.rl"
     shutil.copyfile(BUNDLED_GRAPH, bundled_copy)  # never open the committed file for writing
-    for statement in (cypher.ALL_NODES, cypher.ALL_RELATIONSHIPS):
+    for statement in (
+        cypher.ALL_NODES,
+        cypher.ALL_RELATIONSHIPS,
+        cypher.SHOW_CONSTRAINTS,
+        cypher.SHOW_INDEXES,
+    ):
         assert GraphStore(bundled_copy).read(statement) == GraphStore(fresh).read(statement)
 
 

@@ -17,6 +17,8 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
     (:Volunteer)-[:AT_STEP]->(:OnboardingStep)        the step they have reached
     (:Volunteer)-[:COMPLETED_STEP]->(:OnboardingStep)
 
+Every label has a uniqueness constraint on `id` (CONSTRAINTS below), applied by the projector.
+
 An organisation's onboarding workflow is in the graph as it stands (`onboarding_enabled` on the
 organisation says whether it is switched on), without its email templates: the assistants read
 it from here. A project's own workflow, for volunteers joining its team, hangs off the project
@@ -58,6 +60,38 @@ RELATIONSHIPS: dict[str, tuple[str, str]] = {
     "AT_STEP": ("Volunteer", "OnboardingStep"),
     "COMPLETED_STEP": ("Volunteer", "OnboardingStep"),
 }
+
+
+# Declared schema: every node is found by its `id`, so each label has a uniqueness constraint (and
+# with it an index). A duplicate would be counted twice by every match, silently; with the
+# constraint the write is refused instead. `Project.status` is filtered on by every read.
+# Each statement is idempotent; the projector applies them before it first writes
+# (Projector.ensure_schema), so a store made before they existed gains them on the next start.
+CONSTRAINTS = {
+    f"{label.lower()}_id": (
+        f"CREATE CONSTRAINT {label.lower()}_id IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE"
+    )
+    for label in LABELS
+}
+INDEXES = {
+    "project_status": "CREATE INDEX project_status IF NOT EXISTS FOR (p:Project) ON (p.status)",
+}
+SCHEMA = (*CONSTRAINTS.values(), *INDEXES.values())
+
+SHOW_CONSTRAINTS = """
+SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, properties
+RETURN name, type, labelsOrTypes AS labels, properties
+ORDER BY name
+LIMIT $limit
+"""
+
+SHOW_INDEXES = """
+SHOW INDEXES YIELD name, type, state, labelsOrTypes, properties
+WHERE type <> 'LOOKUP'
+RETURN name, type, state, labelsOrTypes AS labels, properties
+ORDER BY name
+LIMIT $limit
+"""
 
 
 def _edge_prune(source: str, rel: str, target: str) -> str:

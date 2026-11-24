@@ -143,6 +143,22 @@ statements that write the graph, the projector and the AuraDB push are all gener
 checked against that one definition. A test asserts that it lists exactly the relationship types
 found in `data/demo.rl`.
 
+### Constraints and indexes
+
+Every node is found by its `id`, so every label has a uniqueness constraint on it, which also
+gives it an index. Without one, a duplicate node would be counted twice by every match and nothing
+would say so; with it, Relate refuses the write. `Project.status` has a range index, because
+every read filters on it.
+
+The statements are `CONSTRAINTS` and `INDEXES` in `src/app/graph/cypher.py`. They are idempotent
+(`IF NOT EXISTS`), and the projector applies them once per process before it first writes
+(`Projector.ensure_schema`), so a store made before they existed gains them on the next start. If
+they cannot be applied, nothing is projected and the outbox items stay pending with the reason.
+
+```bash
+uv run python -m app.cli schema --store data/demo.rl    # constraints, then indexes
+```
+
 ## 5. The adapter: how the application talks to Relate
 
 `src/app/graph/store.py` is the only module that imports `relate`. Everything else goes through
@@ -376,6 +392,7 @@ the team covers it.
 |---|---|---|
 | Task | `uv run task inspect` | The `INSPECT` table for the bundled `data/demo.rl` |
 | Application CLI | `uv run python -m app.cli inspect [--store PATH] [--json]` | The same, for any store; the default is the writable one |
+| Application CLI | `uv run python -m app.cli schema [--store PATH]` | The constraints and indexes declared on the store |
 | Application CLI | `uv run python -m app.cli matches --org datakind-uk [--store PATH]` | Ranked candidates for one organisation |
 | Application CLI | `uv run python -m app.cli status` / `drain` | Outbox status; project pending rows now |
 | Admin console | *System* section (system admins) | Node and relationship counts, the inspection table, projection health, *Replay outbox now* |
@@ -426,6 +443,7 @@ All of these are exercised by the test suite against Relate 1.0.1.
 | `OPTIONAL MATCH`, `collect(DISTINCT ...)` | Optional skills; lists of matched skills |
 | List comprehension, `[r IN required WHERE NOT r IN matched]` | The skills still needed |
 | `labels(n)`, `type(r)`, `properties(n)` | Counts, the export and the schema test |
+| `CREATE CONSTRAINT ... REQUIRE n.id IS UNIQUE`, `CREATE INDEX`, `SHOW CONSTRAINTS`, `SHOW INDEXES` | The declared schema and its inspection |
 | Named parameters (`$name`), `ORDER BY`, `LIMIT $limit` | Every statement |
 
 Not used: Relate's in-memory and directory stores, and the binding's optional pandas and Arrow

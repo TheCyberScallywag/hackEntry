@@ -14,6 +14,13 @@ def test_inspect_bundled_store(capsys):
     assert "Cerys (u_" in out and "@" not in out
 
 
+def test_schema_command_lists_the_constraints_and_indexes(capsys):
+    assert cli.main(["schema", "--store", str(BUNDLED_GRAPH)]) == 0
+    out = capsys.readouterr().out
+    assert "volunteer_id" in out and "NODE_PROPERTY_UNIQUENESS" in out
+    assert "project_status" in out and "ONLINE" in out
+
+
 def test_matches_command(capsys):
     assert cli.main(["matches", "--org", "datakind-uk", "--store", str(BUNDLED_GRAPH)]) == 0
     lines = capsys.readouterr().out.splitlines()

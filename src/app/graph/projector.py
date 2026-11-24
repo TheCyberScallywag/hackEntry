@@ -74,8 +74,16 @@ class Projector:
         # True until the hook has run once in this process: a sweep that failed before a restart
         # was only remembered in memory, so the first drain always looks at everything.
         self._hook_due = True
+        self._schema_ready = False  # the constraints and indexes are applied once per process
 
     # ------------------------------------------------------------------ public
+    def ensure_schema(self) -> None:
+        """Declare the graph's constraints and indexes (app.graph.cypher.SCHEMA). Idempotent."""
+        with self.graph.write() as tx:
+            for statement in cypher.SCHEMA:
+                tx.run(statement)
+        self._schema_ready = True
+
     def drain(self, *, limit: int = 500, ignore_backoff: bool = False) -> DrainResult:
         """Project every due item. Safe to call from any thread; concurrent calls coalesce."""
         result = DrainResult()
@@ -103,6 +111,17 @@ class Projector:
                 "onboarding": 4,
             }
             changed = Changed()
+            if not self._schema_ready and (groups or self.graph.path.exists()):
+                try:
+                    self.ensure_schema()
+                except GraphError as error:
+                    # Nothing is written to a store whose schema could not be declared: every
+                    # item stays pending with the reason, and is retried like any other failure.
+                    log.warning("declaring the graph schema failed: %s", error)
+                    for ids in groups.values():
+                        self._mark_failed(ids, str(error))
+                        result.failed += len(ids)
+                    return result
             for (kind, entity_id), ids in sorted(
                 groups.items(), key=lambda g: (order[g[0][0]], min(g[1]))
             ):
