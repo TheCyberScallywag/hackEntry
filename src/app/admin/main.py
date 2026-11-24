@@ -6,11 +6,15 @@ API on every call:
   * org admin (or system admin): the organisation's suggestions, volunteers, candidates and teams
     (assign a project's lead; accept, suspend, reinstate or remove team members), its own
     onboarding workflow (steps and email templates) and each project's team onboarding
-  * system admin: users and roles, new organisations, projection health and the Relate graph
+  * system admin: users and roles, new organisations, projection health and the Relate graph,
+    as counts (System) and as a drawing of its model and its nodes (Graph)
 
 One function per tab. A list shows its rows from one call; the detail of a row is fetched only
 for the row that is selected, never for every row on every rerun.
 """
+
+import json
+from pathlib import Path
 
 import httpx
 import pandas as pd
@@ -85,7 +89,7 @@ def tabs_for(me: dict) -> list[str]:
     if any(o["org_admin"] for o in me["organisations"]):
         tabs += ["Organisations", "Onboarding"]
     if "admin" in roles:
-        tabs += ["Users and roles", "Audit", "System"]
+        tabs += ["Users and roles", "Audit", "System", "Graph"]
     return tabs
 
 
@@ -594,6 +598,79 @@ def system_tab() -> None:
     )
 
 
+GRAPH_PAGE = Path(__file__).with_name("graph.html")
+GRAPH_VIEWS = {
+    "Model": "Which kind of node is joined to which, and how many of each there are.",
+    "Nodes": "Every node of the kinds you choose, and the relationships between them.",
+}
+
+
+def graph_page(mode: str, nodes: list[dict], edges: list[dict]) -> str:
+    """graph.html with the graph in it as JSON. The page runs as script in the console's own
+    origin, so nothing from the graph may end the JSON block early: `<`, `>` and `&` go in as
+    escapes, and the page writes every value as text."""
+    brand = get_meta()
+    theme = {
+        name: {"bg": s.background, "card": s.surface, "text": s.text,
+               "muted": s.muted, "border": s.border}
+        for name in ("light", "dark") for s in [brand.scheme(name)]
+    }  # fmt: skip
+    payload = json.dumps({"mode": mode, "nodes": nodes, "edges": edges, "theme": theme})
+    for char in "<>&\u2028\u2029":
+        payload = payload.replace(char, f"\\u{ord(char):04x}")
+    return GRAPH_PAGE.read_text(encoding="utf-8").replace("__PAYLOAD__", payload)
+
+
+def graph_tab() -> None:
+    """The Relate graph drawn: its model, or the nodes themselves. The tables under the drawing
+    hold the same rows, for reading without it."""
+    show = st.radio("Show", list(GRAPH_VIEWS), horizontal=True, key="graph-show")
+    st.caption(GRAPH_VIEWS[show])
+    chosen = st.session_state.get("graph-labels") if show == "Nodes" else None
+    view = call("GET", "/admin/graph/view", params={"label": chosen} if chosen else None)
+    counts = {row["label"]: row["nodes"] for row in view["labels"]}
+    if show == "Model":
+        nodes = [
+            {"key": label, "label": label, "caption": label, "size": n, "props": {"nodes": n}}
+            for label, n in counts.items()
+        ]
+        edges = [
+            {"source": e["source"], "target": e["target"], "type": e["type"],
+             "props": {"relationships": e["relationships"]}}
+            for e in view["model"]
+        ]  # fmt: skip
+        st.iframe(graph_page("model", nodes, edges), height=680)
+        with st.expander("As a table"):
+            st.dataframe(pd.DataFrame(view["model"]), hide_index=True, width="stretch")
+        return
+    st.multiselect(
+        "Kinds of node to load (none chosen: all of them)", list(counts), key="graph-labels"
+    )
+    if view["too_large"]:
+        st.warning(
+            f"That is more than {view['max_rows']} nodes or relationships, the most the console "
+            "reads at once. Choose fewer kinds of node."
+        )
+        return
+    st.iframe(graph_page("nodes", view["nodes"], view["edges"]), height=680)
+    with st.expander("As tables"):
+        captions = {n["key"]: n["caption"] for n in view["nodes"]}
+        st.dataframe(
+            pd.DataFrame([{k: n[k] for k in ("label", "caption", "id")} for n in view["nodes"]]),
+            hide_index=True, width="stretch",
+        )  # fmt: skip
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {"from": captions[e["source"]], "relationship": e["type"],
+                     "to": captions[e["target"]], "properties": str(e["props"] or "")}
+                    for e in view["edges"]
+                ]
+            ),
+            hide_index=True, width="stretch",
+        )  # fmt: skip
+
+
 AUDIT_FILTERS = {
     "Role changes": "role.",
     "Refusals": "",
@@ -729,6 +806,7 @@ def main() -> None:
         "Users and roles": lambda: users_tab(me),
         "Audit": audit_tab,
         "System": system_tab,
+        "Graph": graph_tab,
     }
     # One section at a time: st.tabs would run every section's API calls on every click.
     name = st.sidebar.radio("Section", names)

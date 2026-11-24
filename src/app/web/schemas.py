@@ -6,7 +6,7 @@ these models (`python -m app.cli openapi` writes it to a file), and tests/test_a
 checks the mobile app's types against it, so the three cannot drift apart unnoticed.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -699,3 +699,38 @@ class GraphOverview(BaseModel):
     labels: list[LabelCount]
     relationships: list[RelationshipCount]
     inspect: list[Inspection]
+
+
+class GraphNode(BaseModel):
+    key: str  # label and id together: an id is unique within its label only
+    label: str
+    id: str
+    caption: str
+    props: dict[str, Any]
+
+
+class GraphEdge(BaseModel):
+    source: str  # a GraphNode.key
+    target: str
+    type: str
+    props: dict[str, Any]
+
+
+class GraphModelEdge(BaseModel):
+    source: str  # a label
+    target: str
+    type: str
+    relationships: int
+
+
+class GraphView(BaseModel):
+    """What the admin console draws. `model` is always the whole graph; `nodes` and `edges` are
+    the labels in `shown` only, and empty with `too_large` set when they pass `max_rows`."""
+
+    labels: list[LabelCount]
+    model: list[GraphModelEdge]
+    shown: list[str]
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    too_large: bool
+    max_rows: int

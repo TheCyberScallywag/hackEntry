@@ -731,6 +731,33 @@ ORDER BY type
 LIMIT $limit
 """
 
+# The admin console's picture of the graph: which label is joined to which, and how often.
+GRAPH_MODEL = """
+MATCH (a)-[r]->(b)
+RETURN labels(a)[0] AS source, type(r) AS type, labels(b)[0] AS target,
+       count(r) AS relationships
+ORDER BY source, type, target
+LIMIT $limit
+"""
+
+# The nodes of the chosen labels, and the relationships that run between two of them.
+VIEW_NODES = """
+MATCH (n)
+WHERE labels(n)[0] IN $labels
+RETURN labels(n)[0] AS label, n.id AS id, properties(n) AS props
+ORDER BY label, id
+LIMIT $limit
+"""
+
+VIEW_RELATIONSHIPS = """
+MATCH (a)-[r]->(b)
+WHERE labels(a)[0] IN $labels AND labels(b)[0] IN $labels
+RETURN labels(a)[0] AS from_label, a.id AS from_id, type(r) AS type,
+       labels(b)[0] AS to_label, b.id AS to_id, properties(r) AS props
+ORDER BY from_label, from_id, type, to_label, to_id
+LIMIT $limit
+"""
+
 ALL_NODES = """
 MATCH (n)
 RETURN labels(n)[0] AS label, n.id AS id, properties(n) AS props

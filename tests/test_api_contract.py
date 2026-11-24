@@ -52,7 +52,7 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 60  # a new route must be added to the calls below
+    assert len(api.router.routes) == 61  # a new route must be added to the calls below
     assert len(onboarding_api.router.routes) == 25
 
 
@@ -195,6 +195,8 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
     ok(sam.post("/admin/projection/replay"), "POST", "/admin/projection/replay")
     graph = ok(sam.get("/admin/graph"), "GET", "/admin/graph")
     assert {r["type"] for r in graph["relationships"]} >= {"OWNS_PROJECT", "VOLUNTEERS_WITH"}
+    view = ok(sam.get("/admin/graph/view"), "GET", "/admin/graph/view")
+    assert {e["type"] for e in view["model"]} >= {"OWNS_PROJECT", "VOLUNTEERS_WITH"}
 
     # ---- organisations' onboarding workflows
     kofi, base = as_(web, "kofi"), f"/orgs/{CS}/onboarding"

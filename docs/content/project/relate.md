@@ -377,6 +377,8 @@ statements.
 | `FIND_SKILLS` | Catalogue skills matching plain words, by name or other name, with area and related skills | The assistants' `find_skills` tool | Volunteer onboarding, project scoping and review assistants |
 | `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* section |
 | `COUNT_LABELS`, `COUNT_RELATIONSHIPS` | How many nodes and relationships of each kind | `GET /admin/graph` | Admin console *System* section |
+| `GRAPH_MODEL` | Which label is joined to which, by which relationship, and how often | `GET /admin/graph/view` | Admin console *Graph* section, *Model* |
+| `VIEW_NODES`, `VIEW_RELATIONSHIPS` | The nodes of the chosen labels and the relationships between them. Past the row bound the answer is `too_large`, never a cut-short graph | `GET /admin/graph/view` | Admin console *Graph* section, *Nodes* |
 | `ALL_NODES`, `ALL_RELATIONSHIPS` | The whole graph | `aura.push`, tests | The optional AuraDB push; the bundle drift test |
 
 ### The matching query
@@ -481,7 +483,8 @@ the team covers it.
 | Application CLI | `uv run python -m app.cli matches --org datakind-uk [--store PATH]` | Ranked candidates for one organisation |
 | Application CLI | `uv run python -m app.cli status` / `drain` | Outbox status; project pending rows now |
 | Admin console | *System* section (system admins) | Node and relationship counts, the inspection table, projection health, *Replay outbox now* |
-| JSON API | `GET /api/v1/admin/graph`, `GET /api/v1/admin/projection` | The same data as the console |
+| Admin console | *Graph* section (system admins) | The graph drawn. *Model*: each kind of node and relationship, with how many there are. *Nodes*: every node of the kinds chosen and the relationships between them; click one for its properties. Volunteers are named from SQLite, for the admin only. Tables of the same rows sit under the drawing. |
+| JSON API | `GET /api/v1/admin/graph`, `GET /api/v1/admin/graph/view`, `GET /api/v1/admin/projection` | The same data as the console |
 | Relate CLI | `relate --database data/demo.rl --read-only --mode table "<cypher>"` | Any query you like |
 
 With the Relate command-line tool installed:

@@ -95,6 +95,19 @@ class FakeStreamlit:
     def form_submit_button(self, label: str, type: str = "secondary") -> bool:  # noqa: A002
         return label in self.clicked
 
+    def multiselect(self, label: str, options, key: str | None = None, **_kw) -> list:
+        """Like Streamlit, a keyed widget keeps its value in session_state."""
+        chosen = self.choices.get(label, [])
+        if key is not None:
+            self.session_state[key] = chosen
+        return chosen
+
+    def expander(self, _label: str) -> _Column:
+        return _Column(self)
+
+    def iframe(self, src: str, **_kw) -> None:
+        self.drawn.append(("iframe", (src,)))
+
     def popover(self, _label: str) -> _Column:
         return _Column(self)
 
@@ -186,6 +199,7 @@ def test_tabs_follow_roles(console):
             "Users and roles",
             "Audit",
             "System",
+            "Graph",
         ),
         "mo": ("Volunteer screening",),
         "rhiannon": ("Organisations", "Onboarding"),
@@ -318,6 +332,73 @@ def test_system_tab_shows_projection_and_graph_and_replays(console):
     st.clicked = {"Replay outbox now"}
     assert run() is True and st.session_state["flash"] == ("success", "Replay: done")
     assert ("POST", "/admin/projection/replay") in admin.calls
+
+
+def _payload(page: str) -> dict:
+    """The graph a drawn page carries, read the way the browser reads it."""
+    import json
+
+    block = page.split('<script id="payload" type="application/json">')[1].split("</script>")[0]
+    return json.loads(block)
+
+
+def test_graph_tab_draws_the_model_and_the_nodes(console):
+    admin, st, run = console
+    sign_in(console, "sam", "Graph")
+    assert run() is False and st.text("error") == ""
+    (page,) = [args[0] for name, args in st.drawn if name == "iframe"]
+    model = _payload(page)
+    assert model["mode"] == "model" and set(model["theme"]) == {"light", "dark"}
+    kinds = {n["caption"]: n["size"] for n in model["nodes"]}
+    assert kinds["Volunteer"] == 14 and kinds["Organisation"] == 3
+    assert {"source": "Organisation", "target": "Project", "type": "OWNS_PROJECT",
+            "props": {"relationships": 6}} in model["edges"]  # fmt: skip
+    tables = [args[0] for name, args in st.drawn if name == "dataframe"]
+    assert {"source": "Skill", "type": "RELATED_TO", "target": "Skill", "relationships": 9} in (
+        tables[-1]
+    )
+
+    st.choices = {"Show": "Nodes"}
+    assert run() is False and st.text("error") == ""
+    (page,) = [args[0] for name, args in st.drawn if name == "iframe"]
+    graph = _payload(page)
+    assert graph["mode"] == "nodes" and len(graph["nodes"]) == 80 and len(graph["edges"]) == 176
+    asha = next(n for n in graph["nodes"] if n["caption"] == "Asha")
+    assert asha["label"] == "Volunteer" and asha["props"] == {"id": USERS["asha"]}
+    assert "@" not in page.split('id="payload"')[1].split("</script>")[0]  # names, no addresses
+    nodes, edges = [args[0] for name, args in st.drawn if name == "dataframe"][-2:]
+    assert {"label": "Volunteer", "caption": "Asha", "id": USERS["asha"]} in nodes
+    assert {"from": "Asha", "relationship": "HAS_SKILL", "to": "Active listening",
+            "properties": "{'level': 2}"} in edges  # fmt: skip
+
+    st.choices["Kinds of node to load (none chosen: all of them)"] = ["Skill", "SkillArea"]
+    run()  # the choice is made on this run and read on the next, as in Streamlit
+    assert run() is False
+    assert ("GET", "/admin/graph/view") in admin.calls
+    graph = _payload(next(args[0] for name, args in st.drawn if name == "iframe"))
+    assert {n["label"] for n in graph["nodes"]} == {"Skill", "SkillArea"}
+    assert {e["type"] for e in graph["edges"]} == {"IN_AREA", "BROADER", "RELATED_TO"}
+
+
+def test_graph_tab_asks_for_fewer_kinds_when_the_graph_is_too_large(console, web: Web):
+    _admin, st, run = console
+    web.rt.graph.max_rows = 100  # the demo graph has 176 relationships
+    sign_in(console, "sam", "Graph")
+    st.choices = {"Show": "Nodes"}
+    assert run() is False and st.text("error") == ""
+    assert "more than 100 nodes or relationships" in st.text("warning")
+    assert not [1 for name, _ in st.drawn if name == "iframe"]
+    st.choices["Show"] = "Model"  # the model is counts, so it is always drawn
+    assert run() is False and [1 for name, _ in st.drawn if name == "iframe"]
+
+
+def test_graph_page_cannot_be_broken_out_of_by_a_name_in_the_graph(console):
+    admin, _st, _run = console
+    name = "</script><script>alert(1)</script> & co"
+    page = admin.graph_page("nodes", [{"key": "Skill:x", "label": "Skill", "caption": name,
+                                       "props": {}}], [])  # fmt: skip
+    assert page.count("</script>") == 2 and "alert(1)</script>" not in page
+    assert _payload(page)["nodes"][0]["caption"] == name
 
 
 def test_audit_tab_shows_checks_roles_and_the_trail(console, web: Web):

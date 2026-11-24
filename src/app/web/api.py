@@ -17,11 +17,12 @@ Interactive docs: /api/docs (OpenAPI at /api/openapi.json).
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import audit, auth, matching, notify, placements, profile_view, services
 from app.graph import cypher
+from app.graph.store import GraphTruncated
 from app.web import schemas as m
 from app.web.deps import drain, require_signup
 
@@ -725,3 +726,64 @@ def graph_overview(request: Request, session: Api) -> m.GraphOverview:
     for row in inspect:
         row["eligible_volunteers"] = [names.get(v, v) for v in row["eligible_volunteers"]]
     return {"labels": labels, "relationships": rels, "inspect": inspect}
+
+
+def _caption(label: str, props: dict, names: dict[str, str]) -> str:
+    """What a node is called on the admin's picture of the graph. A volunteer is an opaque ID
+    in the graph; the name comes from SQLite, for the system admin only."""
+    if label == "Volunteer":
+        return names.get(props["id"], props["id"])
+    if label == "Engagement":
+        return " · ".join(str(props[k]) for k in ("role", "outcome") if props.get(k))
+    return str(props.get("name") or props.get("title") or props["id"])
+
+
+@router.get("/admin/graph/view", tags=["admin"])
+def graph_view(
+    request: Request, session: Api, label: Annotated[list[str] | None, Query()] = None
+) -> m.GraphView:
+    """The graph as nodes and relationships, for the admin console to draw: the model (which
+    label is joined to which) and the nodes of the chosen labels, every label when none is
+    chosen. A choice with more rows than the store's bound comes back empty and `too_large`."""
+    rt = _rt(request)
+    services.require_admin(rt.db, session.user_id)
+    if unknown := sorted(set(label or ()) - set(cypher.LABELS)):
+        raise services.Invalid(f"Unknown label: {', '.join(unknown)}")
+    shown = [name for name in cypher.LABELS if not label or name in label]
+    too_large = False
+    with rt.graph.reader() as tx:
+        labels = tx.read(cypher.COUNT_LABELS)
+        model = tx.read(cypher.GRAPH_MODEL)
+        try:
+            nodes = tx.read(cypher.VIEW_NODES, {"labels": shown})
+            rels = tx.read(cypher.VIEW_RELATIONSHIPS, {"labels": shown})
+        except GraphTruncated:
+            nodes, rels, too_large = [], [], True
+    with rt.db.read() as conn:
+        names = dict(conn.execute("SELECT id, display_name FROM users").fetchall())
+    return {
+        "labels": labels,
+        "model": model,
+        "shown": shown,
+        "nodes": [
+            {
+                "key": f"{n['label']}:{n['id']}",
+                "label": n["label"],
+                "id": n["id"],
+                "caption": _caption(n["label"], n["props"], names),
+                "props": n["props"],
+            }
+            for n in nodes
+        ],
+        "edges": [
+            {
+                "source": f"{r['from_label']}:{r['from_id']}",
+                "target": f"{r['to_label']}:{r['to_id']}",
+                "type": r["type"],
+                "props": r["props"],
+            }
+            for r in rels
+        ],
+        "too_large": too_large,
+        "max_rows": rt.graph.max_rows,
+    }
