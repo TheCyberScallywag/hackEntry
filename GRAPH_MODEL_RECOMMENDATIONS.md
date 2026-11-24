@@ -4,10 +4,75 @@ Written 24 November 2026 against commit `de8702f`. It follows up two findings in
 `HACKATHON_REVIEW.md`: no query crosses organisations, and the graph has no constraints or
 indexes.
 
-Nothing in the repository was changed apart from adding this file. Every statement and result
-below was run with Relate 1.0.1 on a scratch copy of `data/demo.rl`. The levels, past projects,
-ratings and credentials used in the results are invented for the prototype; section 7 says how
-to make them real.
+**The recommendations have since been implemented** on the branch `feature/graph-model`, one
+commit each. The section below says what was built and where it differs from the proposal.
+Sections 1 to 10 are the proposal as first written, kept as the record of the reasoning: their
+results came from a prototype on a scratch copy of `data/demo.rl`, with invented levels, past
+projects, ratings and credentials.
+
+## Implementation status
+
+Each commit was made with the full test suite green. The last run: 421 passed, 2 skipped
+(AuraDB and Compose, which need credentials and a running stack), 96% line coverage. The
+baseline before this work was 364 passed.
+
+| # | Recommendation | Commit | What was built |
+|---|---|---|---|
+| 1 | Declare the schema | `b3fe046` | A uniqueness constraint on `id` for every label and an index on `Project.status`, declared by the projector before its first write, so an existing store gains them on the next start. `python -m app.cli schema` lists them. |
+| 2 | Skills ontology | `3b51396` | The catalogue as an ontology (areas in two levels, related skills, kinds, other names, cause themes), checked at load, stored in SQLite and projected. A *Close* column on coverage. A `find_skills` tool for the assistants, over a full-text index. |
+| 3 | Where am I needed? | `4040f48` | `NEEDED_ELSEWHERE`, shown on *Find organisations*, served at `GET /me/needed`, and given to the match explainer with a validator. |
+| 4 | Participation history | `8df90c3` | Engagements derived from placements; a `completed` project state that stays in the graph; ratings on the four-step scale, overall and per skill; skill levels on the profile; consent to share history as an edge; `CANDIDATE_EXPERIENCE` on coverage and for the shortlist assistant; demo history in the fixture. |
+| 5 | Later facets | `7cd14be` | **Learning goals only.** `WANTS_TO_LEARN`, *Where you could learn* on *My matches*, `GET /me/learning`. |
+
+The bundled graph went from 49 nodes and 97 relationships to 80 and 176. The SQLite schema
+version went from 9 to 12, so an existing `var/` needs `uv run task reset`.
+
+### Where the build differs from the proposal
+
+- **No full-text index on projects** (5.1). Nothing reads one yet, so it was not added.
+- **A skill's category is now its area's name.** On the profile, *Technology* became *Data*,
+  *Software and web* and *Digital safety*.
+- **Close requires an adjacent skill the volunteer offers**, not merely has (Q2). Offering is
+  their consent to be matched on a skill, so it is also the only way in to a close list.
+- **No organisation opt-out for "where am I needed"** (rule 5). The showcase already shows every
+  signed-in user each organisation's projects and their skills. The only new fact is that a
+  skill is not yet covered on a team.
+- **An organisation always sees engagements on its own projects** (the gap noted under Q3).
+  The sharing edge governs only what another organisation may see.
+- **Engagements carry no dates in the graph**, only role, outcome and readiness. Dates stay in
+  SQLite. This also keeps a rebuilt graph identical to the bundled one.
+- **Skill levels travel in their own `levels` field** of the profile API, beside `skills`, and
+  not as the union type sketched in 8.3. Older clients keep working unchanged.
+- **Completed work has its own placement state**, `completed`, and is shown under *Your
+  history* on the profile, not in the invitations list.
+
+### Not built, and why
+
+- **Credentials (DBS checks, certificates).** They would add a hard rule to `MATCH_CANDIDATES`,
+  the query that decides eligibility, and a DBS result is criminal-record data. That needs a
+  decision and advice first (rule 6), not a default chosen in code.
+- **Availability and location.** These need a decision on how coarse a place may be.
+- **A minimum level on a required skill** (`REQUIRES_SKILL.min_level`). Levels are
+  self-declared, so filtering on them would reward overclaiming. They are shown, not enforced.
+- **Mobile screens** for history, levels and learning goals. The API serves all of it and the
+  mobile types accept the two new states; the pages are not built.
+- **Admin console screens** for the new features.
+
+### Defaults I chose that you should confirm
+
+- History sharing is **off** until the volunteer switches it on, per organisation.
+- A volunteer sees **who** rated them, by display name.
+- Any member of the lead side can rate, and can change a rating later. There is no appeal step.
+- The ontology groupings, related pairs and cause themes are unchanged from section 4 and are
+  still my suggestion from the names alone.
+
+### Not verified
+
+- Nothing was run against AuraDB. The push now carries relationship properties; that is tested
+  against the stand-in driver only.
+- No assistant was run against a real model. The new tools are tested with scripted models.
+- The mobile app was type-checked only; its tests and build were not run.
+- Nothing was pushed. The branch is local.
 
 ## 1. Summary
 
