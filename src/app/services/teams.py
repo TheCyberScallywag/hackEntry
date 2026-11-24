@@ -2,7 +2,8 @@
 
 A volunteer is *in standing* with an organisation while their account is active and they are
 opted in to it. Only then can they hold an open offer or a place on a team there. A project lead
-keeps the lead's powers only while in standing (or while they are an org admin).
+keeps the lead's powers only while in standing (or while they are a team coordinator or org
+admin, who act for every project of the organisation anyway).
 
 Everything here runs inside the caller's transaction and writes a `placement_events` row for
 each change, so a placement's history says who did what and why.
@@ -50,10 +51,11 @@ def in_standing(conn: sqlite3.Connection, user_id: str, org_id: str) -> bool:
 
 
 def lead_in_standing(conn: sqlite3.Connection, lead_id: str | None, org_id: str) -> bool:
-    """Whether the project's lead may still act for it: in standing, or an org admin."""
+    """Whether the project's lead may still act for it: in standing, or a team coordinator or
+    org admin of the organisation."""
     if not lead_id:
         return False
-    return org_access(conn, lead_id, org_id).org_admin or in_standing(conn, lead_id, org_id)
+    return org_access(conn, lead_id, org_id).team_coordinator or in_standing(conn, lead_id, org_id)
 
 
 def project_info(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row | None:
@@ -67,10 +69,10 @@ def project_info(conn: sqlite3.Connection, project_id: str) -> sqlite3.Row | Non
 def check_lead_side(
     conn: sqlite3.Connection, actor_id: str, project_id: str, volunteer_id: str = ""
 ) -> sqlite3.Row:
-    """The actor may act for the project's lead side: an org admin (or system admin), or the
-    project's lead while they are still in standing with the organisation. Org admins assign
-    the lead (app.services.submissions.set_project_lead), so a lead's powers come from, and
-    stay inside, the organisation.
+    """The actor may act for the project's lead side: a team coordinator or org admin of the
+    organisation (or a system admin), or the project's lead while they are still in standing
+    with it. Team coordinators assign the lead (app.services.submissions.set_project_lead), so
+    a lead's powers come from, and stay inside, the organisation.
 
     With a `volunteer_id`, the actor must also not be deciding on their own place; only the
     project's lead may, since the lead is on their own team anyway."""
@@ -79,9 +81,11 @@ def check_lead_side(
         raise NotFound("project")
     access = org_access(conn, actor_id, info["org_id"])
     is_lead = info["lead_id"] == actor_id and in_standing(conn, actor_id, info["org_id"])
-    if not (is_lead or access.org_admin):
+    if not (is_lead or access.team_coordinator):
         if access.any:
-            raise Forbidden("Only the project lead or an org admin can do that.")
+            raise Forbidden(
+                "Only the project lead, a team coordinator or an org admin can do that."
+            )
         raise NotFound("project")
     if volunteer_id and volunteer_id == actor_id and info["lead_id"] != actor_id:
         raise Forbidden("Someone else must decide on your own place on a team.")
@@ -109,15 +113,17 @@ def notify_deciders(
     also: tuple[str | None, ...] = (),
 ) -> None:
     """Tell whoever decides for a project: its lead while they are in standing, otherwise the
-    organisation's admins, so a project with no active lead does not stall unnoticed. `also`
-    adds people (say, the org admin who sent an invitation)."""
+    organisation's team coordinators and admins, so a project with no active lead does not stall
+    unnoticed. `also` adds people (say, the coordinator who sent an invitation)."""
     if lead_in_standing(conn, lead_id, org_id):
         targets = {lead_id}
     else:
         targets = {
             r[0]
             for r in conn.execute(
-                "SELECT user_id FROM org_roles WHERE org_id = ? AND role = 'org_admin'", (org_id,)
+                "SELECT DISTINCT user_id FROM org_roles WHERE org_id = ? "
+                "AND role IN ('team_coordinator', 'org_admin')",
+                (org_id,),
             )
         }
     for user_id in sorted((targets | set(also)) - set(exclude) - {None}):
@@ -219,8 +225,8 @@ def end_for_volunteer(
 
 
 def flag_leaderless(conn: sqlite3.Connection, user_id: str, org_id: str | None = None) -> None:
-    """Tell the org admins of each live project this user leads, and can no longer act for,
-    that it needs a new lead."""
+    """Tell the team coordinators and org admins of each live project this user leads, and can
+    no longer act for, that it needs a new lead."""
     for row in conn.execute(
         "SELECT id, org_id, title FROM submission_current WHERE lead_id = ? "
         "AND state IN ('approved', 'published') AND (? IS NULL OR org_id = ?) ORDER BY id",
@@ -229,11 +235,11 @@ def flag_leaderless(conn: sqlite3.Connection, user_id: str, org_id: str | None =
         if lead_in_standing(conn, user_id, row["org_id"]):
             continue
         for (admin,) in conn.execute(
-            "SELECT user_id FROM org_roles WHERE org_id = ? AND role = 'org_admin' "
-            "AND user_id != ? ORDER BY user_id",
+            "SELECT DISTINCT user_id FROM org_roles WHERE org_id = ? "
+            "AND role IN ('team_coordinator', 'org_admin') AND user_id != ? ORDER BY user_id",
             (row["org_id"], user_id),
         ).fetchall():
             notify(conn, admin, "placement",
                    f"“{row['title']}” has no active lead any more. Assign a new one; until "
-                   "then only org admins can invite its candidates.",
+                   "then only team coordinators and org admins can invite its candidates.",
                    project_link(row["org_id"], row["id"]))  # fmt: skip

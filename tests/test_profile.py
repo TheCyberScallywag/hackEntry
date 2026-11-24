@@ -5,13 +5,13 @@ import re
 from app.catalogue import get_catalogue
 from app.profile_view import CAUSE_STANCES, PROJECT_STATES, SKILL_STATES
 from app.runtime import DEMO_PASSWORD
-from tests.conftest import Web
+from tests.conftest import Web, demo_email
 from tests.test_matching import save_profile
 
 
 def _api_profile(web: Web, key: str) -> dict:
     token = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": demo_email(key), "password": DEMO_PASSWORD}
     ).json()["token"]
     return web.get("/api/v1/profile", headers={"Authorization": f"Bearer {token}"}).json()
 

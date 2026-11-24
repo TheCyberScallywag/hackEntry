@@ -33,7 +33,7 @@
 The Volunteer Network matches **vetted volunteers** with **approved projects** run by
 partner organisations. It suggests a match when a volunteer has and offers the skills a project
 needs, and never when the project touches a cause or skill the volunteer has excluded. The
-illustrative organisations, *DataKind UK* and *Cyber Scallywags*, can be renamed with
+illustrative organisations, *DataKind UK*, *Cyber Scallywags* and *InterLinkRCT*, can be renamed with
 `ORG_NAMES`; no endorsement is implied.
 
 The solution covers:
@@ -41,16 +41,18 @@ The solution covers:
 - **Identity:** signup, sign-in and sign-out, with server-side authorisation on every action.
 - **Volunteer onboarding:** profile, then vetting by a moderator, then active, then matched,
   then on a team.
+- **Onboarding workflows:** each organisation, and each project, can ask new joiners to work
+  through its own ordered steps, with an optional email at each one.
 - **Project onboarding:** a suggestion can be saved as a private draft; once submitted it is
   reviewed by the organisation, may be sent back for scoping, and is then approved and made
   active.
 - **Matching** on a graph engine (Relate), with explainable results and coverage gaps.
 - **Three clients** on one backend: server-rendered web pages, an Ionic mobile app and a
   Streamlit admin console.
-- **In-app notifications** at every state change.
+- **In-app notifications** at every state change, and onboarding emails over SMTP.
 - **Optional AuraDB** push and parity check, run only on request.
 
-**Out of scope:** email and SMS delivery, production hosting, single sign-on, and publishing to
+**Out of scope:** SMS and push delivery, email beyond the onboarding emails, production hosting, single sign-on, and publishing to
 app stores.
 
 ---
@@ -68,13 +70,14 @@ flowchart LR
   subgraph Server["FastAPI application (one process)"]
     HTML["HTML routes<br/>cookie session + CSRF"]
     API["/api/v1 JSON API<br/>bearer token"]
-    SVC["Domain services<br/>services · placements · matching<br/>notify · profile_view · auth"]
-    PROJ["Outbox projector<br/>+ placement sweep"]
+    SVC["Domain services<br/>services · placements · matching<br/>notify · mailer · profile_view · auth"]
+    PROJ["Background loop<br/>outbox projector, placement sweep,<br/>email delivery"]
   end
 
   SQL[("SQLite<br/>source of truth<br/>+ outbox")]
   REL[("Relate .rl<br/>matching graph")]
   AURA[("AuraDB<br/>optional")]
+  SMTP[("SMTP relay<br/>optional")]
   CLI["app.cli<br/>operator commands"]
 
   W --> HTML
@@ -86,6 +89,7 @@ flowchart LR
   SVC -- "bounded, parameterised reads" --> REL
   PROJ -- "reads outbox + current rows" --> SQL
   PROJ -- "idempotent upserts" --> REL
+  PROJ -. "queued onboarding emails" .-> SMTP
   CLI -. "aura-push / aura-parity<br/>(explicit, off the request path)" .-> AURA
   CLI --> SQL
   CLI --> REL
@@ -125,10 +129,11 @@ commands, including the tasks, the pre-commit hooks, CI and the docs toolchain.
 | Config | pydantic-settings | 2.16 | Typed settings from env and `.env` |
 | Passwords | argon2-cffi | 25.1 | Argon2id hashing |
 | Graph engine | **Relate** (`relate-db`), a Neo4j Labs project | **1.0.1** | Embedded, single-file `.rl` graph; Cypher; PEP 249 driver. See [Relate in this application](relate.md). |
-| Transactional store | SQLite (stdlib) | bundled | WAL mode, `BEGIN IMMEDIATE`, schema version 5 |
+| Transactional store | SQLite (stdlib) | bundled | WAL mode, `BEGIN IMMEDIATE`, schema version 9 |
 | Assistants | Pydantic AI (`pydantic-ai-slim[anthropic]`), `pydantic-graph` | 2.71 | Six agents over the service layer; off until `AGENT_MODEL` is set. See [7.7](#77-assistants). |
 | Evaluation | `pydantic-evals` | 2.71 | Evaluators on every live run, and offline datasets (`app.cli evals`) |
 | Observability | Pydantic Logfire | 6.0 | Traces, metrics and evaluation results; sent only when `LOGFIRE_TOKEN` is set |
+| Email | `smtplib` (stdlib); Mailpit in Compose | bundled | Onboarding emails from an outbox table; nothing is sent without `SMTP_HOST` |
 | Optional graph | Neo4j Python driver → AuraDB | 6.4 | `aura-push` and `aura-parity` only |
 | Admin console | Streamlit + httpx + pandas | 1.67 / 0.28 / 3.1 | Staff UI, a client of the JSON API only |
 
@@ -147,11 +152,11 @@ commands, including the tasks, the pre-commit hooks, CI and the docs toolchain.
 
 | Tool | Use |
 |---|---|
-| pytest 9 + coverage | 154 backend tests, 95% line coverage; `aura` and `compose` markers for gated tests |
+| pytest 9 + coverage | 365 backend tests, with line coverage on every run; `aura` and `compose` markers for gated tests |
 | Admin console tests | `tests/test_admin_console.py` drives the console for each role through a small stand-in for Streamlit, against the real API |
 | Ruff 0.17 | Lint and format (line length 100) |
 | ESLint + Angular CLI | Mobile lint and production build |
-| Docker + Docker Compose | Two-command clean start: services `web`, `admin`, `mobile` and `docs`; volume `dvn-data` |
+| Docker + Docker Compose | Two-command clean start: services `web`, `admin`, `mobile`, `docs` and `mail` (Mailpit), plus `tunnel` on request; volume `dvn-data` |
 | GitHub Actions | CI: Python lint and tests against the locked environment, a strict docs build, mobile lint and tests (in Docker), Compose smoke test. CodeQL runs separately. |
 | Dependabot | Weekly grouped updates for uv, npm, GitHub Actions and Docker base images |
 | pre-commit | Hooks for file hygiene, Ruff, the lock file, workflow syntax, branch names and commit prefixes |
@@ -181,17 +186,18 @@ adapter, the projector, each query and how to inspect the graph.
 ```mermaid
 flowchart LR
   subgraph Interface
-    api["web/api.py<br/>JSON API (about 45 endpoints)"]
+    api["web/api.py · onboarding_api.py · agents_api.py<br/>JSON API (about 90 endpoints)"]
     main["web/main.py · web/pages/<br/>app factory, CSP, HTML routes, error pages"]
     admin["admin/main.py<br/>Streamlit console"]
     cli["cli.py<br/>reset · bundle · inspect · drain · aura-*"]
   end
   subgraph Domain
-    services["services/<br/>access, roles, vetting, orgs, profiles, submissions"]
+    services["services/<br/>access, roles, vetting, orgs, profiles,<br/>submissions, teams, onboarding"]
     placements["placements.py<br/>candidate sweep, invitations, teams"]
     matching["matching.py<br/>access + freshness around Relate reads"]
     profile["profile_view.py<br/>Profile screen model"]
     notify["notify.py<br/>in-app notifications"]
+    mailer["mailer.py<br/>email outbox, templates, SMTP"]
     auth["auth.py<br/>Argon2id, sessions, CSRF"]
   end
   subgraph Infrastructure
@@ -206,7 +212,7 @@ flowchart LR
   api --> services & placements & matching & profile & notify & auth
   main --> services & placements & matching & profile & notify & auth
   admin -. HTTP .-> api
-  services --> sqlstore & notify
+  services --> sqlstore & notify & mailer
   placements --> sqlstore & store & cypher & notify
   matching --> sqlstore & store & cypher
   profile --> sqlstore & matching
@@ -218,21 +224,25 @@ flowchart LR
 
 | Component | Responsibility | Size (lines) |
 |---|---|---|
-| `web/api.py` | Every action as a typed JSON endpoint, grouped by tag | 517 |
-| `web/schemas.py` | Every request body and response model: the API contract | 495 |
-| `web/main.py` | App factory, CSP, docs mount, health check | 100 |
-| `web/pages/` | The HTML pages, one router per area (account, organisations, projects, suggestions) | 431 |
-| `web/deps.py`, `web/errors.py` | Session, CSRF-checked forms, rendering; one table of error responses for pages and API | 357 |
-| `services/` | Domain operations and **all authorisation decisions**, one module per area | 1,005 |
-| `placements.py` | Onboarding step 2: candidate, invited by the lead side, then on the team; reopening, reminders and expiry | 591 |
-| `services/teams.py` | Standing, the lead's automatic team place, ending places, the placement event history | 190 |
-| `matching.py` | Org access, account status, pending-update withholding, explanations | 262 |
-| `graph/projector.py` | Outbox drain, reconcile per entity, backoff, hook into the sweep | 321 |
-| `graph/cypher.py` | The graph schema and all Cypher, with fixed labels and parameter-bound values | 286 |
-| `graph/store.py` | Relate connection per unit of work, lock, retry, row cap | 134 |
-| `sqlstore.py` | Schema (18 tables), transactions, outbox enqueue, pruning | 341 |
+| `web/api.py` | The core actions as typed JSON endpoints, grouped by tag | 626 |
+| `web/onboarding_api.py` | The onboarding workflows of organisations and projects, email templates and sent emails | 447 |
+| `web/agents_api.py` | The assistants and the audit trail | 316 |
+| `web/schemas.py` | Every request body and response model: the API contract | 540 |
+| `web/main.py` | App factory, CSP, docs mount, health check, audit middleware, the background loop | 160 |
+| `web/pages/` | The HTML pages, one router per area (account, onboarding, organisations, projects, suggestions) | 669 |
+| `web/deps.py`, `web/errors.py` | Session, CSRF-checked forms, rendering; one table of error responses for pages and API | 402 |
+| `services/` | Domain operations and **all authorisation decisions**, one module per area | 2,446 |
+| `services/onboarding.py` | Workflows, steps, email templates, a volunteer's run through them | 819 |
+| `services/teams.py` | Standing, the lead side, the lead's automatic team place, ending places, the placement event history | 245 |
+| `placements.py` | Onboarding step 2: candidate, invited by the lead side, team onboarding, on the team; suspension, reopening, reminders and expiry | 752 |
+| `matching.py` | Org access, account status, pending-update withholding, explanations | 293 |
+| `mailer.py` | Placeholder checking and rendering, the email outbox, SMTP delivery with retries | 188 |
+| `graph/projector.py` | Outbox drain, reconcile per entity, backoff, hook into the sweep | 412 |
+| `graph/cypher.py` | The graph schema and all Cypher, with fixed labels and parameter-bound values | 457 |
+| `graph/store.py` | Relate connection per unit of work, lock, retry, row cap | 139 |
+| `sqlstore.py` | Schema (27 tables), transactions, outbox enqueue, pruning | 531 |
 | `auth.py` | Argon2id, opaque sessions, CSRF comparison | 152 |
-| `admin/main.py` | Role-based staff console over the API, one function per tab | 345 |
+| `admin/main.py` | Role-based staff console over the API, one function per section | 743 |
 | `mobile/src/app` | Ionic pages: sign-in, matches, suggestions, profile, opportunities, notifications | n/a |
 
 ---
@@ -248,10 +258,13 @@ flowchart LR
 | Profiles (skills, causes, memberships) | ✔ authoritative | ✔ projected (IDs only) | copy on push |
 | Submissions and revisions | ✔ authoritative | ✔ active projects only | copy on push |
 | Placements and teams | ✔ authoritative | ✔ `ON_TEAM` edges | copy on push |
+| Onboarding workflows, steps and each volunteer's progress | ✔ authoritative | ✔ projected (steps, `AT_STEP`, `COMPLETED_STEP`) | copy on push |
+| Email templates, queued and sent emails | ✔ | ✘ | ✘ |
 | Notifications | ✔ | ✘ | ✘ |
+| Audit trail, assistant runs | ✔ | ✘ | ✘ |
 | Matching and coverage queries | ✘ | ✔ | parity check only |
 
-### 5.2 Relational model (SQLite, schema version 5)
+### 5.2 Relational model (SQLite, schema version 9)
 
 ```mermaid
 flowchart LR
@@ -264,7 +277,7 @@ flowchart LR
   subgraph Orgs["Organisations"]
     organisations
     memberships["memberships<br/>opted in"]
-    org_roles["org_roles<br/>org_admin · reviewer"]
+    org_roles["org_roles<br/>org_admin · reviewer · team_coordinator"]
   end
   subgraph Profile["Profile and catalogue"]
     skills
@@ -284,6 +297,18 @@ flowchart LR
     notifications
     outbox["outbox<br/>kind · entity_id · attempts"]
   end
+  subgraph Onboarding["Onboarding workflows and email"]
+    onboarding_workflows["onboarding_workflows<br/>per organisation or project · enabled · version"]
+    onboarding_steps["onboarding_steps<br/>position · completed_by"]
+    onboarding_runs["onboarding_runs<br/>in_progress · completed · cancelled"]
+    onboarding_progress["onboarding_progress<br/>open · done · done_by"]
+    email_templates
+    email_outbox["email_outbox<br/>queued · sent · failed · not_configured"]
+  end
+  subgraph Trail["Audit"]
+    audit_log["audit_log<br/>action · actor · outcome"]
+    agent_runs["agent_runs<br/>assistant · status · tokens"]
+  end
   users --> sessions & system_roles & vetting_events & memberships & org_roles
   users --> profile_skills & profile_causes & notifications
   organisations --> memberships & org_roles & submissions
@@ -292,6 +317,10 @@ flowchart LR
   submissions --> submission_revisions --> revision_skills
   submissions --> reviews & placements
   users --> placements
+  organisations --> onboarding_workflows & onboarding_steps & email_templates & email_outbox
+  onboarding_steps --> onboarding_progress
+  email_templates --> onboarding_steps
+  users --> onboarding_runs & onboarding_progress & email_outbox & audit_log & agent_runs
   outbox -. "volunteer / project / organisation" .-> users & submissions & organisations
 ```
 
@@ -300,12 +329,20 @@ Key columns:
 - **`users`:** `status` (draft, screening, info_requested, active, declined, suspended),
   `status_version`, `profile_version`, `vetted_by`, `vetted_at`.
 - **`submissions`:** `state`, `current_revision`, `version`, `lead_id` (the author by default).
-- **`placements`:** `state` (eligible, team, declined, lapsed, removed, left), `volunteer_said`,
+- **`placements`:** `state` (eligible, onboarding, team, suspended, declined, lapsed, removed,
+  left), `volunteer_said`,
   `lead_said`, `lead_actor_id` (who answered for the lead side), `lead_note`, `invited_at`,
   `reminded_at`, `matched_skills`, `optional_skills`, `preferred`, `version`.
 - **`placement_events`:** one row per change to a placement: `event`, `actor_id` (empty when the
   system did it), `note`.
 - **`outbox`:** `kind`, `entity_id`, `attempts`, `next_attempt_at`, `last_error`, `done_at`.
+- **`org_roles`:** `role` (reviewer, team_coordinator, org_admin), one row per role held.
+- **`onboarding_workflows`:** one per organisation, plus one per project that has its own
+  (`project_id`, empty for the organisation's); `enabled`, `completion_template_id`, `version`.
+- **`onboarding_steps`:** `position`, `title`, `completed_by` (volunteer, org_admin for an
+  organisation's step, lead for a project's), `email_template_id`.
+- **`email_outbox`:** the recipient is a user ID, never an address; `purpose` (step, completed,
+  test), `status`, `attempts`, `next_attempt_at`.
 
 ### 5.3 Graph model (Relate)
 
@@ -318,11 +355,15 @@ flowchart LR
   V((Volunteer<br/>opaque id)) -- "VOLUNTEERS_WITH<br/>(opted in AND active)" --> O
   V -- "HAS_SKILL / OFFERS_SKILL / EXCLUDES_SKILL" --> S
   V -- "PREFERS_CAUSE / EXCLUDES_CAUSE" --> C
-  V -- "ON_TEAM<br/>(invited, said yes)" --> P
+  V -- "ON_TEAM<br/>(invited, said yes, accepted)" --> P
+  O -- HAS_ONBOARDING_STEP --> T((OnboardingStep))
+  P -- HAS_TEAM_STEP --> T
+  T -- NEXT_STEP --> T
+  V -- "AT_STEP / COMPLETED_STEP" --> T
 ```
 
-The bundled demo graph has **35 nodes and 67 relationships**: 2 organisations, 5 causes,
-15 skills, 2 active projects and 11 volunteer IDs.
+The bundled demo graph has **49 nodes and 97 relationships**: 3 organisations,
+5 causes, 15 skills, 4 active projects, 8 onboarding steps and 14 volunteer IDs.
 
 ### 5.4 Matching rules (implemented in Cypher)
 
@@ -357,7 +398,7 @@ those and not to an organisation as a whole.
 | Headers | Strict CSP on pages, with a narrow relaxation for `/api/docs` only |
 | Concurrency | Optimistic versions on profiles, statuses, submissions and placements, so stale writes get 409 |
 | Graph privacy | No PII in Relate or AuraDB; volunteers are uuid5 opaque IDs |
-| Production guards | Demo seeding refuses `APP_ENV=production`; the app refuses to start on a DB holding `@cyberscallywags.uk` accounts |
+| Production guards | Demo seeding refuses `APP_ENV=production`; the app refuses to start on a DB holding any demo account: every address in the fixture, and anything at `@cyberscallywags.uk` |
 
 ### 6.2 Roles (RBAC)
 
@@ -365,30 +406,37 @@ those and not to an organisation as a whole.
 |---|---|---|---|
 | **System admin** | All organisations | Another admin, or the seed | Everything: users, roles, organisations, projection health, the graph, emails |
 | **Moderator** | System | System admin | Vet volunteers: approve, request info, decline, suspend, reinstate (never themselves) |
-| **Org admin** | Their organisation | System admin | Review and withdraw projects, reassign leads, list and remove volunteers, answer candidates |
+| **Org admin** | Their organisation | System admin | Everything the reviewer and the team coordinator can do, plus: list and remove volunteers, edit the organisation's onboarding workflow and email templates, confirm its steps |
 | **Reviewer** | Their organisation | System admin | Review suggestions, withdraw active projects |
-| **Project lead** | One project | Author by default; reassigned by an org admin | Invite or pass over candidates from the ranked list, reopen closed placements, remove team members. On their own team automatically |
+| **Team coordinator** | Their organisation | System admin | Assign project leads; everything a project lead can do, for any of its projects; list its volunteers (to choose a lead). No reviewing, and no removing volunteers from the organisation |
+| **Project lead** | One project | Author by default; reassigned by a team coordinator or org admin | Invite or pass over candidates from the ranked list, reopen closed placements, run the project's team onboarding, accept, suspend, reinstate and remove team members. On their own team automatically |
 | **Volunteer** | Self | Signup | Edit profile, join organisations, suggest projects, answer offers, leave teams |
 
 Signup never grants a role. Authorisation is resolved by `services.org_access`, which returns an
-`Access` record (volunteer, reviewer, org_admin, system_admin), and enforced by
+`Access` record (volunteer, reviewer, team_coordinator, org_admin, system_admin), and enforced by
 `require_access(role=…)` and `require_active`. A refused organisation action returns **403**
 with a plain-language reason. A project, submission or placement the user can't see returns
 **404**, so the API doesn't confirm that it exists.
 
 ### 6.3 Permission matrix (selected actions)
 
-| Action | Volunteer | Lead | Reviewer | Org admin | Moderator | System admin |
-|---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Edit own profile, submit for vetting | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| Suggest a project (active account) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
-| Review a suggestion | | | own org | own org | | ✔ |
-| Withdraw an approved or active project | | | own org | own org | | ✔ |
-| Reassign a project lead | | | | own org | | ✔ |
-| Answer a candidate, remove from a team | | own project | | own org | | ✔ |
-| List or remove organisation volunteers | | | | own org | | ✔ |
-| Vet volunteers | | | | | ✔ | ✔ |
-| Grant roles, create organisations, replay the outbox | | | | | | ✔ |
+| Action | Volunteer | Lead | Reviewer | Team coordinator | Org admin | Moderator | System admin |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Edit own profile, submit for vetting | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Suggest a project (active account) | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Review a suggestion, see coverage | | | own org | | own org | | ✔ |
+| Withdraw an approved or active project | | | own org | | own org | | ✔ |
+| Assign a project lead | | | | own org | own org | | ✔ |
+| Invite or pass over a candidate; accept, suspend, reinstate or remove a team member | | own project | | own org | own org | | ✔ |
+| Edit a project's team onboarding, confirm its steps | | own project | | own org | own org | | ✔ |
+| List organisation volunteers | | | | own org | own org | | ✔ |
+| Remove a volunteer from the organisation | | | | | own org | | ✔ |
+| Edit the organisation's onboarding workflow and email templates | | | | | own org | | ✔ |
+| Vet volunteers | | | | | | ✔ | ✔ |
+| Grant roles, create organisations, replay the outbox, read the audit trail | | | | | | | ✔ |
+
+An org admin holds the reviewer and team coordinator roles of their organisation without a
+separate grant. A reviewer is not a team coordinator, and a team coordinator is not a reviewer.
 
 ---
 
@@ -482,11 +530,17 @@ stateDiagram-v2
   [*] --> eligible: sweep finds a match (candidate)
   eligible --> eligible: lead side invites · invitation expires
   eligible --> team: invited volunteer says yes
+  eligible --> onboarding: says yes, and the project has team onboarding switched on
+  onboarding --> team: steps done, lead side accepts
   eligible --> declined: lead side passes or withdraws · volunteer says no
   eligible --> lapsed: no longer matches · volunteer loses standing
   lapsed --> eligible: matches again
+  team --> suspended: lead side suspends (with reason)
+  suspended --> team: lead side reinstates
   team --> left: volunteer leaves the team or the organisation
-  team --> removed: lead / org admin removes (with reason) · suspended · removed from the organisation
+  team --> removed: lead side removes (with reason) · suspended from the network · removed from the organisation
+  onboarding --> removed: lead side removes
+  suspended --> removed: lead side removes
   declined --> lapsed: lead side reopens
   left --> lapsed: lead side reopens
   removed --> lapsed: lead side reopens
@@ -494,35 +548,46 @@ stateDiagram-v2
 
 - A candidate is shown to the lead side only, ranked by preferred cause, required skills covered
   and optional skills offered. The volunteer is told when they are invited.
-- The lead side is the project lead while they are active and with the organisation, or any org
-  admin. Their answers are interchangeable; `lead_actor_id` records who gave it. Nobody decides on
-  their own place, except the lead, who is put on their own team by the project projection.
+- The lead side is the project lead while they are active and with the organisation, or any team
+  coordinator or org admin of the organisation. Their answers are interchangeable;
+  `lead_actor_id` records who gave it. Nobody decides on their own place, except the lead, who is
+  put on their own team by the project projection.
+- Team coordinators and org admins assign the lead (`services.set_project_lead`). The new lead
+  must be an active volunteer, a team coordinator or an admin of the organisation.
 - A yes is re-checked against SQLite in the same transaction: the project must be published and
   the volunteer active and opted in.
+- `ON_TEAM` exists in Relate only while the state is `team`: not during team onboarding, and not
+  while suspended.
+- A lead who loses their standing loses the lead's powers, and the organisation's team
+  coordinators and org admins are told the project needs a new lead.
 - An unanswered invitation is reminded once and then closes, returning the volunteer to the
   candidate list (`INVITATION_REMINDER_DAYS`, `INVITATION_EXPIRY_DAYS`).
 
 ```mermaid
 sequenceDiagram
   participant W as Sweep
+  participant L as Lead side
   participant V as Volunteer
-  participant L as Project lead
   participant Q as SQLite
   participant R as Relate
   W->>Q: INSERT placement (eligible)
-  W-->>V: "You are eligible for X"
-  W-->>L: "Name is eligible for X"
-  V->>Q: POST /placements/{pid}/answer yes
-  Q-->>V: "Waiting for the project lead"
-  Q-->>L: "Name wants to join X"
+  Q-->>L: "Name is a candidate for X"
   L->>Q: POST /projects/{pid}/placements/{vid}/answer yes
-  Q-->>V: "You are on the team for X"
-  Q-->>L: "Name joined the team"
+  Q-->>V: "You are invited to join X"
+  V->>Q: POST /placements/{pid}/answer yes
+  alt team onboarding switched off
+    Q-->>V: "You are on the team for X"
+    Q-->>L: "Name joined the team"
+  else switched on
+    Q-->>V: first step of the project's onboarding
+    V->>Q: complete own steps
+    L->>Q: confirm the lead's steps, then POST .../accept
+  end
   Q->>R: outbox → ON_TEAM edge
 ```
 
-If the volunteer is the project's lead, the lead's yes is recorded automatically. Sweeps never
-remove team members.
+The messages in the diagram are paraphrased. The project's lead is on their own team without an
+invitation. Sweeps never remove team members.
 
 ### 7.5 Project onboarding
 
@@ -691,6 +756,39 @@ reason with every suggestion. **Offline**, `python -m app.cli evals` runs each a
 dataset against a disposable copy of the demo with the configured model and exits 1 if an
 assertion fails, so it can gate a change of model or instructions.
 
+### 7.10 Onboarding workflows and email
+
+Vetting (7.3) is done once for the whole network. On top of it, an organisation can have its
+own workflow for volunteers who join it, and a project can have one for volunteers joining its
+team (`services/onboarding.py`). Both are ordered steps, each completed either by the volunteer
+or by the other side, and each optionally announced by an email.
+
+| | Organisation's workflow | Project's team workflow |
+|---|---|---|
+| Edited by | Org admins (console *Onboarding* section, or the API) | The lead side: lead, team coordinators, org admins (project page, or the API) |
+| Started by | Joining the organisation while it is switched on | Saying yes to an invitation while it is switched on |
+| Steps confirmed by | The volunteer, or an org admin | The volunteer, or the lead side |
+| Ends with | The run is complete | The lead side accepts the volunteer onto the team |
+| Cancelled by | Leaving or being removed from the organisation | Leaving or being removed from the team |
+
+- A new organisation gets a two-step starter workflow, switched off. Switching one on applies
+  to people who join from then on.
+- The organisation's workflow comes first: a volunteer part-way through it cannot say yes to a
+  team invitation, be accepted or be reinstated.
+- Every edit bumps the workflow's `version`, so a stale editor is refused (409).
+- Email templates belong to the organisation and are written by its org admins only. They are
+  plain text with placeholders from a fixed list (`mailer.PLACEHOLDERS`); anything else in curly
+  brackets is refused when the template is saved.
+- An email is a row in `email_outbox`, written in the same transaction as the step it
+  announces. The web process delivers the queue over SMTP in its background loop, retrying a
+  failure five times with a growing delay. With no `SMTP_HOST` nothing is sent and the row is
+  marked `not_configured`. In Compose the relay is Mailpit, which delivers nothing onwards.
+- Org admins see recipients by name; the address is read only when the message is sent.
+- Steps and progress are projected to Relate through the same outbox as everything else
+  (`OnboardingStep` nodes, `NEXT_STEP`, `AT_STEP`, `COMPLETED_STEP`). The onboarding assistant
+  reads them there. Templates and addresses stay in SQLite.
+- A workflow does not change who is matched: the matching query is unchanged.
+
 ---
 
 ## 8. API surface
@@ -705,8 +803,9 @@ graph busy or assistants not configured, 429 assistant quota used, 502 assistant
 | **me** | `GET /me` · `PUT /me/active-org` · `GET/PUT /profile` · `POST /me/vetting` · `GET /notifications` · `POST /notifications/{id}/read` · `POST /notifications/read-all` |
 | **organisations** | `GET /orgs` · `PUT/DELETE /orgs/{org}/membership` · `GET /orgs/{org}/matches` · `GET /orgs/{org}/projects` · `GET /orgs/{org}/coverage` · `GET /orgs/{org}/volunteers` · `POST /orgs/{org}/volunteers/{uid}/remove` |
 | **projects** | `GET/POST /submissions` · `POST /submissions/drafts` · `PUT /submissions/{sid}/draft` · `POST /submissions/{sid}/submit` · `GET/DELETE /submissions/{sid}` · `POST /submissions/{sid}/revisions` · `GET /orgs/{org}/submissions` · `POST /orgs/{org}/submissions/{sid}/decision` · `POST /orgs/{org}/projects/{sid}/withdraw` · `PUT /orgs/{org}/projects/{sid}/lead` |
-| **placements** | `GET /placements` · `POST /placements/{pid}/answer` · `POST /placements/{pid}/leave` · `GET /projects/{pid}/placements` · `POST /projects/{pid}/placements/{vid}/answer` · `POST /projects/{pid}/placements/{vid}/remove` |
+| **placements** | `GET /placements` · `POST /placements/{pid}/answer` · `POST /placements/{pid}/leave` · `GET /projects/{pid}/placements` · `POST /projects/{pid}/placements/{vid}/answer` · `POST .../{vid}/reopen` · `POST .../{vid}/accept` · `POST .../{vid}/suspend` · `POST .../{vid}/reinstate` · `POST .../{vid}/remove` |
 | **moderation** | `GET /moderation/volunteers` · `GET /moderation/volunteers/{uid}` · `POST /moderation/volunteers/{uid}/decision` |
+| **onboarding** | `GET /me/onboarding` · `POST /orgs/{org}/onboarding/steps/{step}/complete` · `GET/PUT /orgs/{org}/onboarding` · `POST /orgs/{org}/onboarding/steps` · `PUT/DELETE /orgs/{org}/onboarding/steps/{step}` · `POST .../steps/{step}/move` · `POST /orgs/{org}/onboarding/templates` · `PUT/DELETE .../templates/{template}` · `POST .../templates/preview` · `POST .../templates/{template}/test` · `GET /orgs/{org}/onboarding/volunteers` · `POST .../volunteers/{uid}/steps/{step}/complete` · `GET /orgs/{org}/onboarding/emails`; and the same steps and volunteers routes for a project's team onboarding under `/orgs/{org}/projects/{pid}/onboarding` |
 | **assistants** | `GET /agents` · `POST /agents/volunteer-onboarding` · `POST /agents/project-scoping` · `POST /agents/project-review` · `POST /agents/match-shortlist` · `POST /agents/match-explainer` · `POST /agents/audit` · `POST /agents/runs/{run}/approval` · `GET /agents/runs` · `GET /agents/runs/{run}` |
 | **audit** | `GET /admin/audit/events` · `GET /admin/audit/rbac` · `GET /admin/audit/usage` · `GET /admin/audit/checks` |
 | **admin** | `GET /admin/users` · `PUT/DELETE /admin/users/{uid}/system-roles/{role}` · `PUT/DELETE /admin/orgs/{org}/roles/{uid}/{role}` · `POST /admin/orgs` · `GET /admin/projection` · `POST /admin/projection/replay` · `GET /admin/graph` |
@@ -724,6 +823,9 @@ All paths are prefixed with `/api/v1`.
 | Opportunities (answer offers, leave teams) | ✔ | ✔ | |
 | Notifications | ✔ | ✔ | |
 | Review queue, candidates and team, volunteers | ✔ | | ✔ |
+| Own onboarding steps | ✔ | | |
+| Project team onboarding (steps, accept, suspend) | ✔ | | ✔ (org admins) |
+| Organisation onboarding workflow, email templates, sent emails | | | ✔ |
 | Volunteer screening | | | ✔ |
 | Users, roles, organisations, projection, graph | | | ✔ |
 
@@ -754,11 +856,17 @@ A package with one module per area. Callers import every name from the package i
 - **`submissions.py`:** `create_submission`, `revise_submission`, `get_submission`,
   `my_submissions`, `review_queue`, `review_counts`, `review_submission`, `withdraw_project`,
   `set_project_lead`, `published_state`, and the project-state labels.
+- **`teams.py`:** `in_standing`, `lead_in_standing`, `check_lead_side`, `notify_deciders`,
+  `ensure_lead_on_team`, `end_for_volunteer`, `flag_leaderless`, `record`.
+- **`onboarding.py`:** `get_workflow`, `update_workflow`, `add_step`, `update_step`, `move_step`,
+  `delete_step`, `save_template`, `delete_template`, `preview_template`, `send_test`,
+  `sent_emails`, `start`, `cancel`, `complete_step`, `my_onboarding`, `org_progress`.
 
 ### `placements.py`
 `sweep` (Relate matches to placements; given a `Scope`, only the volunteers and projects that
-changed), `volunteer_respond`, `lead_respond`,
-`end_team_membership`, `for_volunteer`, `for_project`.
+changed), `volunteer_respond`, `lead_respond`, `reopen`, `chase` (reminders and expiry),
+`accept`, `suspend`, `reinstate`, `end_team_membership`, `for_volunteer`, `for_project`,
+`lead_side`.
 
 ### `matching.py`
 `volunteer_matches`, `project_coverage`, `browse`, `project`, plus helpers that check for pending updates
@@ -766,6 +874,9 @@ and build explanations.
 
 ### `notify.py`
 `notify`, `notify_org_admins`, `notify_vetters`, `list_for`, `unread_count`, `mark_read`.
+
+### `mailer.py`
+`template_problems`, `render`, `queue`, `deliver`; the fixed list `PLACEHOLDERS`.
 
 ### `profile_view.py`
 `overview`: skills grouped by type, causes, and active and past projects with labels.
@@ -776,7 +887,7 @@ and build explanations.
 - **`projector.py`:** `Projector.drain()`, `.status()`, the `on_projected` hook (told what
   changed), `pending_for`.
 - **`cypher.py`:** `MATCH_CANDIDATES`, `COVERAGE_GAPS`, `EXCLUDED_FOR_VOLUNTEER`,
-  `OPTIONAL_SKILLS_EXCLUDED`, `BROWSE_PROJECTS`, `INSPECT`, the relationship schema
+  `OPTIONAL_SKILLS_EXCLUDED`, `BROWSE_PROJECTS`, `TEAM_COVERAGE`, `INSPECT`, the relationship schema
   (`RELATIONSHIPS`) and the reconcile statements generated from it.
 - **`aura.py`:** `push` (scoped to `dvn-demo-v1`) and `parity`.
 
@@ -784,7 +895,8 @@ and build explanations.
 - **`runtime.py`:** `build_runtime`, `bootstrap`, `seed_catalogue`, `seed_demo` (which forms the
   team through the real accept flow), `reset_demo`.
 - **`cli.py` commands:** `reset`, `bundle`, `inspect`, `matches`, `status`, `drain`,
-  `grant-reviewer`, `openapi`, `aura-push`, `aura-parity`, `evals`, `audit`.
+  `grant-reviewer`, `openapi`, `brand`, `about`, `contributors`, `aura-push`, `aura-parity`,
+  `evals`, `audit`.
 
 ### `agents/`, `audit.py` and `observability.py`
 - **`agents/runner.py`:** `start`, `resume`, `my_runs`, `get_run`; the registry of assistants.
@@ -806,11 +918,13 @@ flowchart LR
     admin["admin<br/>streamlit :8501"]
     mobile["mobile<br/>nginx :8100<br/>/api/ → web:8080"]
     docs["docs<br/>nginx :8200<br/>portal + manual"]
+    mail["mail<br/>Mailpit :8025<br/>catches every email"]
     vol[("volume dvn-data<br/>/data/dvn.sqlite3<br/>/data/graph.rl")]
   end
   user((Browser / phone)) --> web & admin & mobile & docs
   admin -- "API_URL=http://web:8080" --> web
   mobile --> web
+  web -- "SMTP" --> mail
   web --- vol
 ```
 
@@ -820,15 +934,16 @@ flowchart LR
 | **Clean start with Compose** | `docker compose up --build` (ports configurable with `WEB_PORT`, `ADMIN_PORT`, `MOBILE_PORT`, `DOCS_PORT`) |
 | **Reset demo** | `uv run task reset` or `docker compose down -v` |
 | **Inspect graph** | `uv run task inspect`, `relate ...` on `var/graph.rl`; see [Relate in this application](relate.md) |
-| **Projection health** | `python -m app.cli status` / `drain`, or the console's *System* tab |
+| **Projection health** | `python -m app.cli status` / `drain`, or the console's *System* section |
 | **AuraDB** | `python -m app.cli aura-push` then `aura-parity` (needs `AURA_*` credentials) |
 
 **Configuration** (env or `.env`): `DATA_DIR`, `ORG_NAMES`, `SESSION_TTL_HOURS`, `SIGNUP_ENABLED`,
 `COOKIE_SECURE`, `TRUST_PROXY_HEADERS`, `API_URL`, `PROJECTOR_INTERVAL_SECONDS`,
-`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`; for the assistants `AGENT_MODEL`, `AGENT_FALLBACK_MODEL`, `ANTHROPIC_API_KEY`, `AGENT_REQUEST_LIMIT`, `AGENT_TOOL_CALLS_LIMIT`, `AGENT_TOTAL_TOKENS_LIMIT`, `AGENT_TIMEOUT_SECONDS`, `AGENT_DAILY_RUNS`; and `LOGFIRE_TOKEN`, `LOGFIRE_INCLUDE_CONTENT`, `AUDIT_RETENTION_DAYS`. [Tooling](tooling.md) gives the
+`SEED_DEMO_ON_START`, `GRAPH_MAX_ROWS`, `INVITATION_REMINDER_DAYS`, `INVITATION_EXPIRY_DAYS`,
+`SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_STARTTLS`, `EMAIL_FROM`, `PUBLIC_URL`, `AURA_URI` / `AURA_USERNAME` / `AURA_PASSWORD` / `AURA_DATABASE`, `APP_ENV`; for the assistants `AGENT_MODEL`, `AGENT_FALLBACK_MODEL`, `ANTHROPIC_API_KEY`, `AGENT_REQUEST_LIMIT`, `AGENT_TOOL_CALLS_LIMIT`, `AGENT_TOTAL_TOKENS_LIMIT`, `AGENT_TIMEOUT_SECONDS`, `AGENT_DAILY_RUNS`; and `LOGFIRE_TOKEN`, `LOGFIRE_INCLUDE_CONTENT`, `AUDIT_RETENTION_DAYS`. [Tooling](tooling.md) gives the
 default and meaning of each.
 
-**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (5), or the app stops with
+**Schema changes:** `PRAGMA user_version` must equal `SCHEMA_VERSION` (9), or the app stops with
 a `SchemaOutdated` message pointing to the reset commands. The demo data is disposable, so there
 are no migrations.
 
@@ -838,12 +953,12 @@ are no migrations.
 
 | Check | Result |
 |---|---|
-| `ruff check` / `ruff format --check` | Clean, 83 files |
-| `pytest` | **154 passed, 2 skipped** (AuraDB without credentials; Compose gated); 95% coverage |
+| `ruff check` / `ruff format --check` | Clean, 119 files |
+| `pytest` | 365 tests: 363 run locally, 2 gated (AuraDB without credentials; Compose). The last recorded full run is in the verification record |
 | RBAC and onboarding suite | 15 tests (`tests/test_rbac_onboarding.py`) |
 | Relate persistence | Write, close, reopen and assert (`tests/test_relate_store.py`) |
 | Mobile | Lint OK, **39 tests**, production build OK |
-| Admin console | 10 tests as system admin, moderator, org admin and volunteer: correct tabs, decisions recorded, errors shown |
+| Admin console | 18 tests as system admin, moderator, org admin and volunteer: correct sections, decisions recorded, errors shown |
 | Compose | Built and smoke-tested on alternate ports; `/api/docs` returns 200 |
 | Lockfile | `uv lock --check` OK |
 | AuraDB | **Not verified**: no credentials available |
@@ -872,7 +987,7 @@ Details are in [verification.md](verification.md).
 
 | Area | Current state | Next step |
 |---|---|---|
-| Notifications | In-app only | Email or push via a delivery worker reading the same table |
+| Notifications | In-app, plus onboarding emails over SMTP | Email or push for the other notifications, from the same outbox |
 | Scale | Single process; Relate locks exclusively | A separate projector worker; read replicas or AuraDB for heavy reads |
 | Web pages | Call services in-process | Optionally route them through the API as well |
 | AuraDB | Push and parity built, not verified | Run with credentials and record parity output |

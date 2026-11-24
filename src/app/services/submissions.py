@@ -449,12 +449,13 @@ def withdraw_project(
 
 
 def set_project_lead(db: Database, actor_id: str, org_id: str, sid: str, lead_id: str) -> None:
-    """An org admin hands a project to a new lead: an active volunteer or admin of the org.
+    """A team coordinator (or org admin) hands a project to a new lead: an active volunteer,
+    or a team coordinator or admin of the organisation.
 
     The new lead is told what is waiting for them and joins the team automatically (when the
     project is next projected, which the enqueue below triggers). The former lead keeps the
     team place they already had, and is told they no longer lead the project."""
-    require_access(db, actor_id, org_id, role="org_admin")
+    require_access(db, actor_id, org_id, role="team_coordinator")
     with db.tx() as conn:
         sub = conn.execute(
             "SELECT lead_id, title FROM submission_current WHERE id = ? AND org_id = ? "
@@ -464,8 +465,11 @@ def set_project_lead(db: Database, actor_id: str, org_id: str, sid: str, lead_id
         if sub is None:
             raise NotFound("project")
         access = org_access(conn, lead_id, org_id)
-        if not (access.org_admin or (access.volunteer and load_actor(conn, lead_id).active)):
-            raise Invalid("The lead must be an active volunteer or an admin of this organisation.")
+        if not (access.team_coordinator or (access.volunteer and load_actor(conn, lead_id).active)):
+            raise Invalid(
+                "The lead must be an active volunteer, a team coordinator or an admin of this "
+                "organisation."
+            )
         if sub["lead_id"] == lead_id:
             return
         conn.execute(

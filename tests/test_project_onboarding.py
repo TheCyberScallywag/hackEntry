@@ -103,7 +103,7 @@ def test_only_the_lead_and_the_org_admins_run_a_projects_workflow(web: Web):
     assert dev.get(BASE).status_code == 403  # a volunteer of the organisation, not the lead
     assert dev.post(f"{BASE}/steps", new).status_code == 403
     assert bryn.get(BASE).status_code == 404  # not with the organisation at all
-    assert as_(web, "kofi").get(f"{BASE}/volunteers").status_code == 403  # admin elsewhere
+    assert as_(web, "kofi").get(f"{BASE}/volunteers").status_code == 404  # admin elsewhere
     # the project belongs to its organisation: another organisation's URL does not reach it
     assert rhiannon.get(f"/orgs/{CS}/projects/{FOOD_BANK}/onboarding").status_code in (403, 404)
     assert as_(web, "sam").get(f"/orgs/{CS}/projects/{FOOD_BANK}/onboarding").status_code == 404
@@ -277,7 +277,7 @@ def test_the_lead_side_suspends_and_reinstates_a_team_member(web: Web):
     cerys, rhiannon, dev = onto_the_team(web)
     assert dev.post(f"{TEAM}/{DEV}/suspend", {"reason": "Testing"}).status_code == 403
     assert (
-        as_(web, "kofi").post(f"{TEAM}/{DEV}/suspend", {"reason": "Not needed"}).status_code == 403
+        as_(web, "farah").post(f"{TEAM}/{DEV}/suspend", {"reason": "Not needed"}).status_code == 403
     )
     assert cerys.post(f"{TEAM}/{DEV}/suspend", {"reason": ""}).status_code == 422  # say why
     r = cerys.post(f"{TEAM}/{DEV}/suspend", {"reason": "Missed three sessions"})
@@ -331,15 +331,15 @@ def test_the_lead_side_removes_someone_onboarding_or_suspended_and_they_may_leav
     assert dev.post(f"/placements/{FOOD_BANK}/leave").json() == {"state": "left"}  # mid-way
     assert dev.get("/me/onboarding").json() == []
     # and a suspended member can be removed
-    kofi = as_(web, "kofi")
-    version = placement(web, FOOD_BANK, USERS["kofi"])["version"]
-    cerys.post(f"{TEAM}/{USERS['kofi']}/answer", {"answer": "yes", "version": version})
-    kofi.post(f"/placements/{FOOD_BANK}/answer", {"answer": "yes", "version": version + 1})
+    asha = as_(web, "asha")
+    version = placement(web, FOOD_BANK, USERS["asha"])["version"]
+    cerys.post(f"{TEAM}/{USERS['asha']}/answer", {"answer": "yes", "version": version})
+    asha.post(f"/placements/{FOOD_BANK}/answer", {"answer": "yes", "version": version + 1})
     for step in step_ids(cerys).values():
-        cerys.post(f"{BASE}/volunteers/{USERS['kofi']}/steps/{step}/complete")
-    cerys.post(f"{TEAM}/{USERS['kofi']}/accept")
-    cerys.post(f"{TEAM}/{USERS['kofi']}/suspend", {"reason": "Unavailable this term"})
-    r = cerys.post(f"{TEAM}/{USERS['kofi']}/remove", {"reason": "Unavailable this term"})
+        cerys.post(f"{BASE}/volunteers/{USERS['asha']}/steps/{step}/complete")
+    cerys.post(f"{TEAM}/{USERS['asha']}/accept")
+    cerys.post(f"{TEAM}/{USERS['asha']}/suspend", {"reason": "Unavailable this term"})
+    r = cerys.post(f"{TEAM}/{USERS['asha']}/remove", {"reason": "Unavailable this term"})
     assert r.json() == {"state": "removed"}
 
 
@@ -476,3 +476,70 @@ def test_the_assistant_follows_a_projects_workflow_from_the_graph(web: Web):
     _run, model = assistant(web, dev, call("my_onboarding"), final(**ADVICE))
     assert "on_team=True" in model.tool_results()[0]
     assert "awaiting_acceptance=False" in model.tool_results()[0]
+
+
+# ------------------------------------------------------------------ team coordinators
+def test_a_team_coordinator_decides_on_team_places_and_assigns_the_lead(web: Web):
+    """The organisation's team coordinator does what the lead side does, for every project,
+    and chooses the lead. They do not review, and they do not manage the volunteers."""
+    gwen_id = USERS["gwen"]  # not a DataKind UK volunteer, and no role there yet
+    sam, gwen, dev = as_(web, "sam"), as_(web, "gwen"), as_(web, "dev")
+    lead = f"/orgs/{DK}/projects/{FOOD_BANK}/lead"
+    assert gwen.get(TEAM).status_code == 404  # no standing: the project is not visible
+    role = f"/admin/orgs/{DK}/roles/{gwen_id}/team_coordinator"
+    assert sam.put(role).json() == {"granted": "team_coordinator"}
+    assert "You were given the team coordinator role for DataKind UK." in gwen.messages()
+    mine = next(o for o in gwen.get("/orgs").json() if o["id"] == DK)
+    assert (mine["team_coordinator"], mine["reviewer"], mine["org_admin"]) == (True, False, False)
+
+    # accepts a volunteer onto a team: invites, confirms the lead's step, accepts
+    assert invite_and_say_yes(web, gwen, dev, DEV) == "onboarding"
+    steps = step_ids(gwen)
+    assert dev.post(f"{BASE}/steps/{steps[BRIEF]}/complete").status_code == 200
+    assert gwen.post(f"{BASE}/volunteers/{DEV}/steps/{steps[CALL]}/complete").status_code == 200
+    assert gwen.post(f"{TEAM}/{DEV}/accept").json() == {"state": "team"}
+    assert FOOD_BANK in graph_edges(web, DEV, "ON_TEAM")
+
+    # selects the lead, from the organisation's volunteers
+    assert DEV in {p["id"] for p in gwen.get(f"/orgs/{DK}/volunteers").json()}
+    assert gwen.put(lead, {"user_id": DEV}).json() == {"lead_id": DEV}
+    assert any(m.startswith("You are now the lead for “Food Bank") for m in dev.messages())
+
+    # reviewing stays with the reviewers, and managing volunteers with the org admins
+    assert gwen.get(f"/orgs/{DK}/coverage").status_code == 403
+    assert gwen.get(f"/orgs/{DK}/submissions").status_code == 403
+    r = gwen.post(f"/orgs/{DK}/volunteers/{DEV}/remove", {"reason": "Not for me to do"})
+    assert r.status_code == 403
+    assert gwen.get(f"/orgs/{CS}/volunteers").status_code == 403  # one organisation only
+
+    assert sam.delete(role).json() == {"revoked": "team_coordinator"}
+    assert gwen.put(lead, {"user_id": USERS["cerys"]}).status_code in (403, 404)
+
+
+def test_a_reviewer_is_not_a_team_coordinator(web: Web):
+    gwen_id = USERS["gwen"]
+    sam, gwen = as_(web, "sam"), as_(web, "gwen")
+    assert sam.put(f"/admin/orgs/{DK}/roles/{gwen_id}/reviewer").status_code == 200
+    assert gwen.get(f"/orgs/{DK}/coverage").status_code == 200  # still works on the projects
+    assert gwen.get(TEAM).status_code == 403
+    assert gwen.put(f"/orgs/{DK}/projects/{FOOD_BANK}/lead", {"user_id": DEV}).status_code == 403
+
+
+def test_a_team_coordinators_pages(web: Web):
+    with web.rt.db.tx() as conn:
+        conn.execute(
+            "INSERT INTO org_roles (user_id, org_id, role, granted_at) "
+            "VALUES (?, ?, 'team_coordinator', ?)",
+            (USERS["gwen"], DK, "2026-01-01T00:00:00+00:00"),
+        )
+    page = f"/o/{DK}/projects/{FOOD_BANK}"
+    web.sign_in("gwen")
+    home = web.get("/home").text
+    assert "Team coordinator" in home and f"/o/{DK}/review" not in home
+    html = web.get(page).text
+    assert "Assign the project lead" in html and "Candidates and team" in html
+    assert "reviewers only" not in html
+    r = web.post(f"{page}/lead", {"lead_id": DEV}, csrf_from=page)
+    assert r.status_code == 303 and "msg=lead_set" in r.headers["location"]
+    assert web.get(f"/o/{DK}/volunteers").status_code == 403
+    assert web.get(f"/o/{DK}/review").status_code == 403

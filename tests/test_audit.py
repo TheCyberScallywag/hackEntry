@@ -180,7 +180,9 @@ def test_many_failed_sign_ins_are_a_finding(web: Web):
 
 
 def test_an_organisation_with_suggestions_waiting_and_no_admin_is_high(web: Web):
-    assert as_(web, "sam").delete(f"/admin/orgs/{DK}/roles/{USERS['rhiannon']}/org_admin")
+    sam = as_(web, "sam")
+    for admin in ("rhiannon", "nicole"):
+        assert sam.delete(f"/admin/orgs/{DK}/roles/{USERS[admin]}/org_admin").status_code == 200
     assert check_ids(web)[f"org-without-admin:{DK}"] == "high"  # Outreach Data Audit is waiting
 
 

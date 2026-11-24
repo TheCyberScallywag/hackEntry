@@ -22,13 +22,13 @@
 {% endif %}
 
 {% if team is not none %}
-<h2>Candidates and team <span class="muted">({{ "you lead this project" if is_lead else "org admins" }})</span></h2>
+<h2>Candidates and team <span class="muted">({{ "you lead this project" if is_lead else "team coordinators and org admins" }})</span></h2>
 <p class="muted">Candidates are ranked: preferred cause first, then required skills covered, then optional skills. They are not told about the match until you invite them. An invited volunteer joins the team when they say yes{% if flow and flow.enabled %}, has finished this project's onboarding steps and you have accepted them{% endif %}. You can suspend or remove a team member at any time.</p>
-{% if access.org_admin and people is none %}<p><a href="?assign=lead#lead">Assign the project lead</a> <span class="muted">(org admins)</span></p>{% endif %}
+{% if access.team_coordinator and people is none %}<p><a href="?assign=lead#lead">Assign the project lead</a> <span class="muted">(team coordinators and org admins)</span></p>{% endif %}
 {% if people is not none %}
 <form method="post" action="/o/{{ org.id }}/projects/{{ project.project }}/lead" class="inline" data-form="lead" id="lead">
   <input type="hidden" name="csrf_token" value="{{ csrf }}">
-  <label>Project lead <span class="muted">(org admins assign it)</span>
+  <label>Project lead <span class="muted">(team coordinators and org admins assign it)</span>
   <select name="lead_id">
     {% for person in people if person.status == "active" %}<option value="{{ person.id }}"{% if person.id == project.sql.lead_id %} selected{% endif %}>{{ person.display_name }}</option>{% endfor %}
   </select></label>

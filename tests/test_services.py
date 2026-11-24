@@ -18,11 +18,22 @@ def test_org_access_for_each_kind_of_standing(web: Web):
     assert (asha.volunteer, asha.reviewer, asha.org_admin, asha.system_admin) == (
         True, False, False, False,
     )  # fmt: skip
-    rhiannon = _access(web, USERS["rhiannon"], DK)  # org admin, not a volunteer
-    assert (rhiannon.volunteer, rhiannon.reviewer, rhiannon.org_admin) == (False, True, True)
+    rhiannon = _access(web, USERS["rhiannon"], DK)  # org admin who also volunteers there
+    assert (rhiannon.volunteer, rhiannon.reviewer, rhiannon.org_admin) == (True, True, True)
     assert not _access(web, USERS["rhiannon"], CS).any  # her role is for DataKind UK only
-    kofi = _access(web, USERS["kofi"], DK)  # org admin elsewhere, plain volunteer here
-    assert (kofi.volunteer, kofi.reviewer, kofi.org_admin) == (True, False, False)
+    nicole = _access(web, USERS["nicole"], DK)  # org admin, not a volunteer
+    assert (nicole.volunteer, nicole.reviewer, nicole.team_coordinator, nicole.org_admin) == (
+        False, True, True, True,
+    )  # fmt: skip
+    zoe = _access(web, USERS["zoe"], DK)  # team coordinator only
+    assert (zoe.volunteer, zoe.reviewer, zoe.team_coordinator, zoe.org_admin) == (
+        False, False, True, False,
+    )  # fmt: skip
+    ella = _access(web, USERS["ella"], DK)  # reviewer only
+    assert (ella.volunteer, ella.reviewer, ella.team_coordinator, ella.org_admin) == (
+        False, True, False, False,
+    )  # fmt: skip
+    assert not _access(web, USERS["kofi"], DK).any  # org admin elsewhere, nothing here
     sam = _access(web, SAM, CS)  # system admins hold every organisation role
     assert (sam.volunteer, sam.reviewer, sam.org_admin, sam.system_admin) == (
         False, True, True, True,
@@ -79,7 +90,7 @@ def test_list_users_groups_roles_without_a_query_per_user(web: Web):
     web.rt.db.read = traced
     users = {u["id"]: u for u in services.list_users(web.rt.db, SAM)}
     web.rt.db.read = real
-    assert len(users) == 11
+    assert len(users) == 14
     assert len([s for s in statements if s.lstrip().upper().startswith("SELECT")]) <= 6
     assert users[SAM]["system_roles"] == ["admin"] and users[MO]["system_roles"] == ["moderator"]
     assert users[USERS["kofi"]]["org_roles"] == [

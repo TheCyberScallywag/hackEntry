@@ -73,16 +73,20 @@ class Access:
     reviewer: bool  # may review suggestions: reviewer, org_admin or system admin
     org_admin: bool = False  # manages projects and volunteers: org_admin or system admin
     system_admin: bool = False
+    # Assigns project leads and acts for a project's lead side: team_coordinator, org_admin or
+    # system admin.
+    team_coordinator: bool = False
 
     @property
     def any(self) -> bool:
-        return self.volunteer or self.reviewer or self.org_admin
+        return self.volunteer or self.reviewer or self.team_coordinator or self.org_admin
 
     def allows(self, role: str) -> bool:
         return {
             "any": self.any,
             "volunteer": self.volunteer,
             "reviewer": self.reviewer,
+            "team_coordinator": self.team_coordinator,
             "org_admin": self.org_admin,
         }[role]
 
@@ -104,6 +108,8 @@ SELECT EXISTS (SELECT 1 FROM organisations WHERE id = :org) AS org_known,
        EXISTS (SELECT 1 FROM org_roles WHERE user_id = :user AND org_id = :org
                AND role = 'reviewer') AS reviewer,
        EXISTS (SELECT 1 FROM org_roles WHERE user_id = :user AND org_id = :org
+               AND role = 'team_coordinator') AS team_coordinator,
+       EXISTS (SELECT 1 FROM org_roles WHERE user_id = :user AND org_id = :org
                AND role = 'org_admin') AS org_admin,
        EXISTS (SELECT 1 FROM system_roles WHERE user_id = :user AND role = 'admin') AS admin
 """
@@ -124,6 +130,7 @@ def org_access(conn: sqlite3.Connection, user_id: str, org_id: str) -> Access:
         reviewer=org_admin or bool(row["reviewer"]),
         org_admin=org_admin,
         system_admin=admin,
+        team_coordinator=org_admin or bool(row["team_coordinator"]),
     )
 
 
@@ -147,13 +154,16 @@ def load_directory(conn: sqlite3.Connection, user_id: str, *, admin: bool) -> li
     rows = conn.execute(
         "SELECT o.id, o.key, o.name, o.description, "
         "COALESCE(m.opted_in, 0) AS opted_in, "
-        "(? OR EXISTS (SELECT 1 FROM org_roles r WHERE r.user_id = ? AND r.org_id = o.id)) "
-        "  AS reviewer, "
-        "(? OR EXISTS (SELECT 1 FROM org_roles r WHERE r.user_id = ? AND r.org_id = o.id "
-        "              AND r.role = 'org_admin')) AS org_admin "
-        "FROM organisations o LEFT JOIN memberships m ON m.org_id = o.id AND m.user_id = ? "
+        "(:admin OR EXISTS (SELECT 1 FROM org_roles r WHERE r.user_id = :user "
+        "  AND r.org_id = o.id AND r.role IN ('reviewer', 'org_admin'))) AS reviewer, "
+        "(:admin OR EXISTS (SELECT 1 FROM org_roles r WHERE r.user_id = :user "
+        "  AND r.org_id = o.id AND r.role IN ('team_coordinator', 'org_admin'))) "
+        "  AS team_coordinator, "
+        "(:admin OR EXISTS (SELECT 1 FROM org_roles r WHERE r.user_id = :user "
+        "  AND r.org_id = o.id AND r.role = 'org_admin')) AS org_admin "
+        "FROM organisations o LEFT JOIN memberships m ON m.org_id = o.id AND m.user_id = :user "
         "ORDER BY o.name",
-        (int(admin), user_id, int(admin), user_id, user_id),
+        {"admin": int(admin), "user": user_id},
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -164,8 +174,8 @@ def directory(db: Database, user_id: str) -> list[dict]:
 
 
 def accessible(orgs: list[dict]) -> list[dict]:
-    """The organisations of a directory the user volunteers with or reviews for."""
-    return [o for o in orgs if o["opted_in"] or o["reviewer"]]
+    """The organisations of a directory the user volunteers with or holds a role in."""
+    return [o for o in orgs if o["opted_in"] or o["reviewer"] or o["team_coordinator"]]
 
 
 def accessible_orgs(db: Database, user_id: str) -> list[dict]:

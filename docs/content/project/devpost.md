@@ -36,7 +36,7 @@ controls, shared only with the organisations they choose, and matches that expla
   they can be matched. When Relate finds a vetted volunteer eligible for an active project, they
   join the project lead's ranked candidate list. The lead invites who they want, and the volunteer
   joins the team by saying yes. Projects go through review, scoping and activation, with a notification at
-  every step. System admins, moderators, org admins, reviewers and project leads each see only
+  every step. System admins, moderators, org admins, reviewers, team coordinators and project leads each see only
   what their role allows.
 - **One API for every action** (`/api/v1`, OpenAPI docs at `/api/docs`). The **mobile
   companion** (Ionic: matches, opportunities, notifications, profile) and the **Streamlit admin
@@ -89,7 +89,7 @@ full [tooling list](tooling.md).
 
 - An end-to-end slice: signup, organisation selection, suggestion, scoped approval, publication
   and explainable matching. It runs from a clean clone with uv or with Compose.
-- 154 automated backend tests against real Relate stores and 39 mobile tests (plus gated AuraDB and Compose tests), including forged-ID tenant isolation, stale
+- 363 automated backend tests against real Relate stores and 39 mobile tests (plus gated AuraDB and Compose tests), including forged-ID tenant isolation, stale
   approvals, exclusion precedence and restart/replay.
 - Changing one exclusion visibly changes the Relate result: a volunteer drops out of a project,
   and the coordinator sees new coverage gaps.
@@ -117,6 +117,6 @@ what was built for this entry.
 
 ```sh
 uv sync --locked && uv run task web        # http://localhost:8080
-# demo login: asha@cyberscallywags.uk / demo-password-1 (reviewers: rhiannon@…, kofi@…)
+# demo login: asha@cyberscallywags.uk / demo-password-1 (reviewers: rhiannon@datakind.uk, kofi@cyberscallywags.uk)
 uv run task inspect                        # inspect the bundled Relate graph
 ```

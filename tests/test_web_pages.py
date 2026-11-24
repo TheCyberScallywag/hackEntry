@@ -255,7 +255,7 @@ def test_pages_open_few_sqlite_connections(web: Web, monkeypatch):
         assert web.get(path).status_code == 200
         return len(opened)
 
-    web.sign_in("rhiannon")
+    web.sign_in("nicole")  # an org admin who does not volunteer: the lead side and coverage
     assert cost(f"/o/{DK}/projects/{FOOD_BANK}") <= 9
     assert cost("/notifications") <= 3
     web.sign_in("asha")
@@ -330,8 +330,16 @@ def test_nav_lists_only_what_each_user_can_act_on(web: Web):
         # a volunteer in two
         "asha": {"Opportunities": 1, "Switch to": 1, "Review queue": 0},
         # an organisation admin who does not volunteer
-        "rhiannon": {"Opportunities": 0, "Suggest a project": 1, "Review queue": 1,
-                     "Coverage": 1, f'href="/o/{DK}/volunteers"': 1, "Switch to": 0},
+        "nicole": {"Opportunities": 0, "Suggest a project": 1, "Review queue": 1,
+                   "Coverage": 1, f'href="/o/{DK}/volunteers"': 1, "Switch to": 0},
+        # an organisation admin who volunteers there too
+        "rhiannon": {"Opportunities": 1, "Review queue": 1, f'href="/o/{DK}/volunteers"': 1},
+        # a reviewer only: the review queue, not the volunteers
+        "ella": {"Opportunities": 0, "Review queue": 1, "Coverage": 1,
+                 f'href="/o/{DK}/volunteers"': 0},
+        # a team coordinator only: the projects, neither reviewing nor the volunteers
+        "zoe": {"Opportunities": 0, f'href="/o/{DK}/projects"': 1, "Review queue": 0,
+                "Coverage": 0, f'href="/o/{DK}/volunteers"': 0},
         # a volunteer still in screening: suggesting needs an active account
         "nia": {"Suggest a project": 0, "API docs": 0},
     }  # fmt: skip

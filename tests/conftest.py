@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from pydantic_ai import models
 
 from app import observability
-from app.catalogue import stable_id
+from app.catalogue import load_demo, stable_id
 from app.config import Settings
 from app.runtime import DEMO_PASSWORD, Runtime
 from app.web.main import create_app
@@ -27,12 +27,32 @@ CS = stable_id("org", "cyber-scallywags")
 IL = stable_id("org", "interlinkrct")
 USERS = {
     k: stable_id("u", k)
-    for k in ("asha", "bryn", "cerys", "dev", "gwen", "farah", "kofi", "rhiannon")
+    for k in (
+        "asha",
+        "bryn",
+        "cerys",
+        "dev",
+        "gwen",
+        "farah",
+        "kofi",
+        "rhiannon",
+        "nicole",
+        "zoe",
+        "ella",
+    )  # fmt: skip
 }
 FOOD_BANK = stable_id("p", "food-bank-dashboard")
 WINTER = stable_id("p", "winter-outreach")
 AUDIT = stable_id("p", "outreach-data-audit")  # submitted, awaiting DataKind UK review
 PHISHING = stable_id("p", "phishing-workshop")  # rejected
+
+_EMAILS = {p["key"]: p["email"] for p in load_demo()["people"]}
+
+
+def demo_email(key: str) -> str:
+    """The sign-in address of a demo person, as data/fixtures/demo.json gives it. Anyone else
+    is an account a test signed up itself, at the demo domain."""
+    return _EMAILS.get(key, f"{key}@cyberscallywags.uk")
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -69,7 +89,7 @@ class Web:
         token = self.csrf("/signin")
         r = self.client.post(
             "/signin",
-            data={"email": f"{key}@cyberscallywags.uk", "password": password, "csrf_token": token},
+            data={"email": demo_email(key), "password": password, "csrf_token": token},
             follow_redirects=False,
         )
         assert r.status_code == 303, r.text

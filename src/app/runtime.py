@@ -59,6 +59,23 @@ def chase_invitations(rt: Runtime) -> int:
     )
 
 
+DEMO_DOMAIN = "cyberscallywags.uk"  # every account here is a demo or test account
+
+
+def _holds_demo_accounts(conn) -> bool:
+    """Whether any account is one the demo seeds. They share a published password, so a
+    production database must hold none. The fixture's own addresses are checked one by one,
+    because not all of them are at the demo domain."""
+    emails = sorted({p["email"].strip().lower() for p in load_demo()["people"]})
+    marks = ", ".join("?" * len(emails))
+    return bool(
+        conn.execute(
+            f"SELECT 1 FROM users WHERE email LIKE ? OR email IN ({marks}) LIMIT 1",  # noqa: S608
+            (f"%@{DEMO_DOMAIN}", *emails),
+        ).fetchone()
+    )
+
+
 def bootstrap(rt: Runtime) -> None:
     """Create the schema; seed the demo on an empty data dir (test env only); replay the outbox.
 
@@ -68,12 +85,11 @@ def bootstrap(rt: Runtime) -> None:
     rt.db.init()
     if not rt.settings.demo_allowed:
         with rt.db.read() as conn:
-            if conn.execute(
-                "SELECT 1 FROM users WHERE email LIKE '%@cyberscallywags.uk'"
-            ).fetchone():
+            if _holds_demo_accounts(conn):
                 raise RuntimeError(
-                    "APP_ENV=production but the database holds demo accounts "
-                    "(@cyberscallywags.uk). Start from an empty DATA_DIR."
+                    "APP_ENV=production but the database holds demo accounts (an address "
+                    f"from data/fixtures/demo.json, or one at @{DEMO_DOMAIN}). Start from an "
+                    "empty DATA_DIR."
                 )
     if fresh and rt.settings.seed_demo_on_start and rt.settings.demo_allowed:
         seed_demo(rt, copy_bundle=True)

@@ -76,7 +76,7 @@ To run the admin console as well:
 
 ```sh
 uv sync --locked --group admin
-uv run task admin                # http://localhost:8501; sign in as sam@, mo@, kofi@ or rhiannon@
+uv run task admin                # http://localhost:8501; sign in as Sam, Mo, Kofi or Rhiannon (addresses below)
 ```
 
 To build and serve the docs (portal at `/`, manual at `/manual/`; pages in `docs/content`):
@@ -127,8 +127,11 @@ never when `APP_ENV=production`.
 |---|---|---|---|
 | `sam@cyberscallywags.uk` | **System admin** | — | access to everything: users and roles, every organisation, projection, graph |
 | `mo@cyberscallywags.uk` | **Moderator** | — | the volunteer screening queue |
-| `rhiannon@cyberscallywags.uk` | **Org admin**, DataKind UK | — | the right reviewer for the pending suggestion; manages DataKind UK volunteers |
-| `kofi@cyberscallywags.uk` | **Org admin**, Cyber Scallywags | DataKind UK | admin in one organisation and volunteer in another |
+| `rhiannon@datakind.uk` | **Org admin**, DataKind UK | DataKind UK | the right reviewer for the pending suggestion; manages DataKind UK volunteers |
+| `nicole@datakind.uk` | **Org admin**, DataKind UK | — | a second admin for the same organisation, who does not volunteer |
+| `zoe@datakind.uk` | **Team coordinator**, DataKind UK | — | assigns project leads and decides who joins DataKind UK's teams; cannot review suggestions or remove volunteers |
+| `ella@datakind.uk` | **Reviewer**, DataKind UK | — | reviews DataKind UK's suggestions and sees coverage; cannot invite candidates or assign a lead |
+| `kofi@cyberscallywags.uk` | **Org admin**, Cyber Scallywags | Cyber Scallywags | admin and volunteer in the same organisation; no standing in DataKind UK |
 | `nia@cyberscallywags.uk` | volunteer, **in screening** | Cyber Scallywags | not matchable until vetted; her first aid fills a gap once Mo approves her |
 | `asha@cyberscallywags.uk` | volunteer; lead of Winter Outreach Kitchen | DataKind UK, Cyber Scallywags | one profile across two organisations; author of the pending suggestion |
 | `bryn@cyberscallywags.uk` | volunteer | Cyber Scallywags, InterLinkRCT | already on the Winter Outreach team; author of a rejected suggestion; part-way through InterLinkRCT's own onboarding workflow (one step done, waiting for the welcome call to be confirmed) |
@@ -136,8 +139,9 @@ never when `APP_ENV=production`.
 | `gwen@cyberscallywags.uk` | volunteer | Cyber Scallywags | a hard exclusion: offers cooking and driving but excludes *active listening* |
 | `dev@cyberscallywags.uk`, `farah@cyberscallywags.uk` | volunteers | DataKind UK | preferred-cause ranking; Farah's first aid is outside Cyber Scallywags |
 
-The fixture (`data/fixtures/demo.json`) contains two organisations with separate org admins, a
-system admin, a moderator, a volunteer in screening, a volunteer in both organisations, a formed
+The fixture (`data/fixtures/demo.json`) contains three organisations (two with their own org
+admins), one organisation with all three of its roles held by different people (DataKind UK: org
+admins, a team coordinator and a reviewer), a system admin, a moderator, a volunteer in screening, a volunteer in both organisations, a formed
 team, overlapping project skills, one hard exclusion (Gwen), one unfilled skill
 (*First aid* for Winter Outreach Kitchen), one approved project per organisation, one suggestion
 awaiting review (*Outreach Data Audit*), one unfinished draft suggestion (*Password Manager
@@ -156,7 +160,9 @@ Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/
    records her name, the revision and the time. It is projected to Relate and appears under
    *Projects*. Its author is notified at each step.
 5. As Rhiannon, open the project. Candidates are listed per required skill, and coverage is
-   shown.
+   shown. **Zoe**, the team coordinator, sees the same candidates and *Assign the project lead*
+   on that page, and gets a 403 on the review queue; **Ella**, the reviewer, sees the queue and
+   the coverage but not the candidates.
 6. As **Asha**, open *Profile* and set *Active listening* to **Exclude**. Asha disappears from
    Winter Outreach Kitchen and Outreach Data Audit, and her *My matches* page explains why. In
    Rhiannon's view, Outreach Data Audit now shows a coverage gap for *Active listening*. As Kofi,
@@ -176,7 +182,8 @@ Walkthrough (also in [docs/content/project/demo-script.md](docs/content/project/
 | System `moderator` | all volunteers | the screening queue: approve, request more information, decline, suspend, reinstate (never their own account) |
 | `org_admin` | one organisation | review its project suggestions; withdraw projects and assign project leads; list and remove its volunteers; everything a project lead can do, for any of its projects; edit its onboarding workflow (steps and email templates) and confirm volunteers' steps |
 | `reviewer` | one organisation | review its project suggestions |
-| Project lead | one project (the author by default; org admins assign it) | invite or pass over candidates; run the project's own team onboarding and confirm its steps; accept volunteers onto the team; suspend, reinstate or remove team members |
+| `team_coordinator` | one organisation | assign project leads; everything a project lead can do, for any of its projects (invite, accept, suspend, remove); list its volunteers. No reviewing, and no removing volunteers from the organisation |
+| Project lead | one project (the author by default; team coordinators and org admins assign it) | invite or pass over candidates; run the project's own team onboarding and confirm its steps; accept volunteers onto the team; suspend, reinstate or remove team members |
 | Volunteer | themselves | profile, joining organisations, submitting for vetting, answering offers, leaving teams, suggesting projects once active (as a private draft first, if they wish) |
 
 Roles come only from the seed, a system admin (API or console) or `python -m app.cli
@@ -192,8 +199,8 @@ Relate, so the graph itself makes sure no one is matched before they have been v
 Once a volunteer is active, the projector asks Relate after each graph update which volunteers
 match which active projects (the same matching query as everywhere else). Each new pair is a
 candidate, shown to the project lead in ranked order: preferred cause, then required skills
-covered, then optional skills. The volunteer is not told yet. The lead (or an org admin, whose
-answer counts the same) invites the candidates they want, and each invited volunteer is notified.
+covered, then optional skills. The volunteer is not told yet. The lead (or a team coordinator or org admin of the
+organisation, whose answer counts the same) invites the candidates they want, and each invited volunteer is notified.
 When the volunteer says yes they are on the team, and Relate records an `ON_TEAM` edge (or, if
 the project has its own team onboarding switched on, they start its steps first: see below). A no from
 either side declines the pair, and the lead side can reopen it later. A candidate who stops
@@ -202,7 +209,8 @@ matching lapses, and comes back if they match again.
 A few rules keep this honest. The project lead is on their own team automatically; nobody else
 decides on their own place. A volunteer who is suspended, or who leaves or is removed from the
 organisation, comes off its teams and loses any open invitation; a lead in that position loses
-the lead's powers and the org admins are told. An invitation left unanswered gets one reminder
+the lead's powers and the organisation's team coordinators and org admins are told. An
+invitation left unanswered gets one reminder
 (`INVITATION_REMINDER_DAYS`, default 7) and then closes (`INVITATION_EXPIRY_DAYS`, default 14),
 returning the volunteer to the candidate list. Every change is kept in `placement_events` with who
 made it. The coverage page counts a required skill as covered only once someone who offers it is
@@ -255,9 +263,10 @@ who says yes starts the steps instead of joining at once. When the steps are don
 *accepts* them onto the team, and only then does Relate record `ON_TEAM`. With it switched off
 (every project starts that way) saying yes still joins the team directly.
 
-The lead side is the project's lead and the organisation's admins, and nobody else. Org admins
-assign the lead: on the project's page (*Assign the project lead*), in the admin console's
-*Organisations* section, or with `PUT /orgs/{org}/projects/{id}/lead`. The lead side can:
+The lead side is the project's lead and the organisation's team coordinators and org admins, and
+nobody else. Team coordinators and org admins assign the lead: on the project's page (*Assign
+the project lead*) or with `PUT /orgs/{org}/projects/{id}/lead`; org admins can also do it in the
+admin console's *Organisations* section, which team coordinators do not see. The lead side can:
 
 - edit the project's steps and switch them on, on the project's page (*Team onboarding*); org
   admins can also do it in the admin console (*Onboarding* → *Volunteers joining a project's
@@ -278,8 +287,8 @@ The organisation's rules hold throughout:
   organisation, being removed from it or being suspended from the network ends a place on a
   team in any of these states, and the project's onboarding with it.
 - A lead who loses their standing loses these powers, a lead cannot hand the project on, and
-  nobody accepts or suspends themselves. The lead is not suspended from their own team: an org
-  admin assigns a new lead first.
+  nobody accepts or suspends themselves. The lead is not suspended from their own team: a team
+  coordinator or org admin assigns a new lead first.
 - A project's steps are held in Relate like the organisation's:
   `(:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)`, `onboarding_enabled` on the project, and the
   same `NEXT_STEP`, `AT_STEP` and `COMPLETED_STEP` edges. The onboarding assistant reads them
@@ -419,14 +428,18 @@ uv run task inspect                     # = python -m app.cli inspect --store da
 Expected output (volunteer IDs are opaque in the graph; the CLI labels known demo IDs):
 
 ```text
-organisation     | project                    | cause         | skill                         | eligible_volunteers
------------------+----------------------------+---------------+-------------------------------+------------------------------------------------------------------------------
-Cyber Scallywags | Winter Outreach Kitchen    | Homelessness  | Active listening              | Asha (u_8d06f6350514542f)
-Cyber Scallywags | Winter Outreach Kitchen    | Homelessness  | Community cooking             | Asha (u_8d06f6350514542f)
-Cyber Scallywags | Winter Outreach Kitchen    | Homelessness  | First aid                     | — coverage gap —
-Cyber Scallywags | Winter Outreach Kitchen    | Homelessness  | Van driving                   | Bryn (u_b2fc33a819a557b1)
-DataKind UK      | Food Bank Demand Dashboard | Food Security | Bookkeeping                   | Cerys (u_8e53893c6dce5e79), Dev (u_9d1d1a6fd5d559ae)
-DataKind UK      | Food Bank Demand Dashboard | Food Security | Spreadsheet and data analysis | Asha (u_8d06f6350514542f), Kofi (u_93069089b5f059ad), Dev (u_9d1d1a6fd5d559ae)
+organisation     | project                         | cause             | skill                         | eligible_volunteers
+-----------------+---------------------------------+-------------------+-------------------------------+-----------------------------------------------------
+Cyber Scallywags | Winter Outreach Kitchen         | Homelessness      | Active listening              | Asha (u_8d06f6350514542f)
+Cyber Scallywags | Winter Outreach Kitchen         | Homelessness      | Community cooking             | Asha (u_8d06f6350514542f)
+Cyber Scallywags | Winter Outreach Kitchen         | Homelessness      | First aid                     | — coverage gap —
+Cyber Scallywags | Winter Outreach Kitchen         | Homelessness      | Van driving                   | Bryn (u_b2fc33a819a557b1)
+DataKind UK      | Food Bank Demand Dashboard      | Food Security     | Bookkeeping                   | Cerys (u_8e53893c6dce5e79), Dev (u_9d1d1a6fd5d559ae)
+DataKind UK      | Food Bank Demand Dashboard      | Food Security     | Spreadsheet and data analysis | Asha (u_8d06f6350514542f), Dev (u_9d1d1a6fd5d559ae)
+InterLinkRCT     | Community Garden Raised Beds    | Environment       | Carpentry                     | Bryn (u_b2fc33a819a557b1)
+InterLinkRCT     | Community Garden Raised Beds    | Environment       | Gardening                     | — coverage gap —
+InterLinkRCT     | Community Group Digital Drop-in | Digital Inclusion | Cyber security awareness      | — coverage gap —
+InterLinkRCT     | Community Group Digital Drop-in | Digital Inclusion | Web development               | — coverage gap —
 ```
 
 With the Relate CLI (v1.0.1) installed, you can query the same file directly:
@@ -439,10 +452,11 @@ relate --database data/demo.rl --read-only --mode table \
   "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS nodes ORDER BY label"
 ```
 
-The bundled store has 46 nodes (5 causes, 15 skills, 3 organisations, 4 projects, 8 onboarding
-steps and 11 volunteer IDs, of which Sam and Mo have no edges and Nia, still in screening, has no
-membership edge) and 96 relationships, including five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
-prints the ranked candidates for one organisation: Dev, Asha, Cerys, then Kofi.
+The bundled store has 49 nodes (5 causes, 15 skills, 3 organisations,
+4 projects, 8 onboarding steps and 14 volunteer IDs, of which Sam, Mo, Nicole, Zoe and Ella have
+no edges and Nia, still in screening, has no membership edge) and 97 relationships, including
+five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
+prints the ranked candidates for one organisation: Dev, Asha, then Cerys.
 
 The app's writable store is `var/graph.rl` (or `/data/graph.rl` in Compose). The app opens the
 store per unit of work, so `relate --database var/graph.rl --read-only ...` also works while the
@@ -627,8 +641,8 @@ version, configuration file and commands. In short:
 - Every state-changing form carries a CSRF token: per session once signed in, and a
   double-submit cookie for sign-in and sign-up. The mobile API accepts only bearer tokens and
   never reads cookies.
-- Roles (system admin, moderator, org admin, reviewer) are granted only by the seed, a system
-  admin or `python -m app.cli grant-reviewer`. Signup ignores any posted role. New accounts start
+- Roles (system admin, moderator, org admin, reviewer, team coordinator) are granted only by the
+  seed, a system admin or, for the reviewer role, `python -m app.cli grant-reviewer`. Signup ignores any posted role. New accounts start
   in `draft`; only vetted (`active`) volunteers can be matched or suggest projects. Every protected request checks access against the organisation named
   in the URL or form. Unknown or invisible records return 404, and missing roles return 403.
 - Reviewers cannot decide on their own suggestions.
@@ -689,8 +703,8 @@ The suite covers:
   across restarts
 - the bundled store matching a fresh build, and CLI access to it
 - the mobile API, CSRF, cookie flags and the production guards
-- RBAC across system admin, moderator, org admin, reviewer and project lead, including
-  cross-organisation denials
+- RBAC across system admin, moderator, org admin, reviewer, team coordinator and project lead,
+  including cross-organisation denials, and what a team coordinator can and cannot do
 - volunteer onboarding end to end (draft → screening → active → eligible → both yes → team, with
   `ON_TEAM` in Relate), info requests, suspension, lapsed and revived offers, and removals
 - project onboarding notifications at each phase, JSON errors, and OpenAPI coverage of every tag

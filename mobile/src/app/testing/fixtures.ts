@@ -3,8 +3,8 @@ import type { Matches, Me, Notification, Placement, Profile, Submission } from '
 export const ME: Me = {
   user: { id: 'u_1', display_name: 'Asha' },
   organisations: [
-    { id: 'org_a', key: 'cyber-scallywags', name: 'Cyber Scallywags', description: '', opted_in: true, reviewer: false, org_admin: false },
-    { id: 'org_b', key: 'datakind-uk', name: 'DataKind UK', description: '', opted_in: true, reviewer: false, org_admin: false },
+    { id: 'org_a', key: 'cyber-scallywags', name: 'Cyber Scallywags', description: '', opted_in: true, reviewer: false, team_coordinator: false, org_admin: false },
+    { id: 'org_b', key: 'datakind-uk', name: 'DataKind UK', description: '', opted_in: true, reviewer: false, team_coordinator: false, org_admin: false },
   ],
   active_org_id: 'org_a',
   status: 'active',

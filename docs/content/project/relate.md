@@ -71,7 +71,7 @@ The split is deliberate:
 
 | File | What it is | Who writes it |
 |---|---|---|
-| `data/demo.rl` | The bundled demo graph: 35 nodes and 67 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
+| `data/demo.rl` | The bundled demo graph: 49 nodes and 97 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
 | `var/graph.rl` (or `/data/graph.rl` in Compose) | The writable store the running application uses. Git-ignored. | The projector |
 
 On a first start with an empty data directory, `runtime.seed_demo` copies `data/demo.rl` to
@@ -99,15 +99,20 @@ flowchart LR
   V -- "HAS_SKILL / OFFERS_SKILL / EXCLUDES_SKILL" --> S
   V -- "PREFERS_CAUSE / EXCLUDES_CAUSE" --> C
   V -- "ON_TEAM" --> P
+  O -- HAS_ONBOARDING_STEP --> T((OnboardingStep))
+  P -- HAS_TEAM_STEP --> T
+  T -- NEXT_STEP --> T
+  V -- "AT_STEP / COMPLETED_STEP" --> T
 ```
 
 | Node | Properties | Comes from (SQLite) |
 |---|---|---|
-| `Organisation` | `id`, `name` | `organisations` |
-| `Project` | `id`, `title`, `summary`, `revision`, `status` (always `published`) | The approved revision of a `submissions` row |
+| `Organisation` | `id`, `name`, `onboarding_enabled` | `organisations`, `onboarding_workflows` |
+| `Project` | `id`, `title`, `summary`, `revision`, `status` (always `published`), `onboarding_enabled` | The approved revision of a `submissions` row, `onboarding_workflows` |
 | `Cause` | `id`, `name` | `causes` (the shared catalogue) |
 | `Skill` | `id`, `name`, `category` | `skills` (the shared catalogue) |
 | `Volunteer` | `id` only | `users.id` |
+| `OnboardingStep` | `id`, `title`, `description`, `position`, `completed_by`, `sends_email` | `onboarding_steps` |
 
 | Relationship | Meaning | Exists when |
 |---|---|---|
@@ -120,7 +125,12 @@ flowchart LR
 | `OFFERS_SKILL` | The volunteer is willing to be matched on it | Profile state is "have and offer" |
 | `EXCLUDES_SKILL` | Never match me on a project that requires this | Profile state is "exclude" |
 | `PREFERS_CAUSE` / `EXCLUDES_CAUSE` | The volunteer's stance on a cause | Profile stance is "prefer" or "exclude" |
-| `ON_TEAM` | The volunteer is on the project's team | The lead side invited the volunteer and the volunteer said yes (a lead is on their own team automatically) |
+| `ON_TEAM` | The volunteer is on the project's team | The lead side invited the volunteer and the volunteer said yes; with the project's team onboarding switched on, also once the lead side has accepted them. Not while suspended from the team. A lead is on their own team automatically |
+| `HAS_ONBOARDING_STEP` | A step of the organisation's own onboarding workflow | The organisation has the step, whether or not the workflow is switched on |
+| `HAS_TEAM_STEP` | A step of a project's team onboarding | As above, for the project |
+| `NEXT_STEP` | The order of the steps | Between consecutive steps of one workflow |
+| `AT_STEP` | The step a volunteer has reached | Their run through the workflow is in progress |
+| `COMPLETED_STEP` | A step the volunteer has finished | One per finished step |
 
 Two rules are enforced by the shape of the graph itself, not by a filter in the application:
 
@@ -247,7 +257,7 @@ When the projector runs:
 
 A failed projection stays in the outbox with its error and an exponential back-off capped at 60
 seconds. After three attempts it is reported as failing by `/healthz`, `python -m app.cli status`
-and the console's *System* tab. It is still retried.
+and the console's *System* section. It is still retried.
 
 A project becomes **Active** (`published`) only after its approved revision has been written to
 Relate. Until then it is "Approved (activating…)" and no one is matched to it.
@@ -264,8 +274,8 @@ statements.
 | `EXCLUDED_FOR_VOLUNTEER` | Which projects the volunteer's own exclusions hide, and why | `matching.volunteer_matches` | "Hidden by your exclusions" on *My matches*; `excluded` in the matches API. Shown to that volunteer only. |
 | `OPTIONAL_SKILLS_EXCLUDED` | Optional skills left out of a match because the volunteer excluded them | `matching.volunteer_matches` | The explanation on a match |
 | `BROWSE_PROJECTS` | An organisation's published projects (or one of them) with their skills | `matching.browse`, `matching.project`, `matching.project_coverage` | Web *Projects* and project detail; `GET /orgs/{org}/projects` |
-| `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* tab |
-| `COUNT_LABELS`, `COUNT_RELATIONSHIPS` | How many nodes and relationships of each kind | `GET /admin/graph` | Admin console *System* tab |
+| `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* section |
+| `COUNT_LABELS`, `COUNT_RELATIONSHIPS` | How many nodes and relationships of each kind | `GET /admin/graph` | Admin console *System* section |
 | `ALL_NODES`, `ALL_RELATIONSHIPS` | The whole graph | `aura.push`, tests | The optional AuraDB push; the bundle drift test |
 
 ### The matching query
@@ -352,7 +362,9 @@ answer.
 A full sweep of every published project runs at start-up, on `python -m app.cli drain`, on an
 admin replay, when the catalogue or an organisation changes, and after a sweep that failed.
 
-When the lead side has invited a volunteer and the volunteer has said yes, the placement becomes
+The lead side is the project's lead, or a team coordinator or org admin of the organisation.
+When the lead side has invited a volunteer and the volunteer has said yes (and, where the
+project has team onboarding switched on, the lead side has accepted them), the placement becomes
 `team` and a `project` outbox row is written. The projector then adds
 `(:Volunteer)-[:ON_TEAM]->(:Project)`. Each project projection also puts the project's lead on
 the team first. The edge is read back by `TEAM_COVERAGE`, which reports per required skill who on
@@ -366,7 +378,7 @@ the team covers it.
 | Application CLI | `uv run python -m app.cli inspect [--store PATH] [--json]` | The same, for any store; the default is the writable one |
 | Application CLI | `uv run python -m app.cli matches --org datakind-uk [--store PATH]` | Ranked candidates for one organisation |
 | Application CLI | `uv run python -m app.cli status` / `drain` | Outbox status; project pending rows now |
-| Admin console | *System* tab (system admins) | Node and relationship counts, the inspection table, projection health, *Replay outbox now* |
+| Admin console | *System* section (system admins) | Node and relationship counts, the inspection table, projection health, *Replay outbox now* |
 | JSON API | `GET /api/v1/admin/graph`, `GET /api/v1/admin/projection` | The same data as the console |
 | Relate CLI | `relate --database data/demo.rl --read-only --mode table "<cypher>"` | Any query you like |
 

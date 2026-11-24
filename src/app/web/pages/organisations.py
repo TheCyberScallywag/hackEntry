@@ -81,6 +81,9 @@ def leave(org_id: str, rt: RT, session: User, _form: UserForm):
 # ---------------------------------------------------------------- org admin: volunteers
 @router.get("/o/{org_id}/volunteers")
 def org_volunteers(org: Org, request: Request, rt: RT, session: User):
+    # The page removes volunteers, so it is the org admins'; team coordinators read the same
+    # list only to choose a project lead (the project page and the API).
+    services.require_access(rt.db, session.user_id, org["id"], role="org_admin")
     people = services.org_volunteers(rt.db, session.user_id, org["id"])
     return render(request, "org_volunteers.html", session, org=org, people=people)
 

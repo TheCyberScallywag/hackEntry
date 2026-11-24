@@ -7,8 +7,9 @@ versions) are enforced in one place, app.services / app.placements, whichever wa
 Bearer tokens only: the API never reads the web session cookie, so cross-site form posts cannot
 ride on it and no CSRF token is needed. Tokens are opaque, revocable sessions (kind 'bearer').
 Roles: system `admin` (all access), system `moderator` (vets volunteers), per-organisation
-`org_admin` (its projects and volunteers, reviews) and `reviewer` (reviews suggestions), plus the
-project lead for their own project. Errors are JSON: 401 signed out, 403 role missing, 404 unknown
+`org_admin` (its projects and volunteers, reviews), `reviewer` (reviews suggestions) and
+`team_coordinator` (assigns project leads, decides who joins the teams), plus the project lead for
+their own project. Errors are JSON: 401 signed out, 403 role missing, 404 unknown
 or not visible, 409 stale version or wrong state, 422 invalid input.
 
 Interactive docs: /api/docs (OpenAPI at /api/openapi.json).

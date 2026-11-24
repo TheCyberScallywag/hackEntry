@@ -143,6 +143,7 @@ class Organisation(BaseModel):
     description: str
     opted_in: bool
     reviewer: bool
+    team_coordinator: bool
     org_admin: bool
 
 
@@ -469,7 +470,7 @@ class VettingRecord(BaseModel):
 class OrgRole(BaseModel):
     org_id: str
     org: str
-    role: Literal["org_admin", "reviewer"]
+    role: Literal["org_admin", "reviewer", "team_coordinator"]
 
 
 class AdminUser(BaseModel):

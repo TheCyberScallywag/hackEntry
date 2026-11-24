@@ -380,7 +380,7 @@ def test_explainer_explains_exactly_the_graphs_matches(web: Web):
 
 def test_explainer_is_for_the_organisations_own_volunteers(web: Web):
     model = use(web)
-    r = as_(web, "rhiannon").post("/agents/match-explainer", {"org_id": DK})  # reviews, no profile
+    r = as_(web, "nicole").post("/agents/match-explainer", {"org_id": DK})  # reviews, no profile
     assert r.status_code == 403 and model.requests == []
 
 

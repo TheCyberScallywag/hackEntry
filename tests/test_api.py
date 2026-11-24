@@ -1,12 +1,12 @@
 """Bearer-token JSON API for the mobile companion."""
 
 from app.runtime import DEMO_PASSWORD
-from tests.conftest import CS, DK, USERS, WINTER, Web
+from tests.conftest import CS, DK, USERS, WINTER, Web, demo_email
 
 
 def _token(web: Web, key: str) -> dict:
     r = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": demo_email(key), "password": DEMO_PASSWORD}
     )
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['token']}"}

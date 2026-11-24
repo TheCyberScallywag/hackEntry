@@ -76,7 +76,7 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
 - Bearer-token mobile JSON API (`src/app/web/api.py`) and a rewritten Ionic companion (sign-in,
   organisation switcher, explainable matches, a Profile page with accordions for editing skills
   and causes and for active and past projects, suggestion status) with new specs.
-- RBAC (system admin, moderator, org admin, reviewer, project lead), volunteer vetting
+- RBAC (system admin, moderator, org admin, reviewer, team coordinator, project lead), volunteer vetting
   workflow, candidate sweep with lead invitations and `ON_TEAM` teams, in-app
   notifications (`src/app/services/`, `src/app/placements.py`, `src/app/notify.py`).
 - A JSON API covering every action, with OpenAPI docs (`src/app/web/api.py`).
@@ -85,7 +85,7 @@ membership, offers versus skills, exclusions, preferences, optional skills, rank
 - Operator CLI (reset, bundle, inspect, matches, status, drain, grant-reviewer, aura-push,
   aura-parity), the demo fixture, the bundled `data/demo.rl`, and the AuraDB push and parity
   check.
-- Test suite (`tests/`): 156 tests (154 run locally; the AuraDB and Compose tests are gated), using
+- Test suite (`tests/`): 365 tests (363 run locally; the AuraDB and Compose tests are gated), using
   temporary SQLite and real Relate stores; 39 mobile specs.
 - Compose stack, CI workflow, and documentation (README, this file, `docs/content/project/verification.md`,
   `docs/content/project/devpost.md`, `docs/content/project/demo-script.md`).

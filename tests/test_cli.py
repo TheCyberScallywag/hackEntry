@@ -17,7 +17,7 @@ def test_inspect_bundled_store(capsys):
 def test_matches_command(capsys):
     assert cli.main(["matches", "--org", "datakind-uk", "--store", str(BUNDLED_GRAPH)]) == 0
     lines = capsys.readouterr().out.splitlines()
-    assert [line.split("|")[1].strip() for line in lines[2:]] == ["Dev", "Asha", "Cerys", "Kofi"]
+    assert [line.split("|")[1].strip() for line in lines[2:]] == ["Dev", "Asha", "Cerys"]
 
 
 def test_demo_seed_is_refused_in_production(tmp_path):
@@ -33,6 +33,27 @@ def test_production_refuses_a_database_with_demo_accounts(tmp_path):
 
     reset_demo(Settings(data_dir=tmp_path, _env_file=None))  # a test-env demo database
     production = Settings(data_dir=tmp_path, app_env="production", _env_file=None)
+    with pytest.raises(RuntimeError, match="demo accounts"), TestClient(create_app(production)):
+        pass
+
+
+def test_production_refuses_a_demo_account_at_any_domain(tmp_path):
+    """Not every demo address is at the demo domain; each one in the fixture is refused."""
+    from fastapi.testclient import TestClient
+
+    from app.catalogue import load_demo
+    from app.sqlstore import Database
+    from app.web.main import create_app
+
+    elsewhere = [p["email"] for p in load_demo()["people"] if "cyberscallywags" not in p["email"]]
+    assert elsewhere, "the fixture no longer has a demo account outside the demo domain"
+    reset_demo(Settings(data_dir=tmp_path, _env_file=None))
+    production = Settings(data_dir=tmp_path, app_env="production", _env_file=None)
+    with Database(production.sqlite_path).tx() as conn:
+        # every other account gets an address the guard has no reason to refuse
+        conn.execute(
+            "UPDATE users SET email = id || '@example.org' WHERE email != ?", elsewhere[:1]
+        )
     with pytest.raises(RuntimeError, match="demo accounts"), TestClient(create_app(production)):
         pass
 

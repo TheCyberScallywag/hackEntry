@@ -29,24 +29,24 @@ def _forget(web: Web, project: str, volunteer: str) -> None:
 
 @pytest.fixture
 def settings(tmp_path) -> Settings:
-    """A row bound of 4: enough for any one demo project, too few for a whole organisation
+    """A row bound of 3: enough for any one demo project, too few for a whole organisation
     once DataKind UK has two published projects."""
     return Settings(
-        data_dir=tmp_path / "var", projector_interval_seconds=3600, graph_max_rows=4,
+        data_dir=tmp_path / "var", projector_interval_seconds=3600, graph_max_rows=3,
         _env_file=None,
     )  # fmt: skip
 
 
 def test_no_offer_lapses_when_an_organisation_has_more_pairs_than_the_row_bound(web: Web):
     before = _states(web)
-    assert sum(1 for (p, _), s in before.items() if p == FOOD_BANK and s == "eligible") == 3
-    assert before[(FOOD_BANK, USERS["cerys"])] == "team"  # its lead: four pairs in the graph
+    assert sum(1 for (p, _), s in before.items() if p == FOOD_BANK and s == "eligible") == 2
+    assert before[(FOOD_BANK, USERS["cerys"])] == "team"  # its lead: three pairs in the graph
     web.sign_in("rhiannon")
     assert _review(web, DK, AUDIT, "approved").status_code == 303  # a second DataKind UK project
     after = _states(web)
     audit_pairs = [pair for pair in after if pair[0] == AUDIT]
     assert audit_pairs, "the newly published project found its candidates"
-    assert len(audit_pairs) + 4 > web.rt.graph.max_rows  # the organisation is over the bound
+    assert len(audit_pairs) + 3 > web.rt.graph.max_rows  # the organisation is over the bound
     assert {pair: after[pair] for pair in before} == before  # and nothing was lapsed
     assert placements.sweep(web.rt.db, web.rt.graph) == 0  # a full sweep agrees
     assert "lapsed" not in _states(web).values()
@@ -54,7 +54,7 @@ def test_no_offer_lapses_when_an_organisation_has_more_pairs_than_the_row_bound(
 
 def test_a_read_over_the_bound_fails_loudly_and_changes_nothing(web: Web):
     before = _states(web)
-    too_small = GraphStore(web.rt.graph.path, max_rows=3)  # the food bank project has 4 pairs
+    too_small = GraphStore(web.rt.graph.path, max_rows=2)  # the food bank project has 3 pairs
     with pytest.raises(GraphTruncated):
         placements.sweep(web.rt.db, too_small)
     assert _states(web) == before
@@ -94,16 +94,16 @@ def test_a_profile_save_sweeps_only_that_volunteer(web: Web):
 def test_scoped_sweep_reconciles_a_volunteer_or_a_project(web: Web):
     db, graph = web.rt.db, web.rt.graph
     _forget(web, FOOD_BANK, USERS["dev"])
-    _forget(web, FOOD_BANK, USERS["kofi"])
+    _forget(web, FOOD_BANK, USERS["asha"])
     _forget(web, WINTER, USERS["asha"])
     assert placements.sweep(db, graph, placements.Scope()) == 0  # nothing in scope: no work
     only_dev = placements.Scope(volunteers=frozenset({USERS["dev"]}))
     assert placements.sweep(db, graph, only_dev) == 1
     assert (FOOD_BANK, USERS["dev"]) in _states(web)
-    assert (FOOD_BANK, USERS["kofi"]) not in _states(web)
+    assert (FOOD_BANK, USERS["asha"]) not in _states(web)
     only_food_bank = placements.Scope(projects=frozenset({FOOD_BANK}))
     assert placements.sweep(db, graph, only_food_bank) == 1
-    assert (FOOD_BANK, USERS["kofi"]) in _states(web)
+    assert (FOOD_BANK, USERS["asha"]) in _states(web)
     assert (WINTER, USERS["asha"]) not in _states(web)
     assert placements.sweep(db, graph) == 1  # the rest
 

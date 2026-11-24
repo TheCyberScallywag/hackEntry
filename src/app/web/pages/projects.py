@@ -1,5 +1,6 @@
 """Published projects, matches and coverage, and placements: the lead invites, the volunteer
-answers. The lead side (the project's lead, whom the org admins assign, and the org admins)
+answers. The lead side (the project's lead, whom the team coordinators assign, and the
+organisation's team coordinators and admins)
 also runs the project's own team onboarding and accepts, suspends or removes team members."""
 
 from fastapi import APIRouter, Request
@@ -37,7 +38,7 @@ def project_detail(org: Org, project_id: str, request: Request, rt: RT, session:
     project = matching.project(rt.db, rt.graph, user_id, org_id, project_id)
     is_lead = project["sql"]["lead_id"] == user_id
     coverage = mine = team = flow = progress = people = None
-    if access.org_admin or is_lead:
+    if access.team_coordinator or is_lead:
         try:
             side = placements.lead_side(rt.db, user_id, project_id)
             team, flow, progress = side["team"], side["flow"], side["progress"]
@@ -46,8 +47,9 @@ def project_detail(org: Org, project_id: str, request: Request, rt: RT, session:
             # project, but may still read its page like any other member.
             is_lead = False
             team = flow = progress = None
-    # Only org admins assign the lead, and the people to choose from are loaded on request.
-    if access.org_admin and request.query_params.get("assign") == "lead":
+    # Team coordinators (and org admins) assign the lead; the people to choose from are loaded
+    # on request.
+    if access.team_coordinator and request.query_params.get("assign") == "lead":
         people = services.org_volunteers(rt.db, user_id, org_id)
     if access.reviewer:
         coverage = matching.project_coverage(rt.db, rt.graph, user_id, org_id, project_id)
@@ -175,7 +177,7 @@ def lead_reinstate(
 
 @router.post("/o/{org_id}/projects/{project_id}/lead")
 def assign_lead(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
-    """An org admin hands the project to a lead."""
+    """A team coordinator or org admin hands the project to a lead."""
     services.set_project_lead(
         rt.db, session.user_id, org_id, project_id, str(form.get("lead_id", ""))
     )

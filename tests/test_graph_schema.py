@@ -70,12 +70,12 @@ def test_push_writes_the_whole_demo_graph_including_teams(demo_graph, monkeypatc
     driver = FakeDriver()
     monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
     counts = aura.push(Settings(_env_file=None), demo_graph)
-    assert counts == {"nodes": 46, "relationships": 96}
+    assert counts == {"nodes": 49, "relationships": 97}
     statements = [q for q, _ in driver.queries]
     assert statements[0].startswith("MATCH (n {dvn_scope: $scope}) DETACH DELETE n")
     assert any("MERGE (a)-[:ON_TEAM]->(b)" in q for q in statements)
     merged = sum(len(p["rows"]) for q, p in driver.queries if "MERGE (a)-[" in q)
-    assert merged == 96
+    assert merged == 97
     assert all(p["scope"] == aura.SCOPE for _, p in driver.queries)
 
 
@@ -104,7 +104,7 @@ def test_parity_runs_the_same_bounded_query_on_both_sides(demo_graph, monkeypatc
     monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
     report = aura.parity(Settings(_env_file=None), demo_graph, [DK, CS])
     assert report["match"] is True
-    assert report["organisations"][DK] == {"local": 4, "aura": 4, "same": True}
+    assert report["organisations"][DK] == {"local": 3, "aura": 3, "same": True}
     assert report["organisations"][CS] == {"local": 2, "aura": 2, "same": True}
     query, params = driver.queries[0]
     assert query == cypher.MATCH_CANDIDATES

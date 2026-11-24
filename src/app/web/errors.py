@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 
 FORBIDDEN_DETAIL = {
     "reviewer": "Only this organisation's reviewers and admins can do that.",
+    "team_coordinator": "Only this organisation's team coordinators and admins can do that.",
     "org_admin": "Only this organisation's admins can do that.",
     "volunteer": "Join this organisation as a volunteer first.",
     "any": "You are not a member of this organisation.",

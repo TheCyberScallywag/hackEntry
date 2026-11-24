@@ -46,13 +46,13 @@ def test_unknown_organisation_is_not_found(web: Web):
 
 
 def test_review_pages_need_the_reviewer_role_for_that_organisation(web: Web):
-    web.sign_in("kofi")  # reviewer for Cyber Scallywags, volunteer for DataKind UK
+    web.sign_in("kofi")  # reviews and volunteers for Cyber Scallywags, nothing at DataKind UK
     assert web.get(f"/o/{CS}/review").status_code == 200
     assert web.get(f"/o/{DK}/review").status_code == 403
     assert web.get(f"/o/{DK}/coverage").status_code == 403
     assert web.get(f"/o/{CS}/coverage").status_code == 200
-    # ...and he can volunteer in the other one
-    assert "Food Bank Demand Dashboard" in web.get("/matches?scope=" + DK).text
+    # ...and the other organisation's matches are not his to see
+    assert web.get("/matches?scope=" + DK).status_code == 403
 
 
 def test_forged_ids_cannot_cross_tenants(web: Web):
@@ -78,8 +78,9 @@ def test_forged_ids_cannot_cross_tenants(web: Web):
 def test_candidate_lists_are_scoped_and_hide_contact_details(web: Web):
     web.sign_in("rhiannon")  # DataKind UK reviewer
     page = web.get(f"/o/{DK}/coverage").text
-    for name in ("Dev", "Asha", "Cerys", "Kofi"):
+    for name in ("Dev", "Asha", "Cerys"):
         assert name in page
-    assert "Bryn" not in page and "Gwen" not in page  # Cyber Scallywags only
+    for name in ("Bryn", "Gwen", "Kofi"):  # Cyber Scallywags only
+        assert name not in page
     assert "@cyberscallywags.uk" not in page
     assert USERS["asha"] not in page  # opaque IDs stay server-side too

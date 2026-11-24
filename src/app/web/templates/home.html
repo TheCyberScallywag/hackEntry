@@ -10,7 +10,7 @@
   {% for o in orgs %}
   <article class="card {% if active and o.id == active.id %}current{% endif %}">
     <h3>{{ o.name }}</h3>
-    <p class="meta">{% if o.opted_in %}<span class="chip ok">Volunteering</span>{% endif %}{% if o.org_admin %}<span class="chip pref">Org admin</span>{% elif o.reviewer %}<span class="chip pref">Reviewer</span>{% endif %}</p>
+    <p class="meta">{% if o.opted_in %}<span class="chip ok">Volunteering</span>{% endif %}{% if o.org_admin %}<span class="chip pref">Org admin</span>{% else %}{% if o.reviewer %}<span class="chip pref">Reviewer</span>{% endif %}{% if o.team_coordinator %}<span class="chip pref">Team coordinator</span>{% endif %}{% endif %}</p>
     <p><a href="/o/{{ o.id }}/projects">Projects</a>{% if o.opted_in %} · <a href="/matches?scope={{ o.id }}">My matches</a>{% endif %}
        {% if o.reviewer %} · <a href="/o/{{ o.id }}/review">Review queue ({{ queues.get(o.id, 0) }} waiting)</a> · <a href="/o/{{ o.id }}/coverage">Coverage</a>{% endif %}</p>
   </article>

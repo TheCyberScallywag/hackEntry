@@ -545,7 +545,7 @@ def users_tab(me: dict) -> None:
     choices += [
         (f"{o['name']}: {role}", f"/{role}", o["id"])
         for o in orgs
-        for role in ("org_admin", "reviewer")
+        for role in ("org_admin", "reviewer", "team_coordinator")
     ]
     with st.form("roles"):
         who = st.selectbox("User", users, format_func=lambda u: u["display_name"])
@@ -703,6 +703,11 @@ def main() -> None:
         return
     roles = sorted(me["system_roles"])
     roles += [f"org admin: {o['name']}" for o in me["organisations"] if o["org_admin"]]
+    roles += [
+        f"team coordinator: {o['name']}"
+        for o in me["organisations"]
+        if o["team_coordinator"] and not o["org_admin"]
+    ]
     st.sidebar.write(f"Signed in as **{me['user']['display_name']}**")
     st.sidebar.caption(", ".join(roles) or "no staff role")
     if st.sidebar.button("Sign out"):

@@ -115,7 +115,8 @@ def _prefix(text: str) -> str:
 
 
 def rbac_snapshot(db: Database, actor_id: str) -> dict:
-    """Who holds which role now: system roles, and per organisation its admins and reviewers.
+    """Who holds which role now: system roles, and per organisation its admins, reviewers and team
+    coordinators.
     Display names and account status only; no contact details."""
     require_admin(db, actor_id)
     with db.read() as conn:

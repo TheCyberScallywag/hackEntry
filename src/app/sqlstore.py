@@ -78,12 +78,13 @@ CREATE TABLE IF NOT EXISTS memberships (
 );
 CREATE INDEX IF NOT EXISTS memberships_org ON memberships(org_id, opted_in);
 
--- Organisation roles: org_admin (manages the organisation's projects and volunteers, reviews)
--- and reviewer (reviews suggestions). Granted by a system admin, the seed or the CLI only.
+-- Organisation roles: org_admin (manages the organisation's projects and volunteers, and holds
+-- the other two roles), reviewer (reviews suggestions) and team_coordinator (assigns project
+-- leads and decides who joins the teams). Granted by a system admin, the seed or the CLI only.
 CREATE TABLE IF NOT EXISTS org_roles (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     org_id     TEXT NOT NULL REFERENCES organisations(id),
-    role       TEXT NOT NULL CHECK (role IN ('reviewer', 'org_admin')),
+    role       TEXT NOT NULL CHECK (role IN ('reviewer', 'team_coordinator', 'org_admin')),
     granted_at TEXT NOT NULL,
     PRIMARY KEY (user_id, org_id, role)
 );
@@ -417,7 +418,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class SchemaOutdated(RuntimeError):

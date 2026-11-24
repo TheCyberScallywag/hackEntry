@@ -8,6 +8,8 @@ from app.services.access import get_org, load_actor, require_admin
 from app.services.errors import Forbidden, Invalid, NotFound
 from app.sqlstore import Database, now
 
+ORG_ROLES = ("org_admin", "reviewer", "team_coordinator")
+
 
 def _require_user(conn, user_id: str) -> None:
     if conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone() is None:
@@ -51,7 +53,7 @@ def set_system_role(db: Database, actor_id: str, user_id: str, role: str, *, gra
 def set_org_role(
     db: Database, actor_id: str, org_id: str, user_id: str, role: str, *, granted: bool
 ) -> None:
-    if role not in ("org_admin", "reviewer"):
+    if role not in ORG_ROLES:
         raise Invalid("Unknown organisation role.")
     with db.tx() as conn:
         _require_admin(conn, actor_id)

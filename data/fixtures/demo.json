@@ -119,7 +119,7 @@
       "display_name": "Kofi",
       "email": "kofi@cyberscallywags.uk",
       "volunteers_with": [
-        "datakind-uk"
+        "cyber-scallywags"
       ],
       "skills": {
         "data-analysis": "offers",
@@ -136,13 +136,53 @@
     {
       "key": "rhiannon",
       "display_name": "Rhiannon",
-      "email": "rhiannon@cyberscallywags.uk",
+      "email": "rhiannon@datakind.uk",
+      "volunteers_with": [
+        "datakind-uk"],
+      "skills": {},
+      "causes": {},
+      "org_roles": {
+        "datakind-uk": [
+          "org_admin"
+        ]
+      }
+    },
+    {
+      "key": "nicole",
+      "display_name": "Nicole",
+      "email": "nicole@datakind.uk",
       "volunteers_with": [],
       "skills": {},
       "causes": {},
       "org_roles": {
         "datakind-uk": [
           "org_admin"
+        ]
+      }
+    },
+    {
+      "key": "zoe",
+      "display_name": "Zoe",
+      "email": "zoe@datakind.uk",
+      "volunteers_with": [],
+      "skills": {},
+      "causes": {},
+      "org_roles": {
+        "datakind-uk": [
+          "team_coordinator"
+        ]
+      }
+    },
+    {
+      "key": "ella",
+      "display_name": "Ella",
+      "email": "ella@datakind.uk",
+      "volunteers_with": [],
+      "skills": {},
+      "causes": {},
+      "org_roles": {
+        "datakind-uk": [
+          "reviewer"
         ]
       }
     },

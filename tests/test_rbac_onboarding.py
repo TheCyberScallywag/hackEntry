@@ -4,7 +4,7 @@ JSON API, which is the system's single action surface."""
 
 from app.catalogue import get_catalogue, stable_id
 from app.runtime import DEMO_PASSWORD
-from tests.conftest import AUDIT, CS, DK, IL, USERS, WINTER, Web
+from tests.conftest import AUDIT, CS, DK, IL, USERS, WINTER, Web, demo_email
 
 NIA = stable_id("u", "nia")  # seeded in screening, offers first aid, joined Cyber Scallywags
 SAM = stable_id("u", "sam")  # system admin
@@ -33,7 +33,7 @@ class Client:
 
 def as_(web: Web, key: str) -> Client:
     r = web.client.post(
-        "/api/v1/session", json={"email": f"{key}@cyberscallywags.uk", "password": DEMO_PASSWORD}
+        "/api/v1/session", json={"email": demo_email(key), "password": DEMO_PASSWORD}
     )
     assert r.status_code == 200, r.text
     return Client(web, r.json()["token"])
@@ -226,7 +226,7 @@ def test_lead_side_is_restricted_and_volunteer_side_is_self_only(web: Web):
         as_(web, "asha").post(f"/projects/{fb}/placements/{USERS['dev']}/answer", body).status_code
         == 403
     )  # noqa: E501
-    assert kofi.post(f"/projects/{fb}/placements/{USERS['dev']}/answer", body).status_code == 403
+    assert kofi.post(f"/projects/{fb}/placements/{USERS['dev']}/answer", body).status_code == 404
     assert gwen.post(f"/projects/{fb}/placements/{USERS['dev']}/answer", body).status_code == 404
     assert gwen.post(f"/placements/{fb}/answer", body).status_code == 404  # not her placement
     # the org admin can act as lead; a no from either side declines
@@ -279,7 +279,7 @@ def test_team_members_can_leave_or_be_removed(web: Web):
 def test_org_admins_manage_only_their_own_organisation(web: Web):
     kofi, rhiannon, sam = as_(web, "kofi"), as_(web, "rhiannon"), as_(web, "sam")
     names = [v["display_name"] for v in kofi.get(f"/orgs/{CS}/volunteers").json()]
-    assert names == ["Asha", "Bryn", "Gwen", "Nia"]
+    assert names == ["Asha", "Bryn", "Gwen", "Kofi", "Nia"]
     assert "email" not in str(kofi.get(f"/orgs/{CS}/volunteers").json())
     assert kofi.get(f"/orgs/{DK}/volunteers").status_code == 403
     assert rhiannon.get(f"/orgs/{CS}/volunteers").status_code == 403
@@ -371,7 +371,7 @@ def test_project_onboarding_notifies_each_phase(web: Web):
     assert any("is now active" in m for m in cerys.messages())
     # an active project immediately has its candidates, and its author leads it from the team
     assert placement(web, sid, USERS["dev"])["state"] == "eligible"
-    assert placement(web, sid, USERS["kofi"])["state"] == "eligible"
+    assert placement(web, sid, USERS["asha"])["state"] == "eligible"
     lead = placement(web, sid, USERS["cerys"])  # on the team as lead, whatever her skills
     assert (lead["state"], lead["matched_skills"]) == ("team", "[]")
     assert any(
@@ -386,8 +386,8 @@ def test_project_onboarding_notifies_each_phase(web: Web):
     rhiannon.post(f"/orgs/{DK}/projects/{sid}/withdraw", {"reason": "Paused", "version": v})
     assert placement(web, sid, USERS["dev"])["state"] == "removed"
     assert any("Allotment Data Map" in m and "withdrawn" in m for m in as_(web, "dev").messages())
-    assert placement(web, sid, USERS["kofi"])["state"] == "removed"  # never invited: not told
-    assert not any("Allotment Data Map" in m for m in as_(web, "kofi").messages())
+    assert placement(web, sid, USERS["asha"])["state"] == "removed"  # never invited: not told
+    assert not any("Allotment Data Map" in m for m in as_(web, "asha").messages())
 
 
 # ------------------------------------------------------------------ API surface

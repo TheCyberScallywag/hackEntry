@@ -73,7 +73,7 @@ def test_one_candidate_entry_per_eligible_skill(web: Web):
     }
     assert per_skill == {
         "Bookkeeping": ["Dev"],
-        "Spreadsheet and data analysis": ["Dev", "Asha", "Kofi"],
+        "Spreadsheet and data analysis": ["Dev", "Asha"],
     }
     # Cerys leads the project, so she is on its team and no longer a candidate
     on_team = {row["skill"]: row["team"] for row in project["per_skill"]}
@@ -83,9 +83,9 @@ def test_one_candidate_entry_per_eligible_skill(web: Web):
 
 def test_preferred_cause_ranks_ahead_then_coverage_then_optional_then_ids(web: Web):
     ranked = [(c["name"], c["preferred"], c["coverage"]) for c in candidates(web, DK, FOOD_BANK)]
-    # Dev and Asha prefer Food Security; Dev covers two required skills. Cerys and Kofi have no
-    # preference and cover one each; Cerys also offers the optional Welsh translation.
-    assert ranked == [("Dev", True, 2), ("Asha", True, 1), ("Cerys", False, 1), ("Kofi", False, 1)]
+    # Dev and Asha prefer Food Security; Dev covers two required skills. Cerys has no
+    # preference and covers one.
+    assert ranked == [("Dev", True, 2), ("Asha", True, 1), ("Cerys", False, 1)]
     # On the volunteer side: Asha's preferred, two-skill project first
     assert [m["project"] for m in mine(web, "asha", [DK, CS]).matches] == [WINTER, FOOD_BANK]
 

@@ -125,15 +125,15 @@ def test_a_suspended_lead_cannot_decide(web: Web):
 
 # ------------------------------------------------------------------ 3: both acceptances
 def test_nobody_decides_on_their_own_place_except_the_lead(web: Web):
-    kofi = USERS["kofi"]  # a DataKind UK volunteer and a candidate for the food bank project
-    assert as_(web, "sam").put(f"/admin/orgs/{DK}/roles/{kofi}/org_admin").status_code == 200
-    body = {"answer": "yes", "version": placement(web, FOOD_BANK, kofi)["version"]}
-    r = as_(web, "kofi").post(f"{LEAD}/{kofi}/answer", body)
+    asha = USERS["asha"]  # a DataKind UK volunteer and a candidate for the food bank project
+    assert as_(web, "sam").put(f"/admin/orgs/{DK}/roles/{asha}/org_admin").status_code == 200
+    body = {"answer": "yes", "version": placement(web, FOOD_BANK, asha)["version"]}
+    r = as_(web, "asha").post(f"{LEAD}/{asha}/answer", body)
     assert r.status_code == 403 and "Someone else must decide" in r.json()["detail"]
-    rows = {p["display_name"]: p for p in as_(web, "kofi").get(LEAD).json()}
-    assert rows["Kofi"]["can_decide"] is False and rows["Dev"]["can_decide"] is True
-    assert invite(web, "rhiannon", FOOD_BANK, kofi) == {"state": "eligible"}  # another admin can
-    assert accept(web, "kofi", FOOD_BANK) == {"state": "team"}
+    rows = {p["display_name"]: p for p in as_(web, "asha").get(LEAD).json()}
+    assert rows["Asha"]["can_decide"] is False and rows["Dev"]["can_decide"] is True
+    assert invite(web, "rhiannon", FOOD_BANK, asha) == {"state": "eligible"}  # another admin can
+    assert accept(web, "asha", FOOD_BANK) == {"state": "team"}
 
 
 def test_the_lead_is_on_their_own_team_automatically(web: Web):
@@ -202,14 +202,14 @@ def test_candidates_are_ranked_and_stay_current(web: Web):
     rows = [p for p in as_(web, "cerys").get(LEAD).json() if p["status"] == "candidate"]
     # preferred cause first, then required skills covered, then optional skills, then name
     assert [(p["display_name"], p["preferred"], len(p["matched_skills"])) for p in rows] == [
-        ("Dev", True, 2), ("Asha", True, 1), ("Kofi", False, 1),
+        ("Dev", True, 2), ("Asha", True, 1),
     ]  # fmt: skip
-    version = rows[2]["version"]
-    kofi = as_(web, "kofi")
-    kofi.put("/profile", full_profile(kofi, bookkeeping="offers"))
+    version = rows[1]["version"]
+    asha = as_(web, "asha")
+    asha.put("/profile", full_profile(asha, bookkeeping="offers"))
     after = {p["display_name"]: p for p in as_(web, "cerys").get(LEAD).json()}
-    assert after["Kofi"]["matched_skills"] == ["Bookkeeping", "Spreadsheet and data analysis"]
-    assert after["Kofi"]["version"] == version  # refreshed without invalidating an open form
+    assert after["Asha"]["matched_skills"] == ["Bookkeeping", "Spreadsheet and data analysis"]
+    assert after["Asha"]["version"] == version  # refreshed without invalidating an open form
 
 
 def test_candidates_are_not_told_until_invited(web: Web):
@@ -249,7 +249,7 @@ def test_changing_the_lead_tells_both_and_puts_the_new_lead_on_the_team(web: Web
     r = as_(web, "rhiannon").put(f"/orgs/{DK}/projects/{FOOD_BANK}/lead", {"user_id": dev})
     assert r.status_code == 200
     assert any(
-        "You are now the lead for “Food Bank Demand Dashboard”. 2 candidates are waiting" in m
+        "You are now the lead for “Food Bank Demand Dashboard”. 1 candidate is waiting" in m
         for m in as_(web, "dev").messages()
     )
     assert any("Dev is now the lead for “Food Bank" in m for m in as_(web, "cerys").messages())

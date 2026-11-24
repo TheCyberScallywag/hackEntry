@@ -108,8 +108,8 @@ def _project(conn: sqlite3.Connection, org_id: str, project_id: str = "") -> Non
 
 def _authorise(conn: sqlite3.Connection, actor_id: str, org_id: str, project_id: str = "",
                volunteer_id: str = "") -> None:  # fmt: skip
-    """Who runs a workflow: the organisation's admins for its own, and the lead side (the lead
-    the org admins assigned, or an org admin) for one of its projects."""
+    """Who runs a workflow: the organisation's admins for its own, and the lead side (the lead,
+    a team coordinator or an org admin) for one of its projects."""
     if not project_id:
         check_access(conn, actor_id, org_id, role="org_admin")
         return
@@ -694,7 +694,7 @@ def complete_step(
             raise NotFound("onboarding")
         if user_id is None and step["completed_by"] != "volunteer":
             raise Forbidden(
-                "Only the project lead or an org admin can confirm that step."
+                "Only the project lead, a team coordinator or an org admin can confirm that step."
                 if project_id
                 else "org_admin"
             )

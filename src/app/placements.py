@@ -5,7 +5,8 @@
    becomes an `eligible` placement: a candidate. Candidates are shown, ranked, to the project
    lead; the volunteer is not told yet.
 2. The lead side chooses who to invite. The lead side is the project lead while they are in
-   standing, or an org admin of the organisation, whose answer counts the same as the lead's.
+   standing, or a team coordinator or org admin of the organisation, whose answer counts the
+   same as the lead's.
    Nobody decides on their own place, except the lead, who is on their own team automatically
    (app.services.teams.ensure_lead_on_team).
 3. The invited volunteer answers. Yes puts them on the team (`team`), projected to Relate as
@@ -25,8 +26,9 @@
    ON_TEAM, until reinstated) or remove them, whether they are on the team, still onboarding
    or suspended.
 
-The lead side is always the same two: the project's lead, whom the org admins assign
-(app.services.submissions.set_project_lead), and the org admins themselves.
+The lead side is always the same: the project's lead, whom the team coordinators assign
+(app.services.submissions.set_project_lead), and the organisation's team coordinators and
+org admins themselves.
 
 Every change is written to `placement_events` with who made it, and the people it affects are
 notified in-app.
@@ -62,7 +64,7 @@ REOPENABLE = ("declined", "left", "removed")
 
 
 _project_info = teams.project_info
-_check_lead = teams.check_lead_side  # the project's lead while in standing, or an org admin
+_check_lead = teams.check_lead_side  # the lead in standing, a coordinator or an org admin
 
 
 @dataclass(frozen=True)
@@ -548,7 +550,7 @@ def suspend(
 ) -> None:
     """The lead side suspends a team member: off the team, with their place kept, until they
     are reinstated or removed. The project's lead cannot be suspended from their own team; an
-    org admin assigns a new lead first."""
+    team coordinator assigns a new lead first."""
     reason = services.require_reason(reason)
     with db.tx() as conn:
         info = _check_lead(conn, actor_id, project_id, volunteer_id)
@@ -556,7 +558,8 @@ def suspend(
             raise services.Forbidden("Someone else must decide on your own place on a team.")
         if volunteer_id == info["lead_id"]:
             raise services.Invalid(
-                "They lead this project. An org admin assigns a new lead before suspending them."
+                "They lead this project. A team coordinator assigns a new lead before "
+                "suspending them."
             )
         _lead_decision(conn, project_id, volunteer_id, from_state="team", to_state="suspended",
                        actor_id=actor_id, note=reason)  # fmt: skip

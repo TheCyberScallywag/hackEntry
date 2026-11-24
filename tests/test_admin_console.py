@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import AUDIT, CS, DK, FOOD_BANK, USERS, Web
+from tests.conftest import AUDIT, CS, DK, FOOD_BANK, USERS, Web, demo_email
 from tests.test_rbac_onboarding import NIA, as_, placement
 
 
@@ -161,7 +161,7 @@ def sign_in(console, key: str, section: str | None = None) -> None:
     _admin, st, run = console
     st.section = section
     st.session_state.clear()
-    st.typed = {"Email": f"{key}@cyberscallywags.uk", "Password": "demo-password-1"}
+    st.typed = {"Email": demo_email(key), "Password": "demo-password-1"}
     st.clicked = {"Sign in"}
     assert run() is True and "token" in st.session_state
     st.typed, st.clicked = {}, set()
@@ -312,7 +312,7 @@ def test_system_tab_shows_projection_and_graph_and_replays(console):
     metrics = [args for name, args in st.drawn if name == "metric"]
     assert metrics[-2:] == [("Pending graph updates", 0), ("Failing (3+ attempts)", 0)]
     tables = [args[0] for name, args in st.drawn if name == "dataframe"]
-    assert {"label": "Volunteer", "nodes": 11} in tables[-3]
+    assert {"label": "Volunteer", "nodes": 14} in tables[-3]
     assert {"type": "ON_TEAM", "relationships": 5} in tables[-2]
     assert any(row["eligible_volunteers"] == "coverage gap" for row in tables[-1])
     st.clicked = {"Replay outbox now"}
@@ -603,9 +603,9 @@ def test_organisation_tab_assigns_the_lead_and_accepts_suspends_and_removes(cons
     # org admins assign the lead
     st.typed, st.clicked = {}, {"Assign lead"}
     st.choices = food_bank | {
-        "Project lead": lambda people: next(p for p in people if p["id"] == USERS["kofi"])
+        "Project lead": lambda people: next(p for p in people if p["id"] == USERS["asha"])
     }
     assert run() is True and st.session_state["flash"] == ("success", "Project lead: done")
     with web.rt.db.read() as conn:
         lead = conn.execute("SELECT lead_id FROM submissions WHERE id = ?", (FOOD_BANK,)).fetchone()
-    assert lead[0] == USERS["kofi"]
+    assert lead[0] == USERS["asha"]

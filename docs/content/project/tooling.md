@@ -47,8 +47,11 @@ The application's own command line is `python -m app.cli <command>`:
 | `matches --org KEY [--store PATH]` | Ranked candidates for one organisation, straight from Relate |
 | `status` | The projection outbox: pending, failing, and the items |
 | `drain` | Projects every pending item now; exits 1 if any failed |
-| `grant-reviewer --email E --org KEY` | Gives an existing account the reviewer role |
+| `grant-reviewer --email E --org KEY` | Gives an existing account the reviewer role. The other roles (org admin, team coordinator, system roles) are granted by a system admin through the API or the console |
 | `openapi [--out PATH]` | Writes the JSON API's OpenAPI document |
+| `evals [--agent NAME] [--judge]` | Runs the assistants' offline evaluation suites against a copy of the demo |
+| `audit` | Prints the automatic access and usage checks |
+| `brand [--check]`, `about --out PATH`, `contributors --repo OWNER/NAME` | Write the mobile and docs copies of `brand/`, the docs about page, and the contributors list |
 | `aura-push` / `aura-parity` | The optional AuraDB push and match-parity check |
 
 `python -m app.serve web` and `python -m app.serve admin` start one service each; the Docker
@@ -102,7 +105,7 @@ Mobile scripts, run in `mobile/`: `npm start` (dev server with an API proxy), `n
 
 | Tool | Version | Use here | Where |
 |---|---|---|---|
-| pytest | 9.2 | 154 backend tests against temporary SQLite databases and real Relate stores | `tests/`, `[tool.pytest.ini_options]` |
+| pytest | 9.2 | 365 backend tests against temporary SQLite databases and real Relate stores | `tests/`, `[tool.pytest.ini_options]` |
 | pytest-cov / coverage | 7.1 / 7.17 | Line coverage on every run (95%) | `addopts` in `pyproject.toml` |
 | Ruff | 0.17 | Lint and format, line length 100; rule sets E, F, I, B, UP, SIM, S, TD | `[tool.ruff]` |
 | pre-commit | 4.7 | Runs the hooks below on commit, on the commit message and on push | `.pre-commit-config.yaml` |
@@ -206,6 +209,11 @@ Settings come from environment variables or a local `.env` file (`src/app/config
 | `GRAPH_MAX_ROWS` | `500` | Upper bound on rows read from Relate in one statement |
 | `INVITATION_REMINDER_DAYS` | `7` | Remind a volunteer of an unanswered team invitation after this many days (`0`: never) |
 | `INVITATION_EXPIRY_DAYS` | `14` | Close an unanswered invitation after this many days and return the volunteer to the candidate list (`0`: never) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_STARTTLS` | see `.env.example` | The SMTP server that sends queued onboarding emails. With no `SMTP_HOST` nothing is sent |
+| `EMAIL_FROM`, `PUBLIC_URL` | see `.env.example` | The address onboarding emails come from, and where volunteers reach the web app (the links in emails start with it) |
+| `AGENT_MODEL`, `AGENT_FALLBACK_MODEL`, `ANTHROPIC_API_KEY` | empty | The assistants' model and key. With no `AGENT_MODEL` the assistants are off |
+| `AGENT_REQUEST_LIMIT`, `AGENT_TOOL_CALLS_LIMIT`, `AGENT_TOTAL_TOKENS_LIMIT`, `AGENT_TIMEOUT_SECONDS`, `AGENT_DAILY_RUNS` | `8`, `16`, `40000`, `90`, `40` | Limits per assistant run, and runs per account per day |
+| `LOGFIRE_TOKEN`, `LOGFIRE_INCLUDE_CONTENT`, `AUDIT_RETENTION_DAYS` | empty, on outside production, `400` | Where traces go, whether prompts and model output are on them, and how long audit rows are kept |
 | `AURA_URI`, `AURA_USERNAME`, `AURA_PASSWORD`, `AURA_DATABASE` | empty, `neo4j`, empty, `neo4j` | The optional development AuraDB instance |
 | `HOST`, `PORT`, `ADMIN_PORT`, `SERVICE` | `127.0.0.1`, `8080`, `8501`, — | Read by `app.serve` |
 

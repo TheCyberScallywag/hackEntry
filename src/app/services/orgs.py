@@ -51,8 +51,9 @@ def set_membership(db: Database, user_id: str, org_id: str, *, opted_in: bool) -
 
 
 def org_volunteers(db: Database, actor_id: str, org_id: str) -> list[dict]:
-    """An organisation's opted-in volunteers, for its org admins (no emails)."""
-    require_access(db, actor_id, org_id, role="org_admin")
+    """An organisation's opted-in volunteers, for its team coordinators and org admins (no
+    emails). Coordinators choose project leads from it; only org admins remove volunteers."""
+    require_access(db, actor_id, org_id, role="team_coordinator")
     with db.read() as conn:
         rows = conn.execute(
             "SELECT u.id, u.display_name, u.status, m.updated_at AS joined_at, "

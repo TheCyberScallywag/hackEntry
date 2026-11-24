@@ -9,6 +9,7 @@ export interface Organisation {
   description: string;
   opted_in: boolean;
   reviewer: boolean;
+  team_coordinator: boolean;
   org_admin: boolean;
 }
 
