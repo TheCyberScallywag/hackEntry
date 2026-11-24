@@ -3,7 +3,7 @@ is a bound parameter. Verified against Relate 1.0.1 (tests/test_projection.py an
 tests/test_matching.py) and written in the Neo4j 5 dialect so the same text runs on AuraDB for
 the parity check.
 
-Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs):
+Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs)::
 
     (:Organisation)-[:OWNS_PROJECT]->(:Project)-[:SERVES_CAUSE]->(:Cause)
     (:Cause)-[:IN_THEME]->(:CauseTheme)              causes that are alike share a theme
