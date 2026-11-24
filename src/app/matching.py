@@ -33,6 +33,12 @@ class VolunteerMatches:
 
 
 @dataclass
+class Needed:
+    withheld: Withheld | None = None
+    opportunities: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class ProjectCoverage:
     withheld: Withheld | None = None
     projects: list[dict] = field(default_factory=list)
@@ -139,6 +145,54 @@ def volunteer_matches(
         ],
         excluded=[_explain_exclusion(r, org_names) for r in excluded if r["project"] in fresh],
     )
+
+
+def needed_elsewhere(db: Database, graph: GraphStore, user_id: str) -> Needed:
+    """Organisations the volunteer has not joined that need a skill they offer, for a cause
+    they have not excluded (cypher.NEEDED_ELSEWHERE). Anyone may ask about themselves; nothing
+    about any other person is returned, and nothing a signed-in user cannot already see in the
+    showcase except that the skill is not yet covered on the team."""
+    with db.read() as conn:
+        status = services.load_actor(conn, user_id).status
+        if status != "active":
+            label = services.VOLUNTEER_STATUS_LABELS[status].lower()
+            return Needed(
+                withheld=Withheld(
+                    f"Your account is {label}. Once a moderator has approved it, this shows "
+                    "where else your skills are needed."
+                )
+            )
+        org_names = dict(conn.execute("SELECT id, name FROM organisations").fetchall())
+        if reason := _volunteer_pending(conn, user_id, sorted(org_names)):
+            return Needed(withheld=Withheld(reason))
+    rows = graph.read(cypher.NEEDED_ELSEWHERE, {"volunteer": user_id})
+    with db.read() as conn:
+        fresh = services.published_state(conn, sorted({p for r in rows for p in r["projects"]}))
+        joined = {
+            r[0]
+            for r in conn.execute(
+                "SELECT org_id FROM memberships WHERE user_id = ? AND opted_in = 1", (user_id,)
+            )
+        }
+    cat = get_catalogue()
+    found = []
+    for r in rows:
+        projects = [p for p in r["projects"] if p in fresh]
+        if not projects or r["org"] in joined or r["org"] not in org_names:
+            continue  # withdrawn or joined since the graph was written: fail closed
+        found.append(
+            {
+                "org": r["org"],
+                "org_name": org_names[r["org"]],
+                "skill": r["skill"],
+                "skill_name": cat.skill_name(r["skill"]),
+                "cause": r["cause"],
+                "cause_name": cat.cause_name(r["cause"]),
+                "preferred": r["preferred"],
+                "projects": len(projects),
+            }
+        )
+    return Needed(opportunities=found)
 
 
 def _explain(

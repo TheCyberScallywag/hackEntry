@@ -198,6 +198,28 @@ def leave(org_id: str, request: Request, session: Api) -> m.MembershipOut:
     return {"opted_in": False}
 
 
+@router.get("/me/needed", tags=["me"])
+def needed_elsewhere(request: Request, session: Api) -> m.Needed:
+    """Organisations I have not joined that need a skill I offer, across the whole network.
+    Organisations, skills and causes only: never another volunteer."""
+    rt = _rt(request)
+    result = matching.needed_elsewhere(rt.db, rt.graph, session.user_id)
+    return {
+        "withheld": result.withheld.reason if result.withheld else None,
+        "opportunities": [
+            {
+                "org_id": o["org"],
+                "organisation": o["org_name"],
+                "skill": o["skill_name"],
+                "cause": o["cause_name"],
+                "preferred_cause": o["preferred"],
+                "projects": o["projects"],
+            }
+            for o in result.opportunities
+        ],
+    }
+
+
 @router.get("/orgs/{org_id}/matches", tags=["organisations"])
 def org_matches(
     org_id: str, request: Request, session: Api, preferred_only: bool = False

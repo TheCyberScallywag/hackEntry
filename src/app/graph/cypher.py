@@ -486,6 +486,35 @@ ORDER BY project
 LIMIT $limit
 """
 
+# ------------------------------------------------------------------ across organisations
+# "Where am I needed?" The one read that leaves the volunteer's own organisations: organisations
+# they have NOT joined, with a published project that requires a skill they have and offer, that
+# nobody on that project's team covers yet. Their exclusions apply exactly as in MATCH_CANDIDATES:
+# an excluded cause or an excluded required skill removes the project.
+#
+# It returns organisations, skills and causes, never a person: the only volunteer in the pattern
+# besides the asker is the anonymous team member inside NOT EXISTS. The project IDs are for the
+# caller's freshness check against SQLite and are not shown.
+NEEDED_ELSEWHERE = """
+MATCH (v:Volunteer {id: $volunteer})
+MATCH (o:Organisation)-[:OWNS_PROJECT]->(p:Project)-[:REQUIRES_SKILL]->(s:Skill)
+WHERE p.status = 'published'
+  AND NOT (v)-[:VOLUNTEERS_WITH]->(o)
+  AND (v)-[:HAS_SKILL]->(s) AND (v)-[:OFFERS_SKILL]->(s)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+  AND NOT EXISTS {
+    MATCH (t:Volunteer)-[:ON_TEAM]->(p)
+    WHERE (t)-[:HAS_SKILL]->(s) AND (t)-[:OFFERS_SKILL]->(s)
+  }
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+WHERE NOT (v)-[:EXCLUDES_CAUSE]->(c)
+WITH o, s, c, p, EXISTS { MATCH (v)-[:PREFERS_CAUSE]->(c) } AS preferred
+ORDER BY p.id
+RETURN o.id AS org, s.id AS skill, c.id AS cause, preferred, collect(DISTINCT p.id) AS projects
+ORDER BY preferred DESC, size(projects) DESC, org, skill, cause
+LIMIT $limit
+"""
+
 # ------------------------------------------------------------------ the skills ontology
 # "Close" means adjacent in the ontology: the two skills are RELATED_TO each other, or sit in the
 # same area. It never makes anyone eligible: it is shown beside the candidates, not among them.

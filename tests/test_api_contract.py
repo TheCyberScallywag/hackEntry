@@ -52,7 +52,7 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 53  # a new route must be added to the calls below
+    assert len(api.router.routes) == 54  # a new route must be added to the calls below
     assert len(onboarding_api.router.routes) == 25
 
 
@@ -97,6 +97,7 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
 
     # ---- organisations
     ok(asha.get("/orgs"), "GET", "/orgs")
+    ok(asha.get("/me/needed"), "GET", "/me/needed")
     ok(asha.get(f"/orgs/{CS}/matches"), "GET", "/orgs/{org_id}/matches")
     ok(asha.get(f"/orgs/{DK}/projects"), "GET", "/orgs/{org_id}/projects")
     ok(rhiannon.get(f"/orgs/{DK}/coverage"), "GET", "/orgs/{org_id}/coverage")

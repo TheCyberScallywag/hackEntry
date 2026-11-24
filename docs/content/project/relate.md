@@ -310,6 +310,12 @@ Relate. Until then it is "Approved (activating…)" and no one is matched to it.
 
 ## 7. The queries, and what each one is for
 
+Every read but one starts from organisations the caller already belongs to. The exception is
+`NEEDED_ELSEWHERE`, which answers the question a spreadsheet per organisation cannot: where,
+across the whole network, is a skill I offer still needed? It reveals nothing about any other
+volunteer, and nothing about a project that the showcase does not already show every signed-in
+user, except that the skill is not yet covered on its team.
+
 Every statement the application runs is in `src/app/graph/cypher.py`. These are the read
 statements.
 
@@ -320,6 +326,7 @@ statements.
 | `EXCLUDED_FOR_VOLUNTEER` | Which projects the volunteer's own exclusions hide, and why | `matching.volunteer_matches` | "Hidden by your exclusions" on *My matches*; `excluded` in the matches API. Shown to that volunteer only. |
 | `OPTIONAL_SKILLS_EXCLUDED` | Optional skills left out of a match because the volunteer excluded them | `matching.volunteer_matches` | The explanation on a match |
 | `BROWSE_PROJECTS` | An organisation's published projects (or one of them) with their skills | `matching.browse`, `matching.project`, `matching.project_coverage` | Web *Projects* and project detail; `GET /orgs/{org}/projects` |
+| `NEEDED_ELSEWHERE` | Organisations the volunteer has **not** joined, with a published project that requires a skill they offer and has nobody on its team covering it. Their exclusions apply as in matching. Returns organisations, skills and causes, never a person | `matching.needed_elsewhere`; the match explainer's `where_else_am_i_needed` tool | *Where you are needed* on web *Find organisations*; `GET /me/needed` |
 | `CLOSE_CANDIDATES` | Volunteers who lack a required skill but offer one related to it or in the same skill area | `matching.project_coverage` | The *Close* column on web *Coverage* and the project page; `close` in `GET /orgs/{org}/coverage` |
 | `FIND_SKILLS` | Catalogue skills matching plain words, by name or other name, with area and related skills | The assistants' `find_skills` tool | Volunteer onboarding, project scoping and review assistants |
 | `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* section |

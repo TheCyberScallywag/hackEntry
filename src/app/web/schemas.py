@@ -268,6 +268,22 @@ class Project(BaseModel):
     optional_skills: list[str]
 
 
+class Opportunity(BaseModel):
+    """An organisation I have not joined that needs a skill I offer. Never a person."""
+
+    org_id: str
+    organisation: str
+    skill: str
+    cause: str
+    preferred_cause: bool
+    projects: int  # how many of its projects need the skill and have nobody covering it
+
+
+class Needed(BaseModel):
+    withheld: str | None
+    opportunities: list[Opportunity]
+
+
 class CoverageCandidate(BaseModel):
     volunteer: str
     name: str

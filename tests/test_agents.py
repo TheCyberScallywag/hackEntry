@@ -397,6 +397,27 @@ def test_explainer_explains_exactly_the_graphs_matches(web: Web):
     assert run["output"]["matches"][0]["title"] == "Food Bank Demand Dashboard"
 
 
+def test_explainer_can_ask_where_else_the_volunteer_is_needed(web: Web):
+    """The one tool that crosses organisations. The validator holds the answer to what the
+    graph returned: an organisation or a skill it did not name is sent back."""
+    farah = as_(web, "farah")
+    real = {"organisation": "Cyber Scallywags", "skill_needed": "First aid",
+            "why": "They need first aid, which you offer."}  # fmt: skip
+    answer = {"summary": "No matches here yet.", "matches": [], "blocked": [], "next_steps": []}
+    model = use(
+        web,
+        call("my_matches"),
+        call("where_else_am_i_needed"),
+        final(**answer, elsewhere=[real | {"organisation": "InterLinkRCT"}]),
+        final(**answer, elsewhere=[real]),
+    )
+    run = ok(farah.post("/agents/match-explainer", {"org_id": DK}))
+    said = model.tool_results()
+    assert "Cyber Scallywags" in said[1] and "First aid" in said[1] and "u_" not in said[1]
+    assert "InterLinkRCT needing First aid is not something" in said[-1]
+    assert run["output"]["elsewhere"] == [real]
+
+
 def test_explainer_is_for_the_organisations_own_volunteers(web: Web):
     model = use(web)
     r = as_(web, "nicole").post("/agents/match-explainer", {"org_id": DK})  # reviews, no profile

@@ -5,6 +5,18 @@
 <h1>Organisations</h1>
 <p>See what each organisation does and the projects it is recruiting for in the <a href="/showcase">showcase</a>.</p>
 <p>Joining (opting in) lets an organisation consider you as a candidate. Switching only changes which organisation you are looking at.</p>
+{% if needed.opportunities %}
+<section class="card" id="needed">
+  <h2>Where you are needed</h2>
+  <p class="muted">Organisations you have not joined, with a project that needs a skill you offer and has nobody on its team to cover it yet. Your exclusions are respected. Joining is your choice; the project's lead then decides who to invite.</p>
+  <ul>
+  {% for n in needed.opportunities %}
+    <li><strong>{{ n.org_name }}</strong> needs <strong>{{ n.skill_name }}</strong> for {{ "a" if n.projects == 1 else n.projects }} {{ n.cause_name }} project{{ "s" if n.projects != 1 }}{% if n.preferred %} <span class="chip pref">★ a cause you prefer</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% elif needed.withheld %}<p class="pending" id="needed">{{ needed.withheld.reason }}</p>
+{% endif %}
 <section class="grid">
 {% for o in directory %}
   <article class="card">
