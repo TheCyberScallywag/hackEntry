@@ -452,9 +452,9 @@ relate --database data/demo.rl --read-only --mode table \
   "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS nodes ORDER BY label"
 ```
 
-The bundled store has 49 nodes (5 causes, 15 skills, 3 organisations,
+The bundled store has 68 nodes (5 causes in 3 themes, 15 skills in 16 skill areas, 3 organisations,
 4 projects, 8 onboarding steps and 14 volunteer IDs, of which Sam, Mo, Nicole, Zoe and Ella have
-no edges and Nia, still in screening, has no membership edge) and 97 relationships, including
+no edges and Nia, still in screening, has no membership edge) and 138 relationships, including
 five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
 prints the ranked candidates for one organisation: Dev, Asha, then Cerys.
 

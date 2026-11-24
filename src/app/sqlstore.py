@@ -90,9 +90,30 @@ CREATE TABLE IF NOT EXISTS org_roles (
 );
 CREATE INDEX IF NOT EXISTS org_roles_org ON org_roles(org_id);
 
-CREATE TABLE IF NOT EXISTS causes (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+-- The shared catalogue (data/fixtures/catalogue.json), a small ontology: a cause belongs to a
+-- theme; a skill belongs to a second-level area, and areas have a top-level parent; related
+-- skills are adjacent ones, each pair stored once with skill_id < related_id.
+CREATE TABLE IF NOT EXISTS cause_themes (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS causes (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, theme_id TEXT NOT NULL REFERENCES cause_themes(id)
+);
+CREATE TABLE IF NOT EXISTS skill_areas (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT REFERENCES skill_areas(id)
+);
 CREATE TABLE IF NOT EXISTS skills (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    category   TEXT NOT NULL,                      -- the area's name, as the screens show it
+    area_id    TEXT NOT NULL REFERENCES skill_areas(id),
+    kind       TEXT NOT NULL CHECK (kind IN (
+                   'technical', 'practical', 'interpersonal', 'professional', 'language')),
+    alt_labels TEXT NOT NULL DEFAULT '[]'          -- JSON list of other names for the skill
+);
+CREATE TABLE IF NOT EXISTS skill_related (
+    skill_id   TEXT NOT NULL REFERENCES skills(id),
+    related_id TEXT NOT NULL REFERENCES skills(id),
+    CHECK (skill_id < related_id),
+    PRIMARY KEY (skill_id, related_id)
 );
 
 CREATE TABLE IF NOT EXISTS profile_skills (
@@ -418,7 +439,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class SchemaOutdated(RuntimeError):

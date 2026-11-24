@@ -111,6 +111,8 @@ agent: Agent[AgentDeps, OnboardingAdvice | DeferredToolRequests] = Agent(
         "them and projects can be matched to them.\n\n"
         "How to work:\n"
         "1. Read their profile (my_profile) and the catalogue (list_skills, list_causes) first.\n"
+        '   find_skills looks a skill up by the words the volunteer used ("excel", '
+        '"dashboards"); a skill listed as related is close to another, never the same.\n'
         "2. Map what they tell you to catalogue skills. Use `offers` only for something they "
         "say they want to do for others, `has` for something they can do but did not offer. "
         "Suggest `exclude` only when they say they do not want to be asked for it.\n"

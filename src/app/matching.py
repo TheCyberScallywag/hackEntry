@@ -180,7 +180,8 @@ def project_coverage(
 ) -> ProjectCoverage:
     """For an organisation's reviewers: per required skill, who on the team covers it and which
     candidates could. `gaps` are skills no candidate can cover; `team_gaps` are skills nobody on
-    the team covers yet, read from the ON_TEAM edges."""
+    the team covers yet, read from the ON_TEAM edges. `close` lists volunteers who lack the skill
+    but offer an adjacent one (CLOSE_CANDIDATES): people to talk to, not candidates."""
     with db.read() as conn:
         services.check_access(conn, reviewer_id, org_id, role="reviewer")
         if reason := _org_pending(conn, org_id, project_id):
@@ -193,6 +194,7 @@ def project_coverage(
         )
         gaps = tx.read(cypher.COVERAGE_GAPS, scope)
         on_team = tx.read(cypher.TEAM_COVERAGE, scope)
+        close = tx.read(cypher.CLOSE_CANDIDATES, scope)
     with db.read() as conn:
         fresh = services.published_state(conn, [p["project"] for p in projects])
         names = dict(
@@ -217,6 +219,7 @@ def project_coverage(
             "per_skill": defaultdict(list),
             "gaps": [],
             "team_by_skill": {},
+            "close_by_skill": defaultdict(list),
         }
     for r in rows:
         entry = by_project.get(r["project"])
@@ -248,14 +251,28 @@ def project_coverage(
                 for v in t["team"]
                 if v in names and statuses.get((t["project"], v)) == "team"
             ]
+    for c in close:
+        entry = by_project.get(c["project"])
+        if entry is None or c["volunteer"] not in names:
+            continue  # the same fail-closed rule as for candidates
+        entry["close_by_skill"][c["skill"]].append(
+            {
+                "volunteer": c["volunteer"],
+                "name": names[c["volunteer"]],
+                "via_names": [cat.skill_name(s) for s in c["via"]],
+            }
+        )
     for entry in by_project.values():
         team_by_skill = entry.pop("team_by_skill")
+        close_by_skill = entry.pop("close_by_skill")
         entry["per_skill"] = [
             {
                 "skill": cat.skill_name(s),
                 "team": team_by_skill.get(s, []),
                 # Someone already on the team is not also listed as a candidate.
                 "candidates": [c for c in entry["per_skill"].get(s, []) if c["status"] != "team"],
+                # Not eligible: they lack this skill but offer one next to it in the ontology.
+                "close": close_by_skill.get(s, []),
             }
             for s in sorted(entry["required"])
         ]

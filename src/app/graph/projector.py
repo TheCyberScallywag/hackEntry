@@ -12,6 +12,7 @@ A project becomes `published` (discoverable and matchable) only after its approv
 been written to Relate.
 """
 
+import json
 import logging
 import sqlite3
 import threading
@@ -214,13 +215,41 @@ class Projector:
 
     def _project_catalogue(self) -> None:
         with self.db.read() as conn:
-            causes = [dict(r) for r in conn.execute("SELECT id, name FROM causes ORDER BY id")]
-            skills = [
-                dict(r) for r in conn.execute("SELECT id, name, category FROM skills ORDER BY id")
+            themes = [
+                dict(r) for r in conn.execute("SELECT id, name FROM cause_themes ORDER BY id")
             ]
+            causes = [
+                dict(r) for r in conn.execute("SELECT id, name, theme_id FROM causes ORDER BY id")
+            ]
+            areas = [
+                dict(r)
+                for r in conn.execute("SELECT id, name, parent_id FROM skill_areas ORDER BY id")
+            ]
+            skills = [
+                dict(r) | {"alt_labels": json.loads(r["alt_labels"])}
+                for r in conn.execute(
+                    "SELECT id, name, category, area_id, kind, alt_labels FROM skills ORDER BY id"
+                )
+            ]
+            related = conn.execute(
+                "SELECT skill_id AS a, related_id AS b FROM skill_related ORDER BY a, b"
+            ).fetchall()
+        edges = {
+            "IN_THEME": [{"a": c["id"], "b": c["theme_id"]} for c in causes],
+            "IN_AREA": [{"a": s["id"], "b": s["area_id"]} for s in skills],
+            "BROADER": [{"a": a["id"], "b": a["parent_id"]} for a in areas if a["parent_id"]],
+            "RELATED_TO": [dict(r) for r in related],
+        }
         with self.graph.write() as tx:
+            tx.run(cypher.UPSERT_CAUSE_THEMES, {"rows": themes})
             tx.run(cypher.UPSERT_CAUSES, {"rows": causes})
+            tx.run(cypher.UPSERT_SKILL_AREAS, {"rows": areas})
             tx.run(cypher.UPSERT_SKILLS, {"rows": skills})
+            tx.run(cypher.CATALOGUE_PRUNE["CauseTheme"], {"ids": [t["id"] for t in themes]})
+            tx.run(cypher.CATALOGUE_PRUNE["SkillArea"], {"ids": [a["id"] for a in areas]})
+            for rel in cypher.CATALOGUE_RELS:
+                tx.run(cypher.CATALOGUE_EDGES_CLEAR[rel])
+                tx.run(cypher.CATALOGUE_EDGES_MERGE[rel], {"rows": edges[rel]})
 
     def _project_organisation(self, org_id: str) -> None:
         with self.db.read() as conn:

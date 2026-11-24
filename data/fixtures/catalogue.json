@@ -1,27 +1,61 @@
 {
-  "_comment": "Shared catalogue. Cause and skill vocabulary extends the reference PoC's data/fixtures.json; IDs are canonical kebab-case and never change once published.",
+  "_comment": "Shared catalogue. Cause and skill vocabulary extends the reference PoC's data/fixtures.json; IDs are canonical kebab-case and never change once published. The catalogue is a small ontology: a cause belongs to one theme; a skill belongs to one area (areas form a two-level hierarchy), has a kind (technical, practical, interpersonal, professional or language) and alternative labels, and `related` lists pairs of adjacent skills, each once, in alphabetical order.",
+  "themes": [
+    {"id": "basic-needs", "name": "Poverty and basic needs"},
+    {"id": "learning-and-inclusion", "name": "Learning and inclusion"},
+    {"id": "environment-and-place", "name": "Environment and place"}
+  ],
   "causes": [
-    {"id": "homelessness", "name": "Homelessness"},
-    {"id": "education", "name": "Education"},
-    {"id": "food-security", "name": "Food Security"},
-    {"id": "environment", "name": "Environment"},
-    {"id": "digital-inclusion", "name": "Digital Inclusion"}
+    {"id": "homelessness", "name": "Homelessness", "theme": "basic-needs"},
+    {"id": "education", "name": "Education", "theme": "learning-and-inclusion"},
+    {"id": "food-security", "name": "Food Security", "theme": "basic-needs"},
+    {"id": "environment", "name": "Environment", "theme": "environment-and-place"},
+    {"id": "digital-inclusion", "name": "Digital Inclusion", "theme": "learning-and-inclusion"}
+  ],
+  "areas": [
+    {"id": "digital-and-data", "name": "Digital and data"},
+    {"id": "people-and-community", "name": "People and community"},
+    {"id": "organisation-and-finance", "name": "Organisation and finance"},
+    {"id": "practical-and-logistics", "name": "Practical and logistics"},
+    {"id": "data", "name": "Data", "parent": "digital-and-data"},
+    {"id": "software-and-web", "name": "Software and web", "parent": "digital-and-data"},
+    {"id": "digital-safety", "name": "Digital safety", "parent": "digital-and-data"},
+    {"id": "community-support", "name": "Community support", "parent": "people-and-community"},
+    {"id": "education", "name": "Education", "parent": "people-and-community"},
+    {"id": "languages", "name": "Languages", "parent": "people-and-community"},
+    {"id": "finance", "name": "Finance", "parent": "organisation-and-finance"},
+    {"id": "charity-operations", "name": "Charity operations", "parent": "organisation-and-finance"},
+    {"id": "practical-trades", "name": "Practical trades", "parent": "practical-and-logistics"},
+    {"id": "hospitality", "name": "Hospitality", "parent": "practical-and-logistics"},
+    {"id": "transport", "name": "Transport", "parent": "practical-and-logistics"},
+    {"id": "health-and-safety", "name": "Health and safety", "parent": "practical-and-logistics"}
   ],
   "skills": [
-    {"id": "cooking", "name": "Community cooking", "category": "Hospitality"},
-    {"id": "van-driving", "name": "Van driving", "category": "Transport"},
-    {"id": "active-listening", "name": "Active listening", "category": "Community support"},
-    {"id": "welsh-translation", "name": "Welsh translation", "category": "Languages"},
-    {"id": "literacy-tutoring", "name": "Literacy tutoring", "category": "Education"},
-    {"id": "bookkeeping", "name": "Bookkeeping", "category": "Finance"},
-    {"id": "fundraising", "name": "Fundraising", "category": "Charity operations"},
-    {"id": "carpentry", "name": "Carpentry", "category": "Practical trades"},
-    {"id": "gardening", "name": "Gardening", "category": "Practical trades"},
-    {"id": "first-aid", "name": "First aid", "category": "Health and safety"},
-    {"id": "data-analysis", "name": "Spreadsheet and data analysis", "category": "Technology"},
-    {"id": "python", "name": "Python programming", "category": "Technology"},
-    {"id": "data-visualisation", "name": "Data visualisation", "category": "Technology"},
-    {"id": "web-development", "name": "Web development", "category": "Technology"},
-    {"id": "security-awareness", "name": "Cyber security awareness", "category": "Technology"}
+    {"id": "cooking", "name": "Community cooking", "area": "hospitality", "kind": "practical", "alt_labels": ["catering", "kitchen"]},
+    {"id": "van-driving", "name": "Van driving", "area": "transport", "kind": "practical", "alt_labels": ["driving", "deliveries"]},
+    {"id": "active-listening", "name": "Active listening", "area": "community-support", "kind": "interpersonal", "alt_labels": ["befriending", "listening"]},
+    {"id": "welsh-translation", "name": "Welsh translation", "area": "languages", "kind": "language", "alt_labels": ["cymraeg", "translation"]},
+    {"id": "literacy-tutoring", "name": "Literacy tutoring", "area": "education", "kind": "interpersonal", "alt_labels": ["reading", "tutoring"]},
+    {"id": "bookkeeping", "name": "Bookkeeping", "area": "finance", "kind": "professional", "alt_labels": ["accounts", "accounting"]},
+    {"id": "fundraising", "name": "Fundraising", "area": "charity-operations", "kind": "professional", "alt_labels": ["grants", "donations"]},
+    {"id": "carpentry", "name": "Carpentry", "area": "practical-trades", "kind": "practical", "alt_labels": ["woodwork", "joinery"]},
+    {"id": "gardening", "name": "Gardening", "area": "practical-trades", "kind": "practical", "alt_labels": ["growing", "allotment"]},
+    {"id": "first-aid", "name": "First aid", "area": "health-and-safety", "kind": "practical", "alt_labels": ["first aider"]},
+    {"id": "data-analysis", "name": "Spreadsheet and data analysis", "area": "data", "kind": "technical", "alt_labels": ["excel", "spreadsheets", "statistics"]},
+    {"id": "python", "name": "Python programming", "area": "software-and-web", "kind": "technical", "alt_labels": ["coding", "scripting", "programming"]},
+    {"id": "data-visualisation", "name": "Data visualisation", "area": "data", "kind": "technical", "alt_labels": ["dashboards", "charts", "graphs"]},
+    {"id": "web-development", "name": "Web development", "area": "software-and-web", "kind": "technical", "alt_labels": ["websites", "html", "wordpress"]},
+    {"id": "security-awareness", "name": "Cyber security awareness", "area": "digital-safety", "kind": "technical", "alt_labels": ["cyber security", "phishing", "online safety"]}
+  ],
+  "related": [
+    ["data-analysis", "data-visualisation"],
+    ["data-analysis", "python"],
+    ["python", "web-development"],
+    ["security-awareness", "web-development"],
+    ["bookkeeping", "data-analysis"],
+    ["bookkeeping", "fundraising"],
+    ["cooking", "first-aid"],
+    ["active-listening", "literacy-tutoring"],
+    ["carpentry", "gardening"]
   ]
 }

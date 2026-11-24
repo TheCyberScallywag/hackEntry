@@ -1,6 +1,6 @@
 <table class="coverage">
   <caption>{{ p.title }}{% if p.team_gaps %} · <span class="chip gap">{{ p.team_gaps|length }} skill{{ "s" if p.team_gaps|length != 1 }} not yet on the team</span>{% else %} · <span class="chip ok">Team covers every required skill</span>{% endif %}{% if p.gaps %} · <span class="chip gap">{{ p.gaps|length }} with no candidate</span>{% endif %}</caption>
-  <thead><tr><th>Required skill</th><th>On the team</th><th>Candidates (ranked)</th></tr></thead>
+  <thead><tr><th>Required skill</th><th>On the team</th><th>Candidates (ranked)</th><th>Close</th></tr></thead>
   <tbody>
   {% for row in p.per_skill %}
     <tr><td>{{ row.skill }}</td><td>
@@ -9,8 +9,11 @@
     </td><td>
       {% for c in row.candidates %}<span class="chip" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}{% if c.status != "candidate" %} · {{ c.status_label }}{% endif %}</span>
       {% else %}{% if not row.team %}<span class="chip gap">Coverage gap: no eligible volunteer</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}
+    </td><td>
+      {% for c in row.close %}<span class="chip" title="Offers {{ c.via_names|join(', ') }}">{{ c.name }} <span class="muted">via {{ c.via_names|join(', ') }}</span></span>
+      {% else %}<span class="muted">—</span>{% endfor %}
     </td></tr>
   {% endfor %}
   </tbody>
 </table>
-<p class="muted">A skill counts as covered once someone who offers it is on the team. ★ prefers this project's cause. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill; the project lead chooses who to invite.</p>
+<p class="muted">A skill counts as covered once someone who offers it is on the team. ★ prefers this project's cause. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill; the project lead chooses who to invite. Close lists volunteers who do not have the skill but offer a related one or one in the same skill area: they are not candidates and cannot be invited for it, but they may be worth a conversation.</p>

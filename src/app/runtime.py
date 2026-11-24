@@ -1,5 +1,6 @@
 """Wiring (SQLite + Relate + projector) and the disposable demo seed."""
 
+import json
 import logging
 import shutil
 from dataclasses import dataclass
@@ -103,21 +104,35 @@ def bootstrap(rt: Runtime) -> None:
 
 
 def seed_catalogue(rt: Runtime) -> None:
-    """Upsert the shared catalogue; enqueue a projection only if something changed."""
+    """Upsert the shared catalogue; enqueue a projection only if something changed. Nothing is
+    deleted except a related pair: a published cause, skill or area is never withdrawn."""
     cat = get_catalogue()
+
+    def upsert(conn, table: str, columns: tuple[str, ...], rows: list[tuple]) -> None:
+        others = columns[1:]
+        conn.executemany(
+            f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({', '.join('?' * len(columns))}) "  # noqa: S608
+            f"ON CONFLICT (id) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in others)} "
+            f"WHERE {' OR '.join(f'{c} IS NOT excluded.{c}' for c in others)}",
+            rows,
+        )
+
     with rt.db.tx() as conn:
         before = conn.total_changes
-        conn.executemany(
-            "INSERT INTO causes (id, name) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET "
-            "name = excluded.name WHERE name IS NOT excluded.name",
-            [(c.id, c.name) for c in cat.causes],
-        )
-        conn.executemany(
-            "INSERT INTO skills (id, name, category) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE "
-            "SET name = excluded.name, category = excluded.category "
-            "WHERE name IS NOT excluded.name OR category IS NOT excluded.category",
-            [(s.id, s.name, s.category) for s in cat.skills],
-        )
+        upsert(conn, "cause_themes", ("id", "name"), [(t.id, t.name) for t in cat.themes])
+        upsert(conn, "causes", ("id", "name", "theme_id"),
+               [(c.id, c.name, c.theme) for c in cat.causes])  # fmt: skip
+        # Parents first: an area refers to its parent.
+        areas = sorted(cat.areas, key=lambda a: a.parent is not None)
+        upsert(conn, "skill_areas", ("id", "name", "parent_id"),
+               [(a.id, a.name, a.parent) for a in areas])  # fmt: skip
+        upsert(conn, "skills", ("id", "name", "category", "area_id", "kind", "alt_labels"),
+               [(s.id, s.name, s.category, s.area, s.kind, json.dumps(list(s.alt_labels)))
+                for s in cat.skills])  # fmt: skip
+        stored = {tuple(r) for r in conn.execute("SELECT skill_id, related_id FROM skill_related")}
+        if stored != set(cat.related):
+            conn.execute("DELETE FROM skill_related")
+            conn.executemany("INSERT INTO skill_related VALUES (?, ?)", cat.related)
         if conn.total_changes != before:
             enqueue(conn, "catalogue", "catalogue")
 

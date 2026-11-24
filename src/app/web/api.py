@@ -274,6 +274,10 @@ def org_coverage(org_id: str, request: Request, session: Api) -> m.Coverage:
                             }  # fmt: skip
                             for c in row["candidates"]
                         ],
+                        "close": [
+                            {"volunteer": c["volunteer"], "name": c["name"], "via": c["via_names"]}
+                            for c in row["close"]
+                        ],
                     }
                     for row in p["per_skill"]
                 ],

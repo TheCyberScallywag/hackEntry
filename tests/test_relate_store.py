@@ -94,7 +94,7 @@ def test_relate_cli_reads_the_bundled_store():
          "MATCH (n) RETURN count(n) AS nodes"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    assert '"nodes":49' in result.stdout.replace(" ", "")
+    assert '"nodes":68' in result.stdout.replace(" ", "")
 
 
 def test_a_limit_parameter_cannot_hide_truncation(tmp_path):

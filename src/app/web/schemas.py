@@ -276,10 +276,20 @@ class CoverageCandidate(BaseModel):
     status_label: str
 
 
+class CoverageClose(BaseModel):
+    """A volunteer who lacks the skill but offers one adjacent to it in the skills ontology.
+    Not a candidate: they cannot be invited on the strength of it."""
+
+    volunteer: str
+    name: str
+    via: list[str]  # names of the adjacent skills they offer
+
+
 class CoverageSkill(BaseModel):
     skill: str
     team: list[str]  # display names of team members who cover this skill
     candidates: list[CoverageCandidate]  # everyone else who could
+    close: list[CoverageClose] = []
 
 
 class CoverageProject(BaseModel):

@@ -87,6 +87,25 @@ def test_onboarding_saves_a_profile_only_after_the_volunteer_approves(web: Web):
     }  # fmt: skip
 
 
+def test_an_assistant_can_look_a_skill_up_by_the_words_someone_used(web: Web):
+    """`find_skills` asks the graph: full text over each skill's name and other names, with
+    where the skill sits in the ontology. `list_skills` carries the same neighbours."""
+    ffion, _ = signed_up(web)
+    model = use(
+        web,
+        call("find_skills", words="I do Excel dashboards"),
+        call("find_skills", words="juggling ~*"),
+        call("list_skills"),
+        final(**ADVICE, ready_for_vetting=False),
+    )
+    ok(ffion.post("/agents/volunteer-onboarding", {"message": "I do Excel dashboards."}))
+    found, nothing, listed = model.tool_results()[:3]
+    assert "data-analysis" in found and "data-visualisation" in found
+    assert "Digital and data" in found and "dashboards" in found
+    assert "skill_id" not in nothing  # nothing matched, and the odd characters did no harm
+    assert "also_known_as" in listed and "broader_area" in listed and "related" in listed
+
+
 def test_onboarding_changes_nothing_when_the_volunteer_says_no(web: Web):
     ffion, ffion_id = signed_up(web)
     model = use(

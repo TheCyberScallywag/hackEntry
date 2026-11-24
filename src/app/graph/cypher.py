@@ -6,6 +6,9 @@ the parity check.
 Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs):
 
     (:Organisation)-[:OWNS_PROJECT]->(:Project)-[:SERVES_CAUSE]->(:Cause)
+    (:Cause)-[:IN_THEME]->(:CauseTheme)              causes that are alike share a theme
+    (:Skill)-[:IN_AREA]->(:SkillArea)-[:BROADER]->(:SkillArea)   two levels of skill area
+    (:Skill)-[:RELATED_TO]->(:Skill)                 adjacent skills; stored once, read both ways
     (:Project)-[:REQUIRES_SKILL]->(:Skill)          required skill
     (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)     optional skill
     (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation) only while opted in AND vetted (active)
@@ -35,7 +38,16 @@ from typing import Any
 # ------------------------------------------------------------------ schema
 # The one definition of the graph's shape: relationship type -> (source label, target label).
 # The reconcile statements below, the projector and the AuraDB push are all derived from it.
-LABELS = ("Organisation", "Project", "Cause", "Skill", "Volunteer", "OnboardingStep")
+LABELS = (
+    "Organisation",
+    "Project",
+    "Cause",
+    "CauseTheme",
+    "Skill",
+    "SkillArea",
+    "Volunteer",
+    "OnboardingStep",
+)
 VOLUNTEER_RELS = {
     "VOLUNTEERS_WITH": "Organisation",
     "HAS_SKILL": "Skill",
@@ -53,6 +65,10 @@ RELATIONSHIPS: dict[str, tuple[str, str]] = {
     **{rel: ("Volunteer", label) for rel, label in VOLUNTEER_RELS.items()},
     **{rel: ("Project", label) for rel, label in PROJECT_RELS.items()},
     "OWNS_PROJECT": ("Organisation", "Project"),
+    "IN_THEME": ("Cause", "CauseTheme"),
+    "IN_AREA": ("Skill", "SkillArea"),
+    "BROADER": ("SkillArea", "SkillArea"),
+    "RELATED_TO": ("Skill", "Skill"),
     "ON_TEAM": ("Volunteer", "Project"),
     "HAS_ONBOARDING_STEP": ("Organisation", "OnboardingStep"),
     "HAS_TEAM_STEP": ("Project", "OnboardingStep"),
@@ -75,6 +91,11 @@ CONSTRAINTS = {
 }
 INDEXES = {
     "project_status": "CREATE INDEX project_status IF NOT EXISTS FOR (p:Project) ON (p.status)",
+    # A skill is found by its name or any of its other names (FIND_SKILLS).
+    "skill_text": (
+        "CREATE FULLTEXT INDEX skill_text IF NOT EXISTS "
+        "FOR (s:Skill) ON EACH [s.name, s.alt_labels]"
+    ),
 }
 SCHEMA = (*CONSTRAINTS.values(), *INDEXES.values())
 
@@ -112,17 +133,54 @@ MERGE (n)-[:{rel}]->(t)
 
 
 # ------------------------------------------------------------------ catalogue + organisations
+# The catalogue is reconciled as a whole (Projector._project_catalogue): nodes are upserted, areas
+# and themes that are gone are removed, and the ontology's own edges are cleared and merged
+# again, so a replay changes nothing. Causes and skills are never removed: profiles and
+# projects point at them.
+UPSERT_CAUSE_THEMES = """
+UNWIND $rows AS row
+MERGE (t:CauseTheme {id: row.id})
+SET t.name = row.name
+"""
+
 UPSERT_CAUSES = """
 UNWIND $rows AS row
 MERGE (c:Cause {id: row.id})
 SET c.name = row.name
 """
 
+UPSERT_SKILL_AREAS = """
+UNWIND $rows AS row
+MERGE (a:SkillArea {id: row.id})
+SET a.name = row.name
+"""
+
 UPSERT_SKILLS = """
 UNWIND $rows AS row
 MERGE (s:Skill {id: row.id})
-SET s.name = row.name, s.category = row.category
+SET s.name = row.name, s.category = row.category, s.kind = row.kind,
+    s.alt_labels = row.alt_labels
 """
+
+CATALOGUE_PRUNE = {
+    "CauseTheme": "MATCH (n:CauseTheme) WHERE NOT n.id IN $ids DETACH DELETE n",
+    "SkillArea": "MATCH (n:SkillArea) WHERE NOT n.id IN $ids DETACH DELETE n",
+}
+
+CATALOGUE_RELS = ("IN_THEME", "IN_AREA", "BROADER", "RELATED_TO")
+CATALOGUE_EDGES_CLEAR = {
+    rel: f"MATCH (:{RELATIONSHIPS[rel][0]})-[r:{rel}]->(:{RELATIONSHIPS[rel][1]}) DELETE r"
+    for rel in CATALOGUE_RELS
+}
+CATALOGUE_EDGES_MERGE = {
+    rel: f"""
+UNWIND $rows AS row
+MATCH (a:{RELATIONSHIPS[rel][0]} {{id: row.a}})
+MATCH (b:{RELATIONSHIPS[rel][1]} {{id: row.b}})
+MERGE (a)-[:{rel}]->(b)
+"""
+    for rel in CATALOGUE_RELS
+}
 
 UPSERT_ORGANISATION = """
 MERGE (o:Organisation {id: $id})
@@ -425,6 +483,42 @@ MATCH (v:Volunteer {id: $volunteer})-[:VOLUNTEERS_WITH]->(o:Organisation)
 WHERE o.id IN $orgs AND p.status = 'published'
 RETURN p.id AS project, collect(s.id) AS skills
 ORDER BY project
+LIMIT $limit
+"""
+
+# ------------------------------------------------------------------ the skills ontology
+# "Close" means adjacent in the ontology: the two skills are RELATED_TO each other, or sit in the
+# same area. It never makes anyone eligible: it is shown beside the candidates, not among them.
+#
+# Volunteers of the organisation who do not have a required skill but offer one close to it.
+# The hard rules still apply: no excluded cause, no excluded required skill. Only offered skills
+# count as the way in, because offering is the volunteer's consent to be matched on a skill.
+CLOSE_CANDIDATES = """
+MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:REQUIRES_SKILL]->(s:Skill)
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
+WHERE NOT (v)-[:HAS_SKILL]->(s)
+  AND NOT (v)-[:EXCLUDES_CAUSE]->(c)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+MATCH (v)-[:OFFERS_SKILL]->(near:Skill)
+WHERE (near)-[:RELATED_TO]-(s)
+   OR EXISTS { MATCH (near)-[:IN_AREA]->(:SkillArea)<-[:IN_AREA]-(s) }
+WITH p, s, v, near ORDER BY near.id
+RETURN p.id AS project, s.id AS skill, v.id AS volunteer, collect(DISTINCT near.id) AS via
+ORDER BY project, skill, volunteer
+LIMIT $limit
+"""
+
+# A skill found by words from its name or its other names, with where it sits in the ontology.
+# `$query` is a full-text query; the caller builds it from plain words (app.catalogue.text_query).
+FIND_SKILLS = """
+CALL db.index.fulltext.queryNodes('skill_text', $query) YIELD node, score
+MATCH (node)-[:IN_AREA]->(a:SkillArea)-[:BROADER]->(top:SkillArea)
+RETURN node.id AS skill, node.name AS name, node.kind AS kind, a.name AS area,
+       top.name AS broader_area, score,
+       COLLECT { MATCH (node)-[:RELATED_TO]-(r:Skill) RETURN r.id ORDER BY r.id } AS related
+ORDER BY score DESC, skill
 LIMIT $limit
 """
 
