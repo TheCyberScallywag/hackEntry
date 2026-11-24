@@ -16,6 +16,7 @@
 <form method="post" action="/profile" class="profile">
   <input type="hidden" name="csrf_token" value="{{ csrf }}">
   <input type="hidden" name="version" value="{{ view.version }}">
+  <input type="hidden" name="learning_form" value="1">
   <label class="narrow">Display name (shown to organisations you join)
     <input name="display_name" required maxlength="60" value="{{ view.display_name }}"></label>
 
@@ -24,7 +25,7 @@
   <details class="accordion" open data-section="skills">
     <summary><span>Skills</span><span class="note">{{ offered }} offered · {{ excluded }} excluded</span></summary>
     <div class="accordion-body">
-      <p class="hint"><strong>Offer</strong> to be matched on a skill. <strong>Exclude</strong> means you're never matched to a project that requires it. The level is your own view of how far you can go with a skill you have; it is kept apart from anything a project lead says about your work.</p>
+      <p class="hint"><strong>Offer</strong> to be matched on a skill. <strong>Exclude</strong> means you're never matched to a project that requires it. The level is your own view of how far you can go with a skill you have; it is kept apart from anything a project lead says about your work. <strong>Want to learn</strong> never gets you matched; it shows you projects where you could pick the skill up.</p>
       {% for group in view.skill_groups %}
       {% set g_offered = group.skills|selectattr("state", "equalto", "offers")|list|length %}
       {% set g_excluded = group.skills|selectattr("state", "equalto", "exclude")|list|length %}
@@ -39,7 +40,8 @@
             <select name="level:{{ skill.id }}" aria-label="Your level in {{ skill.name }}">
               <option value="">Level: not said</option>
               {% for value, label in view.levels.items() %}<option value="{{ value }}" {% if skill.level|string == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </select></label>
+            </select>
+            <span class="check"><input type="checkbox" name="learn:{{ skill.id }}" value="1" aria-label="I want to learn {{ skill.name }}" {% if skill.wants_to_learn %}checked{% endif %}> Want to learn</span></label>
           {% endfor %}
         </div>
       </details>

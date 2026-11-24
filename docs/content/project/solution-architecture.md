@@ -362,7 +362,7 @@ flowchart LR
   V -- "AT_STEP / COMPLETED_STEP" --> T
 ```
 
-The bundled demo graph has **80 nodes and 173 relationships**: 3 organisations,
+The bundled demo graph has **80 nodes and 176 relationships**: 3 organisations,
 5 causes in 3 themes, 15 skills in 16 skill areas, 4 active and 2 completed projects, 10 engagements, 8 onboarding steps and 14 volunteer IDs.
 
 ### 5.4 Matching rules (implemented in Cypher)

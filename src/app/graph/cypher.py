@@ -19,6 +19,7 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
                                                      one spell on a team: role, outcome (none
                                                      while it lasts), readiness 1-4 once rated
     (:Engagement)-[:DEMONSTRATED {level}]->(:Skill)  what the lead side saw them do
+    (:Volunteer)-[:WANTS_TO_LEARN]->(:Skill)         a wish, never a reason to be matched
     (:Volunteer)-[:SHARES_HISTORY_WITH]->(:Organisation)
                                                      consent: this organisation may read a
                                                      summary of engagements elsewhere
@@ -65,6 +66,7 @@ VOLUNTEER_RELS = {
     "PREFERS_CAUSE": "Cause",
     "EXCLUDES_CAUSE": "Cause",
     "SHARES_HISTORY_WITH": "Organisation",
+    "WANTS_TO_LEARN": "Skill",
 }
 PROJECT_RELS = {
     "SERVES_CAUSE": "Cause",
@@ -641,8 +643,31 @@ MATCH (v)-[:OFFERS_SKILL]->(near:Skill)
 WHERE (near)-[:RELATED_TO]-(s)
    OR EXISTS { MATCH (near)-[:IN_AREA]->(:SkillArea)<-[:IN_AREA]-(s) }
 WITH p, s, v, near ORDER BY near.id
-RETURN p.id AS project, s.id AS skill, v.id AS volunteer, collect(DISTINCT near.id) AS via
-ORDER BY project, skill, volunteer
+WITH p, s, v, collect(DISTINCT near.id) AS via,
+     EXISTS { MATCH (v)-[:WANTS_TO_LEARN]->(s) } AS wants_to_learn
+RETURN p.id AS project, s.id AS skill, v.id AS volunteer, via, wants_to_learn
+ORDER BY project, skill, wants_to_learn DESC, volunteer
+LIMIT $limit
+"""
+
+# Where could I learn it? Published projects in the volunteer's own organisations that use a
+# skill they want to learn, with how many people on the team say they can guide others in it
+# (HAS_SKILL.level 3 or 4). A number, never who. It does not make them a candidate.
+LEARNING_OPPORTUNITIES = """
+MATCH (v:Volunteer {id: $volunteer})-[:WANTS_TO_LEARN]->(s:Skill)
+MATCH (v)-[:VOLUNTEERS_WITH]->(o:Organisation)-[:OWNS_PROJECT]->(p:Project)
+WHERE o.id IN $orgs AND p.status = 'published'
+  AND (p)-[:REQUIRES_SKILL|BENEFITS_FROM_SKILL]->(s)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+WHERE NOT (v)-[:EXCLUDES_CAUSE]->(c)
+RETURN o.id AS org, p.id AS project, p.title AS title, s.id AS skill,
+       COUNT {
+         MATCH (m:Volunteer)-[:ON_TEAM]->(p), (m)-[h:HAS_SKILL]->(s)
+         WHERE h.level >= 3 AND m <> v
+       } AS mentors,
+       EXISTS { MATCH (v)-[:ON_TEAM]->(p) } AS on_team
+ORDER BY mentors DESC, title, project, skill
 LIMIT $limit
 """
 

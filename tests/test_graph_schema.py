@@ -138,12 +138,12 @@ def test_push_writes_the_whole_demo_graph_including_teams(demo_graph, monkeypatc
     driver = FakeDriver()
     monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
     counts = aura.push(Settings(_env_file=None), demo_graph)
-    assert counts == {"nodes": 80, "relationships": 173}
+    assert counts == {"nodes": 80, "relationships": 176}
     statements = [q for q, _ in driver.queries]
     assert statements[0].startswith("MATCH (n {dvn_scope: $scope}) DETACH DELETE n")
     assert any("MERGE (a)-[r:ON_TEAM]->(b)" in q for q in statements)
     merged = sum(len(p["rows"]) for q, p in driver.queries if "MERGE (a)-[" in q)
-    assert merged == 173
+    assert merged == 176
     assert all(p["scope"] == aura.SCOPE for _, p in driver.queries)
 
 

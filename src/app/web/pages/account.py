@@ -111,11 +111,15 @@ def profile_save(request: Request, rt: RT, session: User, form: UserForm):
         levels = {
             s.id: to_int(form.get(f"level:{s.id}")) for s in cat.skills if form.get(f"level:{s.id}")
         }
+    # The page marks that it carries the learning boxes: an unticked box sends nothing.
+    learning = None
+    if form.get("learning_form"):
+        learning = [s.id for s in cat.skills if form.get(f"learn:{s.id}")]
     try:
         services.update_profile(
             rt.db, session.user_id,
             display_name=str(form.get("display_name", "")),
-            skills=skills, causes=causes, levels=levels,
+            skills=skills, causes=causes, levels=levels, learning=learning,
             expected_version=to_int(form.get("version")),
         )  # fmt: skip
     except services.Invalid as error:

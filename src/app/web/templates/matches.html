@@ -18,4 +18,16 @@
   {% for m in result.matches %}{{ match_card(m) }}{% else %}<p class="muted">No matches with these filters.</p>{% endfor %}
   {{ exclusions(result.excluded) }}
 {% endif %}
+{% if learning %}
+<section class="card" id="learning">
+  <h2>Where you could learn</h2>
+  <p class="muted">Projects in your organisations that use a skill you said you want to learn. This is not a match: the project's lead decides who to invite.</p>
+  <ul>
+  {% for l in learning %}
+    <li><a href="/o/{{ l.org }}/projects/{{ l.project }}"><strong>{{ l.title }}</strong></a> <span class="muted">{{ l.org_name }}</span> uses <strong>{{ l.skill_name }}</strong>:
+      {% if l.mentors %}{{ l.mentors }} {{ "person" if l.mentors == 1 else "people" }} on the team can guide it{% else %}nobody on the team has said they can guide it yet{% endif %}{% if l.on_team %} <span class="chip ok">You are on this team</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}

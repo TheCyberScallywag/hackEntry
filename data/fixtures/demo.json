@@ -1,5 +1,5 @@
 {
-  "_comment": "Disposable, fictional demo data. The organisations are illustrative: no endorsement or live partnership is implied, and names are configurable with ORG_NAMES. Every person and project is invented. Demo accounts are seeded only by `python -m app.cli reset --demo`, which refuses to run with APP_ENV=production. Statuses: every person is an active, vetted volunteer unless `status` says otherwise; Nia is still in screening. `levels` is how far a person says they can go with a skill, 1 (needs support) to 4 (could lead a project). `history` is finished work: completed projects with who was on the team, in which role, and how the lead side rated them on the same scale. Asha lets DataKind UK see a summary of what she did elsewhere; nobody else shares.",
+  "_comment": "Disposable, fictional demo data. The organisations are illustrative: no endorsement or live partnership is implied, and names are configurable with ORG_NAMES. Every person and project is invented. Demo accounts are seeded only by `python -m app.cli reset --demo`, which refuses to run with APP_ENV=production. Statuses: every person is an active, vetted volunteer unless `status` says otherwise; Nia is still in screening. `levels` is how far a person says they can go with a skill, 1 (needs support) to 4 (could lead a project). `history` is finished work: completed projects with who was on the team, in which role, and how the lead side rated them on the same scale. Asha lets DataKind UK see a summary of what she did elsewhere; nobody else shares. `learning` lists skills a person wants to get better at.",
   "organisations": [
     {
       "key": "datakind-uk",
@@ -42,6 +42,9 @@
       },
       "shares_history_with": [
         "datakind-uk"
+      ],
+      "learning": [
+        "first-aid"
       ]
     },
     {
@@ -101,7 +104,10 @@
       "levels": {
         "bookkeeping": 3,
         "data-analysis": 2
-      }
+      },
+      "learning": [
+        "data-visualisation"
+      ]
     },
     {
       "key": "gwen",
@@ -164,7 +170,10 @@
       "levels": {
         "data-analysis": 4,
         "fundraising": 3
-      }
+      },
+      "learning": [
+        "cooking"
+      ]
     },
     {
       "key": "rhiannon",

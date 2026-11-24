@@ -62,6 +62,8 @@ class ProfileIn(BaseModel):
     skills: dict[str, str] = Field(max_length=200)  # skill_id -> none|has|offers|exclude
     # skill_id -> 1..4, for skills I have. Left out: my levels stay as they are.
     levels: dict[str, Level] | None = Field(default=None, max_length=200)
+    # Skills I want to get better at. Left out: they stay as they are.
+    learning: list[str] | None = Field(default=None, max_length=200)
     causes: dict[str, str] = Field(max_length=50)  # cause_id -> neutral|prefer|exclude
 
 
@@ -187,6 +189,7 @@ class ProfileSkill(BaseModel):
     category: str
     state: SkillState
     level: Level | None = None  # how far I say I can go with it
+    wants_to_learn: bool = False
 
 
 class SkillGroup(BaseModel):
@@ -288,6 +291,18 @@ class Project(BaseModel):
     cause: str
     required_skills: list[str]
     optional_skills: list[str]
+
+
+class LearningOpportunity(BaseModel):
+    """A project in one of my organisations that uses a skill I want to learn."""
+
+    org_id: str
+    organisation: str
+    project: str
+    title: str
+    skill: str
+    mentors: int  # people on its team who say they can guide others in the skill
+    on_team: bool
 
 
 class Opportunity(BaseModel):
@@ -418,6 +433,7 @@ class CoverageClose(BaseModel):
     volunteer: str
     name: str
     via: list[str]  # names of the adjacent skills they offer
+    wants_to_learn: bool = False  # they have said they want to learn the missing skill
 
 
 class CoverageSkill(BaseModel):

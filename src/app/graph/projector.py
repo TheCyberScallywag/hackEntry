@@ -292,6 +292,12 @@ class Projector:
             causes = conn.execute(
                 "SELECT cause_id, stance FROM profile_causes WHERE user_id = ?", (user_id,)
             ).fetchall()
+            learning = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT skill_id FROM profile_learning WHERE user_id = ?", (user_id,)
+                )
+            ]
         targets = {
             "VOLUNTEERS_WITH": orgs,
             "HAS_SKILL": [s["skill_id"] for s in skills if s["has"] and not s["excluded"]],
@@ -300,6 +306,7 @@ class Projector:
             "PREFERS_CAUSE": [c["cause_id"] for c in causes if c["stance"] == "prefer"],
             "EXCLUDES_CAUSE": [c["cause_id"] for c in causes if c["stance"] == "exclude"],
             "SHARES_HISTORY_WITH": sharing,
+            "WANTS_TO_LEARN": learning,
         }
         levels = [
             {"skill": s["skill_id"], "level": s["level"]}

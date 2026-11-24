@@ -195,6 +195,51 @@ def needed_elsewhere(db: Database, graph: GraphStore, user_id: str) -> Needed:
     return Needed(opportunities=found)
 
 
+def learning_opportunities(
+    db: Database, graph: GraphStore, user_id: str, org_ids: list[str] | None = None
+) -> list[dict]:
+    """Published projects in the volunteer's own organisations that use a skill they want to
+    learn, and how many people on each team say they can guide others in it. Empty while their
+    account is not active or a projection is pending: this is a suggestion, not a decision, so
+    it simply waits.
+
+    `org_ids` is for a caller that has just had an answer from `volunteer_matches` for this
+    volunteer and passes the organisations it asked about: the same checks need not run twice.
+    The graph still decides membership, through VOLUNTEERS_WITH."""
+    if org_ids is None:
+        with db.read() as conn:
+            org_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT org_id FROM memberships WHERE user_id = ? AND opted_in = 1 "
+                    "ORDER BY org_id",
+                    (user_id,),
+                )
+            ]
+            if services.load_actor(conn, user_id).status != "active" or _volunteer_pending(
+                conn, user_id, org_ids
+            ):
+                return []
+    if not org_ids:
+        return []
+    rows = graph.read(cypher.LEARNING_OPPORTUNITIES, {"volunteer": user_id, "orgs": org_ids})
+    if not rows:
+        return []
+    with db.read() as conn:
+        fresh = services.published_state(conn, sorted({r["project"] for r in rows}))
+        org_names = dict(conn.execute("SELECT id, name FROM organisations").fetchall())
+    cat = get_catalogue()
+    return [
+        {
+            **r,
+            "org_name": org_names.get(r["org"], r["org"]),
+            "skill_name": cat.skill_name(r["skill"]),
+        }
+        for r in rows
+        if r["project"] in fresh
+    ]
+
+
 def experience(row: dict) -> dict:
     """One CANDIDATE_EXPERIENCE row as the screens and the assistant show it."""
     levels = services.engagements.LEVELS
@@ -345,6 +390,7 @@ def project_coverage(
                 "volunteer": c["volunteer"],
                 "name": names[c["volunteer"]],
                 "via_names": [cat.skill_name(s) for s in c["via"]],
+                "wants_to_learn": c["wants_to_learn"],
             }
         )
     for entry in by_project.values():

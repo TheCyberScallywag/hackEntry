@@ -211,6 +211,7 @@ class ProfileInfo(BaseModel):
     can_submit_for_vetting: bool
     skills: dict[str, str]  # skill_id -> none | has | offers | exclude (unset skills left out)
     causes: dict[str, str]  # cause_id -> prefer | exclude
+    wants_to_learn: list[str] = []  # skill IDs; a wish, never a reason to be matched
     volunteers_with: list[str]  # organisation names
 
 
@@ -225,6 +226,7 @@ def read_profile(deps: AgentDeps) -> ProfileInfo:
         can_submit_for_vetting=actor.status in services.SUBMITTABLE,
         skills=profile.skills,
         causes=profile.causes,
+        wants_to_learn=profile.learning,
         volunteers_with=[o["name"] for o in orgs if o["opted_in"]],
     )
 

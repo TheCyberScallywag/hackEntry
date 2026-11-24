@@ -76,6 +76,10 @@ def matches(request: Request, rt: RT, session: User):
     return render(
         request, "matches.html", session, result=result, scope=scope,
         volunteering=volunteering, preferred_only=preferred_only,
+        # The matches above were answered for these organisations, so the same checks hold.
+        learning=[]
+        if result.withheld
+        else matching.learning_opportunities(rt.db, rt.graph, session.user_id, org_ids),
     )  # fmt: skip
 
 

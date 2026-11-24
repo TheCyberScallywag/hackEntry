@@ -164,5 +164,10 @@ def test_close_is_on_the_coverage_page_and_in_the_api(web: Web):
     body = as_(web, "kofi").get(f"/orgs/{CS}/coverage").json()
     rows = {r["skill"]: r["close"] for r in body["projects"][0]["per_skill"]}
     assert rows["First aid"] == [
-        {"volunteer": USERS["asha"], "name": "Asha", "via": ["Community cooking"]}
+        {
+            "volunteer": USERS["asha"],
+            "name": "Asha",
+            "via": ["Community cooking"],
+            "wants_to_learn": True,  # the fixture says she wants to learn first aid
+        }
     ]

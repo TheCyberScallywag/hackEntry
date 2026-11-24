@@ -133,6 +133,15 @@ CREATE TABLE IF NOT EXISTS profile_skills (
     PRIMARY KEY (user_id, skill_id)
 );
 
+-- Skills the volunteer would like to get better at. Not a claim to have them, and never a
+-- reason to be matched: it ranks them first among people "close" to a skill, and shows them
+-- projects where they could learn it.
+CREATE TABLE IF NOT EXISTS profile_learning (
+    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    skill_id TEXT NOT NULL REFERENCES skills(id),
+    PRIMARY KEY (user_id, skill_id)
+);
+
 CREATE TABLE IF NOT EXISTS profile_causes (
     user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     cause_id TEXT NOT NULL REFERENCES causes(id),
@@ -484,7 +493,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 class SchemaOutdated(RuntimeError):

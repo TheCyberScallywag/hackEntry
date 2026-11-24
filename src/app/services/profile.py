@@ -37,6 +37,7 @@ class Profile:
     # skill_id -> 1..4 (app.services.engagements.LEVELS): how far they say they can go with a
     # skill they have. Only skills with a level appear.
     levels: dict[str, int] = field(default_factory=dict)
+    learning: list[str] = field(default_factory=list)  # skill IDs they want to get better at
 
 
 def get_profile(db: Database, user_id: str) -> Profile:
@@ -58,6 +59,13 @@ def get_profile(db: Database, user_id: str) -> Profile:
             "SELECT cause_id, stance FROM profile_causes WHERE user_id = ?", (user_id,)
         ):
             profile.causes[r["cause_id"]] = r["stance"]
+        profile.learning = [
+            r[0]
+            for r in conn.execute(
+                "SELECT skill_id FROM profile_learning WHERE user_id = ? ORDER BY skill_id",
+                (user_id,),
+            )
+        ]
     return profile
 
 
@@ -70,9 +78,11 @@ def update_profile(
     causes: dict[str, str],
     expected_version: int,
     levels: dict[str, int] | None = None,
+    learning: list[str] | None = None,
 ) -> None:
-    """`levels` None leaves the levels as they are (a client that does not know about them
-    changes nothing); a level is kept only for a skill the volunteer has."""
+    """`levels` or `learning` None leaves them as they are (a client that does not know about
+    them changes nothing). A level is kept only for a skill the volunteer has; a skill they
+    exclude cannot also be one they want to learn."""
     catalogue = get_catalogue()
     display_name = display_name.strip()
     if not 1 <= len(display_name) <= 60:
@@ -85,7 +95,16 @@ def update_profile(
         set(levels) - catalogue.skill_ids or any(v not in (1, 2, 3, 4) for v in levels.values())
     ):
         raise Invalid("Unknown skill, or a level that is not between 1 and 4.")
+    if learning is not None and set(learning) - catalogue.skill_ids:
+        raise Invalid("Unknown skill to learn.")
     with db.tx() as conn:
+        if learning is None:
+            learning = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT skill_id FROM profile_learning WHERE user_id = ?", (user_id,)
+                )
+            ]
         if levels is None:
             levels = {
                 r["skill_id"]: r["level"]
@@ -111,6 +130,11 @@ def update_profile(
                 for sid, st in sorted(skills.items())
                 if st != "none"
             ],
+        )
+        conn.execute("DELETE FROM profile_learning WHERE user_id = ?", (user_id,))
+        conn.executemany(
+            "INSERT INTO profile_learning (user_id, skill_id) VALUES (?, ?)",
+            [(user_id, sid) for sid in sorted(set(learning)) if skills.get(sid) != "exclude"],
         )
         conn.execute("DELETE FROM profile_causes WHERE user_id = ?", (user_id,))
         conn.executemany(

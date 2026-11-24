@@ -454,7 +454,7 @@ relate --database data/demo.rl --read-only --mode table \
 
 The bundled store has 80 nodes (5 causes in 3 themes, 15 skills in 16 skill areas, 3 organisations,
 4 active and 2 completed projects, 10 engagements, 8 onboarding steps and 14 volunteer IDs, of which Sam, Mo, Nicole, Zoe and Ella have
-no edges and Nia, still in screening, has no membership edge) and 173 relationships, including
+no edges and Nia, still in screening, has no membership edge) and 176 relationships, including
 five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
 prints the ranked candidates for one organisation: Dev, Asha, then Cerys.
 

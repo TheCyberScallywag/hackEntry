@@ -71,7 +71,7 @@ The split is deliberate:
 
 | File | What it is | Who writes it |
 |---|---|---|
-| `data/demo.rl` | The bundled demo graph: 80 nodes and 173 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
+| `data/demo.rl` | The bundled demo graph: 80 nodes and 176 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
 | `var/graph.rl` (or `/data/graph.rl` in Compose) | The writable store the running application uses. Git-ignored. | The projector |
 
 On a first start with an empty data directory, `runtime.seed_demo` copies `data/demo.rl` to
@@ -107,6 +107,7 @@ flowchart LR
   E -- ON_PROJECT --> P
   E -- "DEMONSTRATED {level}" --> S
   V -- SHARES_HISTORY_WITH --> O
+  V -- WANTS_TO_LEARN --> S
   O -- HAS_ONBOARDING_STEP --> T((OnboardingStep))
   P -- HAS_TEAM_STEP --> T
   T -- NEXT_STEP --> T
@@ -143,6 +144,7 @@ flowchart LR
 | `ON_TEAM` | The volunteer is on the project's team | The lead side invited the volunteer and the volunteer said yes; with the project's team onboarding switched on, also once the lead side has accepted them. Not while suspended from the team. A lead is on their own team automatically |
 | `HAD_ENGAGEMENT`, `ON_PROJECT` | One spell of a volunteer on a project's team | From the moment they are on the team; kept after it ends and after the project is completed. Removed if the project is withdrawn |
 | `DEMONSTRATED` | A skill the lead side saw the volunteer use, with `level` 1 to 4 | The engagement has ended and been rated |
+| `WANTS_TO_LEARN` | A skill the volunteer wants to get better at. A wish: no matching read looks at it | They ticked it on their profile and have not excluded the skill |
 | `SHARES_HISTORY_WITH` | The volunteer lets this organisation see a summary of their work with others | They volunteer with it, are vetted, and switched sharing on. Off by default |
 | `HAS_ONBOARDING_STEP` | A step of the organisation's own onboarding workflow | The organisation has the step, whether or not the workflow is switched on |
 | `HAS_TEAM_STEP` | A step of a project's team onboarding | As above, for the project |
@@ -216,9 +218,11 @@ and other names; the assistants use it to turn the words someone typed into a ca
 ### Constraints and indexes
 
 Every node is found by its `id`, so every label has a uniqueness constraint on it, which also
-gives it an index. `HAS_SKILL.level`, `DEMONSTRATED.level` and `Engagement.readiness` must be integers (`TYPE_CONSTRAINTS`). Without one, a duplicate node would be counted twice by every match and nothing
+gives it an index. Without one, a duplicate node would be counted twice by every match and nothing
 would say so; with it, Relate refuses the write. `Project.status` has a range index, because
 every read filters on it. `Skill.name` and `Skill.alt_labels` have a full-text index, `skill_text`.
+`HAS_SKILL.level`, `DEMONSTRATED.level` and `Engagement.readiness` must be integers
+(`TYPE_CONSTRAINTS`): the one scale is compared by number.
 
 The statements are `CONSTRAINTS` and `INDEXES` in `src/app/graph/cypher.py`. They are idempotent
 (`IF NOT EXISTS`), and the projector applies them once per process before it first writes
@@ -368,7 +372,8 @@ statements.
 | `BROWSE_PROJECTS` | An organisation's published projects (or one of them) with their skills | `matching.browse`, `matching.project`, `matching.project_coverage` | Web *Projects* and project detail; `GET /orgs/{org}/projects` |
 | `NEEDED_ELSEWHERE` | Organisations the volunteer has **not** joined, with a published project that requires a skill they offer and has nobody on its team covering it. Their exclusions apply as in matching. Returns organisations, skills and causes, never a person | `matching.needed_elsewhere`; the match explainer's `where_else_am_i_needed` tool | *Where you are needed* on web *Find organisations*; `GET /me/needed` |
 | `CANDIDATE_EXPERIENCE` | For each volunteer of the organisation: earlier engagements on causes of the project's theme, how many were elsewhere (only if shared), how many they led, and the best rating | `matching.project_coverage`; the shortlist assistant's `project_picture` | *Done this before* on a candidate on web *Coverage* and the project page; `experience` in `GET /orgs/{org}/coverage` |
-| `CLOSE_CANDIDATES` | Volunteers who lack a required skill but offer one related to it or in the same skill area | `matching.project_coverage` | The *Close* column on web *Coverage* and the project page; `close` in `GET /orgs/{org}/coverage` |
+| `LEARNING_OPPORTUNITIES` | Published projects in the volunteer's own organisations that use a skill they want to learn, with how many people on the team say they can guide it (a number, never who) | `matching.learning_opportunities` | *Where you could learn* on web *My matches*; `GET /me/learning` |
+| `CLOSE_CANDIDATES` | Volunteers who lack a required skill but offer one related to it or in the same skill area, those who want to learn it first | `matching.project_coverage` | The *Close* column on web *Coverage* and the project page; `close` in `GET /orgs/{org}/coverage` |
 | `FIND_SKILLS` | Catalogue skills matching plain words, by name or other name, with area and related skills | The assistants' `find_skills` tool | Volunteer onboarding, project scoping and review assistants |
 | `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* section |
 | `COUNT_LABELS`, `COUNT_RELATIONSHIPS` | How many nodes and relationships of each kind | `GET /admin/graph` | Admin console *System* section |
@@ -523,6 +528,7 @@ All of these are exercised by the test suite against Relate 1.0.1.
 | `OPTIONAL MATCH`, `collect(DISTINCT ...)` | Optional skills; lists of matched skills |
 | List comprehension, `[r IN required WHERE NOT r IN matched]` | The skills still needed |
 | `labels(n)`, `type(r)`, `properties(n)` | Counts, the export and the schema test |
+| `COUNT { MATCH ... }` | How many team members can guide a skill |
 | Relationship properties, `CASE` inside `count(DISTINCT ...)`, `max()` | Skill levels; counting engagements by kind and the best rating |
 | `REQUIRE r.level IS :: INTEGER` (property type constraints on nodes and relationships) | The one scale is compared by number, so nothing else can be stored |
 | `CREATE FULLTEXT INDEX`, `db.index.fulltext.queryNodes`, `COLLECT { ... }` | Finding a skill by any of its names, with its related skills |

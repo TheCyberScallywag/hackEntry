@@ -10,7 +10,7 @@
       {% for c in row.candidates %}<span class="chip" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}{% if c.experience %} <span class="muted" title="{{ c.experience.summary }}">· done this before</span>{% endif %}{% if c.status != "candidate" %} · {{ c.status_label }}{% endif %}</span>
       {% else %}{% if not row.team %}<span class="chip gap">Coverage gap: no eligible volunteer</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}
     </td><td>
-      {% for c in row.close %}<span class="chip" title="Offers {{ c.via_names|join(', ') }}">{{ c.name }} <span class="muted">via {{ c.via_names|join(', ') }}</span></span>
+      {% for c in row.close %}<span class="chip" title="Offers {{ c.via_names|join(', ') }}">{{ c.name }} <span class="muted">via {{ c.via_names|join(', ') }}</span>{% if c.wants_to_learn %} · wants to learn it{% endif %}</span>
       {% else %}<span class="muted">—</span>{% endfor %}
     </td></tr>
   {% endfor %}

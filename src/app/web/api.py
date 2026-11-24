@@ -145,7 +145,7 @@ def put_profile(body: m.ProfileIn, request: Request, session: Api) -> m.Profile:
     services.update_profile(
         rt.db, session.user_id,
         display_name=body.display_name, skills=body.skills, causes=body.causes,
-        expected_version=body.version, levels=body.levels,
+        expected_version=body.version, levels=body.levels, learning=body.learning,
     )  # fmt: skip
     drain(rt)
     return _profile(rt, session.user_id)
@@ -248,6 +248,25 @@ def leave(org_id: str, request: Request, session: Api) -> m.MembershipOut:
     return {"opted_in": False}
 
 
+@router.get("/me/learning", tags=["me"])
+def learning(request: Request, session: Api) -> list[m.LearningOpportunity]:
+    """Projects in my organisations that use a skill I want to learn, and how many people on
+    each team can guide it. A number, never who."""
+    rt = _rt(request)
+    return [
+        {
+            "org_id": o["org"],
+            "organisation": o["org_name"],
+            "project": o["project"],
+            "title": o["title"],
+            "skill": o["skill_name"],
+            "mentors": o["mentors"],
+            "on_team": o["on_team"],
+        }
+        for o in matching.learning_opportunities(rt.db, rt.graph, session.user_id)
+    ]
+
+
 @router.get("/me/needed", tags=["me"])
 def needed_elsewhere(request: Request, session: Api) -> m.Needed:
     """Organisations I have not joined that need a skill I offer, across the whole network.
@@ -348,7 +367,12 @@ def org_coverage(org_id: str, request: Request, session: Api) -> m.Coverage:
                             for c in row["candidates"]
                         ],
                         "close": [
-                            {"volunteer": c["volunteer"], "name": c["name"], "via": c["via_names"]}
+                            {
+                                "volunteer": c["volunteer"],
+                                "name": c["name"],
+                                "via": c["via_names"],
+                                "wants_to_learn": c["wants_to_learn"],
+                            }  # fmt: skip
                             for c in row["close"]
                         ],
                     }

@@ -64,6 +64,7 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
             "category": s.category,
             "state": profile.skills.get(s.id, "none"),
             "level": profile.levels.get(s.id),
+            "wants_to_learn": s.id in profile.learning,
         }
         for s in cat.skills
     ]

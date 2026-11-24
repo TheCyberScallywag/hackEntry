@@ -200,6 +200,10 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                     (uid, skill, *services.skill_flags(state),
                      person.get("levels", {}).get(skill)),
                 )  # fmt: skip
+            conn.executemany(
+                "INSERT INTO profile_learning (user_id, skill_id) VALUES (?, ?)",
+                [(uid, skill) for skill in person.get("learning", [])],
+            )
             for key in person.get("shares_history_with", []):
                 conn.execute(
                     "UPDATE memberships SET share_history = 1 WHERE user_id = ? AND org_id = ?",
