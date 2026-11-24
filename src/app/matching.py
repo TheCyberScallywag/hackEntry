@@ -195,6 +195,30 @@ def needed_elsewhere(db: Database, graph: GraphStore, user_id: str) -> Needed:
     return Needed(opportunities=found)
 
 
+def experience(row: dict) -> dict:
+    """One CANDIDATE_EXPERIENCE row as the screens and the assistant show it."""
+    levels = services.engagements.LEVELS
+    best = row["best_readiness"]
+    parts = [f"{row['engagements']} earlier project{'s' if row['engagements'] != 1 else ''}"
+             f" on {row['theme'].lower()}"]  # fmt: skip
+    if row["elsewhere"]:
+        parts.append(f"{row['elsewhere']} with another organisation")
+    if row["led"]:
+        parts.append(f"led {row['led']}")
+    if best:
+        parts.append(f"rated up to “{levels[best]}”")
+    return {
+        "theme": row["theme"],
+        "engagements": row["engagements"],
+        "same_cause": row["same_cause"],
+        "elsewhere": row["elsewhere"],
+        "led": row["led"],
+        "best_readiness": best,
+        "best_readiness_label": levels[best] if best else None,
+        "summary": ", ".join(parts),
+    }
+
+
 def _explain(
     row: dict, org_names: dict, optional_excluded: list[str], status: str | None = None
 ) -> dict:
@@ -249,6 +273,10 @@ def project_coverage(
         gaps = tx.read(cypher.COVERAGE_GAPS, scope)
         on_team = tx.read(cypher.TEAM_COVERAGE, scope)
         close = tx.read(cypher.CLOSE_CANDIDATES, scope)
+        earlier = {
+            (r["project"], r["volunteer"]): experience(r)
+            for r in tx.read(cypher.CANDIDATE_EXPERIENCE, scope)
+        }
     with db.read() as conn:
         fresh = services.published_state(conn, [p["project"] for p in projects])
         names = dict(
@@ -290,6 +318,9 @@ def project_coverage(
             "optional_names": [cat.skill_name(s) for s in sorted(r["optional_matched"])],
             "remaining_names": [cat.skill_name(s) for s in sorted(r["remaining"])],
             "coverage": r["coverage"],
+            # Earlier work on the same theme of cause: the organisation's own record, plus a
+            # summary of work elsewhere if the volunteer shares it. None: nothing to show.
+            "experience": earlier.get((r["project"], r["volunteer"])),
         }
         entry["candidates"].append(candidate)
         for skill in sorted(r["matched"]):

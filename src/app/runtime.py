@@ -195,9 +195,15 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                     )
             for skill, state in person["skills"].items():
                 conn.execute(
-                    "INSERT INTO profile_skills (user_id, skill_id, has, offers, excluded) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (uid, skill, *services.skill_flags(state)),
+                    "INSERT INTO profile_skills (user_id, skill_id, has, offers, excluded, level) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (uid, skill, *services.skill_flags(state),
+                     person.get("levels", {}).get(skill)),
+                )  # fmt: skip
+            for key in person.get("shares_history_with", []):
+                conn.execute(
+                    "UPDATE memberships SET share_history = 1 WHERE user_id = ? AND org_id = ?",
+                    (uid, org_ids[key]),
                 )
             for cause, stance in person["causes"].items():
                 conn.execute(
@@ -236,6 +242,7 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                 )
             if approved:
                 enqueue(conn, "project", sid)
+        _seed_history(conn, demo, org_ids, user_ids)
     rt.projector.drain(ignore_backoff=True)  # also runs the placement sweep
     # Teams are formed through the real flow: the lead invites, the volunteer says yes.
     for team in demo.get("teams", []):
@@ -276,6 +283,58 @@ def seed_demo(rt: Runtime, *, copy_bundle: bool) -> None:
                 conn, org_id[0], pid, entry["steps"], enabled=entry.get("enabled", False)
             )
     rt.projector.drain(ignore_backoff=True)
+
+
+def _seed_history(conn, demo: dict, org_ids: dict, user_ids: dict) -> None:
+    """Finished work, written as the past it is: completed projects, who was on each team and
+    how the lead side rated them. Nothing is announced and nobody is matched: the rows are
+    exactly what completing a project and rating its team leave behind
+    (app.services.engagements), with the fixture's own dates."""
+    for item in demo.get("history", []):
+        sid, lead = stable_id("p", item["key"]), user_ids[item["lead"]]
+        started, done = item["started"], item["completed"]
+        conn.execute(
+            "INSERT INTO submissions (id, org_id, author_id, lead_id, state, current_revision, "
+            "approved_revision, approved_by, approved_at, published_at, completed_by, "
+            "completed_at, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'completed', 1, 1, ?, ?, ?, ?, ?, ?, ?)",
+            (sid, org_ids[item["org"]], lead, lead, user_ids[item["reviewer"]], started, started,
+             lead, done, started, done),
+        )  # fmt: skip
+        conn.execute(
+            "INSERT INTO submission_revisions (submission_id, revision, title, summary, "
+            "cause_id, created_at) VALUES (?, 1, ?, ?, ?, ?)",
+            (sid, item["title"], item["summary"], item["cause"], started),
+        )
+        conn.executemany(
+            "INSERT INTO revision_skills (submission_id, revision, skill_id, required) "
+            "VALUES (?, 1, ?, ?)",
+            [(sid, s, 1) for s in item["required"]] + [(sid, s, 0) for s in item["optional"]],
+        )
+        for member in item["team"]:
+            vid = user_ids[member["volunteer"]]
+            conn.execute(
+                "INSERT INTO placements (project_id, volunteer_id, state, volunteer_said, "
+                "volunteer_said_at, lead_said, lead_said_at, lead_actor_id, invited_at, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, 'completed', 'yes', ?, 'yes', ?, ?, ?, ?, ?)",
+                (sid, vid, started, started, lead, started, started, done),
+            )
+            eid = services.engagements.engagement_id(sid, vid, 0)
+            rated = "readiness" in member
+            conn.execute(
+                "INSERT INTO engagements (id, project_id, volunteer_id, role, started_at, "
+                "ended_at, outcome, readiness, rated_by, rated_at, note_for_volunteer) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?)",
+                (eid, sid, vid, member["role"], started, done, member.get("readiness"),
+                 user_ids[member["rated_by"]] if rated else None, done if rated else None,
+                 member.get("note", "")),
+            )  # fmt: skip
+            conn.executemany(
+                "INSERT INTO engagement_skills (engagement_id, skill_id, level) VALUES (?, ?, ?)",
+                [(eid, skill, level) for skill, level in member.get("skills", {}).items()],
+            )
+        enqueue(conn, "project", sid)
 
 
 def reset_demo(settings: Settings) -> Runtime:

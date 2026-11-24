@@ -25,6 +25,7 @@ def test_web_profile_has_the_mobile_sections_and_skill_type_sub_accordions(web: 
         "causes",
         "active",
         "past",
+        "history",
     ]
     categories = list(dict.fromkeys(s.category for s in get_catalogue().skills))
     assert re.findall(r'data-category="([^"]+)"', html) == categories

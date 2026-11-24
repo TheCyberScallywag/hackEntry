@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ org.name }} completed projects{% endblock %}
+{% block content %}
+<p><a href="/o/{{ org.id }}/projects">← {{ org.name }} projects</a></p>
+<h1>{{ org.name }}: completed projects</h1>
+<p class="muted">Projects you act for as lead, team coordinator or org admin. Say how each volunteer's time on the team went: they are told, and they see the rating, your name and the note for them on their profile. Nobody rates their own work. The private note stays with the organisation.</p>
+{% for p in projects %}
+<section class="card" data-project="{{ p.id }}">
+  <h2>{{ p.title }}</h2>
+  <table class="placements">
+    <thead><tr><th>Volunteer</th><th>Role</th><th>How it went</th><th></th></tr></thead>
+    <tbody>
+    {% for e in p.engagements %}
+      <tr data-engagement="{{ e.id }}">
+        <td>{{ e.display_name }}</td>
+        <td>{{ e.role_label }}<br><span class="muted">{{ e.outcome_label }}</span></td>
+        <td>{% if e.readiness %}<span class="chip pref">{{ e.readiness_label }}</span>
+            {% for s in e.skills %}<span class="chip">{{ s.name }}: {{ s.level_label }}</span>{% endfor %}
+            <br><span class="muted">from {{ e.rated_by_name or "someone who has since left" }}{% if e.note_for_volunteer %} · “{{ e.note_for_volunteer }}”{% endif %}</span>
+          {% else %}<span class="muted">Not reviewed yet</span>{% endif %}</td>
+        <td>{% if e.can_rate %}
+          <details><summary>{{ "Change" if e.readiness else "Review" }}</summary>
+          <form method="post" action="/o/{{ org.id }}/history/{{ e.id }}/rate">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <label>Overall
+              <select name="readiness" required>
+                {% for value, label in levels.items() %}<option value="{{ value }}" {% if e.readiness == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></label>
+            {% for s in p.skills %}
+            {% set shown = e.skills|selectattr("id", "equalto", s.id)|list %}
+            <label>{{ s.name }}
+              <select name="skill:{{ s.id }}">
+                <option value="">Not seen</option>
+                {% for value, label in levels.items() %}<option value="{{ value }}" {% if shown and shown[0].level == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+              </select></label>
+            {% endfor %}
+            <label>Note for {{ e.display_name }} <input name="note" maxlength="2000" value="{{ e.note_for_volunteer }}"></label>
+            <label>Private note <span class="muted">(the organisation only)</span> <input name="private_note" maxlength="2000" value="{{ e.private_note }}"></label>
+            <button type="submit">Save review</button>
+          </form></details>
+          {% elif e.volunteer_id == session.user_id %}<span class="muted">Someone else reviews your own work</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}<p class="muted">No completed projects for you to review here.</p>{% endfor %}
+{% endblock %}

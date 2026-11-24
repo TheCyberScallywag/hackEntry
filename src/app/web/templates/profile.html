@@ -24,7 +24,7 @@
   <details class="accordion" open data-section="skills">
     <summary><span>Skills</span><span class="note">{{ offered }} offered · {{ excluded }} excluded</span></summary>
     <div class="accordion-body">
-      <p class="hint"><strong>Offer</strong> to be matched on a skill. <strong>Exclude</strong> means you're never matched to a project that requires it.</p>
+      <p class="hint"><strong>Offer</strong> to be matched on a skill. <strong>Exclude</strong> means you're never matched to a project that requires it. The level is your own view of how far you can go with a skill you have; it is kept apart from anything a project lead says about your work.</p>
       {% for group in view.skill_groups %}
       {% set g_offered = group.skills|selectattr("state", "equalto", "offers")|list|length %}
       {% set g_excluded = group.skills|selectattr("state", "equalto", "exclude")|list|length %}
@@ -35,6 +35,10 @@
           <label class="row">{{ skill.name }}
             <select name="skill:{{ skill.id }}">
               {% for value, label in SKILL_STATES.items() %}<option value="{{ value }}" {% if skill.state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <select name="level:{{ skill.id }}" aria-label="Your level in {{ skill.name }}">
+              <option value="">Level: not said</option>
+              {% for value, label in view.levels.items() %}<option value="{{ value }}" {% if skill.level|string == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
             </select></label>
           {% endfor %}
         </div>
@@ -86,4 +90,31 @@
 
   <div class="savebar"><button type="submit">Save profile</button></div>
 </form>
+
+<section class="card" id="history" data-section="history">
+  <h2>Your history</h2>
+  <p class="muted">Every time you were on a project's team. When it has ended, the project's lead can say how it went; you always see what they said and who said it.</p>
+  <ul class="projects">
+  {% for e in history.engagements %}
+    <li><strong>{{ e.title }}</strong> <span class="state {{ e.outcome or "published" }}">{{ e.outcome_label }}</span><br>
+      <span class="muted">{{ e.org_name }} · {{ e.role_label }}</span>
+      {% if e.readiness %}<br><span class="chip pref">{{ e.readiness_label }}</span>
+        {% for s in e.skills %}<span class="chip">{{ s.name }}: {{ s.level_label }}</span>{% endfor %}
+        <span class="muted">from {{ e.rated_by_name or "someone who has since left" }}</span>
+        {% if e.note_for_volunteer %}<br><span class="muted">“{{ e.note_for_volunteer }}”</span>{% endif %}
+      {% elif e.ended_at %}<br><span class="muted">Not reviewed yet.</span>{% endif %}</li>
+  {% else %}<li class="muted">Nothing yet. Your history starts when you join a project's team.</li>{% endfor %}
+  </ul>
+  {% if history.sharing %}
+  <form method="post" action="/me/history-sharing" data-form="sharing">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <h3>Who can see what you did elsewhere</h3>
+    <p class="muted">An organisation always has its own record of your work with it. Tick one to let its project leads also see a summary of your work with other organisations: how many projects on a similar cause, and the best review. Never which organisation or project. Off unless you tick it.</p>
+    {% for o in history.sharing %}
+    <label class="check"><input type="checkbox" name="share:{{ o.org_id }}" value="1" {% if o.share_history %}checked{% endif %}> {{ o.org_name }}</label>
+    {% endfor %}
+    <button type="submit" class="secondary">Save sharing</button>
+  </form>
+  {% endif %}
+</section>
 {% endblock %}

@@ -96,6 +96,7 @@ def profile_page(request: Request, rt: RT, session: User):
     return render(
         request, "profile.html", session,
         view=profile_view.overview(rt.db, rt.graph, session.user_id),
+        history=services.engagements.my_history(rt.db, session.user_id),
     )  # fmt: skip
 
 
@@ -104,19 +105,40 @@ def profile_save(request: Request, rt: RT, session: User, form: UserForm):
     cat = get_catalogue()
     skills = {s.id: str(form.get(f"skill:{s.id}", "none")) for s in cat.skills}
     causes = {c.id: str(form.get(f"cause:{c.id}", "neutral")) for c in cat.causes}
+    # A form without the level fields (an older page, a script) leaves the levels alone.
+    levels = None
+    if any(key.startswith("level:") for key in form):
+        levels = {
+            s.id: to_int(form.get(f"level:{s.id}")) for s in cat.skills if form.get(f"level:{s.id}")
+        }
     try:
         services.update_profile(
             rt.db, session.user_id,
             display_name=str(form.get("display_name", "")),
-            skills=skills, causes=causes,
+            skills=skills, causes=causes, levels=levels,
             expected_version=to_int(form.get("version")),
         )  # fmt: skip
     except services.Invalid as error:
         view = profile_view.overview(rt.db, rt.graph, session.user_id)
-        return render(request, "profile.html", session, view=view, error=str(error),
-                      status_code=400)  # fmt: skip
+        history = services.engagements.my_history(rt.db, session.user_id)
+        return render(request, "profile.html", session, view=view, history=history,
+                      error=str(error), status_code=400)  # fmt: skip
     drain(rt)
     return redirect("/profile", "profile_saved")
+
+
+@router.post("/me/history-sharing")
+def history_sharing(rt: RT, session: User, form: UserForm):
+    """One switch per organisation I volunteer with: may it see a summary of my work elsewhere?"""
+    history = services.engagements.my_history(rt.db, session.user_id)
+    for org in history["sharing"]:
+        wanted = form.get(f"share:{org['org_id']}") == "1"
+        if wanted != org["share_history"]:
+            services.engagements.set_share_history(
+                rt.db, session.user_id, org["org_id"], share=wanted
+            )
+    drain(rt)
+    return redirect("/profile#history", "sharing_saved")
 
 
 @router.post("/me/vetting")

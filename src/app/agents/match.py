@@ -35,6 +35,9 @@ class Candidate(BaseModel):
     required_skills_covered: list[str]
     optional_skills_offered: list[str]
     can_invite: bool
+    # Earlier work on the same theme of cause, from the graph: this organisation's own record,
+    # plus a summary of work elsewhere only if the volunteer shares it. Empty: none on record.
+    earlier_work: str = ""
 
 
 class ProjectPicture(BaseModel):
@@ -66,6 +69,12 @@ def _picture(deps: AgentDeps) -> ProjectPicture:
         )
         if on_team & set(row["team"])
     }
+    earlier = {
+        r["volunteer"]: matching.experience(r)["summary"]
+        for r in deps.graph.read(
+            cypher.CANDIDATE_EXPERIENCE, {"org": deps.org_id or "", "project": deps.subject_id}
+        )
+    }
     return ProjectPicture(
         title=project["title"],
         summary=project["summary"],
@@ -83,6 +92,7 @@ def _picture(deps: AgentDeps) -> ProjectPicture:
                 required_skills_covered=r["matched_skills"],
                 optional_skills_offered=r["optional_skills"],
                 can_invite=r["status"] == "candidate" and r["can_decide"],
+                earlier_work=earlier.get(r["volunteer_id"], ""),
             )
             for r in rows
         ],
@@ -120,7 +130,10 @@ shortlist_agent: Agent[AgentDeps, Shortlist | DeferredToolRequests] = Agent(
         "Recommend from people whose can_invite is true. Prefer the smallest set that covers "
         "the skills in not_yet_covered; break ties by the ranked order. Do not recommend "
         "someone who adds nothing the team lacks unless nobody does. For each, say which "
-        "skills they bring and why them. List in still_uncovered any required skill that "
+        "skills they bring and why them. earlier_work is evidence, not a rule: between two "
+        "people who cover the same skills, mention it and prefer the one who has done this "
+        "kind of work before; never hold its absence against someone. "
+        "List in still_uncovered any required skill that "
         "nobody on the team or your shortlist covers: that is a gap the lead needs to know "
         "about, not something to paper over.\n"
         "Call invite only when the lead asks you to invite someone, and only for the people "

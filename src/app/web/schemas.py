@@ -14,14 +14,32 @@ from app import services
 
 VolunteerStatus = Literal["draft", "screening", "info_requested", "active", "declined", "suspended"]
 SubmissionState = Literal[
-    "draft", "submitted", "changes_requested", "rejected", "approved", "published", "withdrawn"
+    "draft",
+    "submitted",
+    "changes_requested",
+    "rejected",
+    "approved",
+    "published",
+    "completed",
+    "withdrawn",
 ]
 PlacementState = Literal[
-    "eligible", "onboarding", "team", "suspended", "declined", "lapsed", "removed", "left"
+    "eligible",
+    "onboarding",
+    "team",
+    "suspended",
+    "declined",
+    "lapsed",
+    "removed",
+    "left",
+    "completed",
 ]
 SkillState = Literal["none", "has", "offers", "exclude"]
 CauseStance = Literal["neutral", "prefer", "exclude"]
 Answer = Literal["yes", "no"]
+# The one scale for a skill and for an engagement: 1 needs support, 2 works independently,
+# 3 can guide others, 4 could lead a project (app.services.engagements.LEVELS).
+Level = Literal[1, 2, 3, 4]
 
 
 # ------------------------------------------------------------------ request bodies
@@ -42,6 +60,8 @@ class ProfileIn(BaseModel):
     display_name: str = Field(max_length=60)
     version: int
     skills: dict[str, str] = Field(max_length=200)  # skill_id -> none|has|offers|exclude
+    # skill_id -> 1..4, for skills I have. Left out: my levels stay as they are.
+    levels: dict[str, Level] | None = Field(default=None, max_length=200)
     causes: dict[str, str] = Field(max_length=50)  # cause_id -> neutral|prefer|exclude
 
 
@@ -166,6 +186,7 @@ class ProfileSkill(BaseModel):
     name: str
     category: str
     state: SkillState
+    level: Level | None = None  # how far I say I can go with it
 
 
 class SkillGroup(BaseModel):
@@ -205,6 +226,7 @@ class Profile(BaseModel):
     cause_stances: dict[CauseStance, str]
     causes: list[ProfileCause]
     projects: ProfileProjects
+    levels: dict[str, str] = {}  # level -> label, in order
     status: VolunteerStatus
     status_label: str
     can_submit_for_vetting: bool
@@ -284,12 +306,109 @@ class Needed(BaseModel):
     opportunities: list[Opportunity]
 
 
+class CandidateExperience(BaseModel):
+    """Earlier work on causes of the same theme. Counts and a band only: never which
+    organisation or project. `elsewhere` is non-zero only if the volunteer shares it."""
+
+    theme: str
+    engagements: int
+    same_cause: int
+    elsewhere: int
+    led: int
+    best_readiness: Level | None
+    best_readiness_label: str | None
+    summary: str
+
+
 class CoverageCandidate(BaseModel):
     volunteer: str
     name: str
     preferred_cause: bool
     status: str  # candidate, invited, declined, left, removed or lapsed
     status_label: str
+    experience: CandidateExperience | None = None
+
+
+class SkillLevel(BaseModel):
+    id: str
+    name: str
+    level: Level
+    level_label: str
+
+
+class Engagement(BaseModel):
+    """One spell on a project's team, as the volunteer themselves sees it."""
+
+    id: str
+    project_id: str
+    title: str
+    org_id: str
+    org_name: str
+    role: Literal["contributor", "lead"]
+    role_label: str
+    started_at: str
+    ended_at: str | None
+    outcome: Literal["completed", "left", "removed", "withdrawn"] | None
+    outcome_label: str
+    readiness: Level | None
+    readiness_label: str | None
+    rated_by_name: str | None
+    rated_at: str | None
+    note_for_volunteer: str
+    skills: list[SkillLevel]
+
+
+class HistorySharing(BaseModel):
+    org_id: str
+    org_name: str
+    share_history: bool
+
+
+class History(BaseModel):
+    engagements: list[Engagement]
+    sharing: list[HistorySharing]
+    levels: dict[str, str]
+
+
+class SharingIn(BaseModel):
+    share: bool
+
+
+class SharingOut(BaseModel):
+    share_history: bool
+
+
+class TeamEngagement(Engagement):
+    """The same, as the project's lead side sees it."""
+
+    volunteer_id: str
+    display_name: str
+    private_note: str
+    can_rate: bool
+
+
+class SkillRef(BaseModel):
+    id: str
+    name: str
+
+
+class CompletedProject(BaseModel):
+    id: str
+    title: str
+    completed_at: str
+    skills: list[SkillRef]
+    engagements: list[TeamEngagement]
+
+
+class RatingIn(BaseModel):
+    readiness: Level
+    skills: dict[str, Level] = Field(default={}, max_length=50)
+    note: str = Field(default="", max_length=2000)
+    private_note: str = Field(default="", max_length=2000)
+
+
+class RatedOut(BaseModel):
+    readiness: Level
 
 
 class CoverageClose(BaseModel):

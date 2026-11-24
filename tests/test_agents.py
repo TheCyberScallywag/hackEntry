@@ -341,6 +341,21 @@ def test_shortlist_can_only_recommend_the_graphs_candidates(web: Web):
     assert "@" not in picture  # display names only
 
 
+def test_shortlist_sees_earlier_work_from_the_graph(web: Web):
+    """The lead's assistant is told who has done this kind of work before: the organisation's
+    own record, and a summary from elsewhere only where the volunteer shares it."""
+    model = use(
+        web,
+        call("project_picture"),
+        final(summary="Nobody to add for now.", recommendations=[],
+              still_uncovered=["Spreadsheet and data analysis", "Bookkeeping"]),
+    )  # fmt: skip
+    ok(as_(web, "cerys").post("/agents/match-shortlist", {"project_id": FOOD_BANK}))
+    picture = model.tool_results()[0]
+    assert "3 earlier projects on poverty and basic needs, 2 with another organisation" in picture
+    assert "Shelter Meal Rota" not in picture and "Cyber Scallywags" not in picture
+
+
 def test_shortlist_names_the_gap_the_model_left_out(web: Web):
     cerys = as_(web, "cerys")
     use(web, final(summary="Nobody to invite yet.", recommendations=[], still_uncovered=[]))

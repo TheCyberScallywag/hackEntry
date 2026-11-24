@@ -61,12 +61,17 @@ def test_schema_covers_exactly_what_the_demo_graph_contains(demo_graph: GraphSto
 
 def test_every_label_has_a_uniqueness_constraint_in_the_bundled_graph(demo_graph: GraphStore):
     found = {r["name"]: r for r in demo_graph.read(cypher.SHOW_CONSTRAINTS)}
-    assert set(found) == set(cypher.CONSTRAINTS)
-    assert {r["labels"][0] for r in found.values()} == set(cypher.LABELS)
+    assert set(found) == set(cypher.CONSTRAINTS) | set(cypher.TYPE_CONSTRAINTS)
+    unique = [found[name] for name in cypher.CONSTRAINTS]
+    assert {r["labels"][0] for r in unique} == set(cypher.LABELS)
     assert all(
-        r["type"] == "NODE_PROPERTY_UNIQUENESS" and r["properties"] == ["id"]
-        for r in found.values()
+        r["type"] == "NODE_PROPERTY_UNIQUENESS" and r["properties"] == ["id"] for r in unique
     )
+    # The one scale is compared by number, so the graph refuses anything else.
+    assert {found[n]["type"] for n in cypher.TYPE_CONSTRAINTS} == {
+        "NODE_PROPERTY_TYPE",
+        "RELATIONSHIP_PROPERTY_TYPE",
+    }
     indexes = {r["name"]: r for r in demo_graph.read(cypher.SHOW_INDEXES)}
     assert set(cypher.INDEXES) <= set(indexes)  # each constraint also owns an index
     assert all(r["state"] == "ONLINE" for r in indexes.values())
@@ -85,9 +90,10 @@ def test_a_store_made_before_the_schema_gains_it_on_the_next_drain(rt, tmp_path)
     assert old.read(cypher.SHOW_CONSTRAINTS) == []
     projector = Projector(rt.db, old)
     assert projector.drain().failed == 0  # nothing is pending: the schema is still declared
-    assert {r["name"] for r in old.read(cypher.SHOW_CONSTRAINTS)} == set(cypher.CONSTRAINTS)
+    declared = set(cypher.CONSTRAINTS) | set(cypher.TYPE_CONSTRAINTS)
+    assert {r["name"] for r in old.read(cypher.SHOW_CONSTRAINTS)} == declared
     projector.ensure_schema()  # idempotent
-    assert len(old.read(cypher.SHOW_CONSTRAINTS)) == len(cypher.CONSTRAINTS)
+    assert len(old.read(cypher.SHOW_CONSTRAINTS)) == len(declared)
 
 
 def test_a_store_whose_schema_cannot_be_declared_is_not_written_to(rt, tmp_path):
@@ -103,6 +109,22 @@ def test_a_store_whose_schema_cannot_be_declared_is_not_written_to(rt, tmp_path)
     assert bad.read("MATCH (n) RETURN count(n) AS n") == [{"n": 2}]
 
 
+def test_a_level_that_is_not_a_number_is_refused(demo_graph: GraphStore):
+    with pytest.raises(GraphError), demo_graph.write() as tx:
+        tx.run("MATCH (:Volunteer)-[h:HAS_SKILL]->(:Skill) WITH h LIMIT 1 SET h.level = 'high'")
+    with pytest.raises(GraphError), demo_graph.write() as tx:
+        tx.run("MATCH (e:Engagement) WITH e LIMIT 1 SET e.readiness = 'good'")
+
+
+def test_push_carries_relationship_properties(demo_graph, monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
+    aura.push(Settings(_env_file=None), demo_graph)
+    [(query, params)] = [(q, p) for q, p in driver.queries if "[r:HAS_SKILL]" in q]
+    assert "SET r += row.props" in query
+    assert {row["props"].get("level") for row in params["rows"]} >= {2, 3, 4}
+
+
 def test_reconcile_statements_are_generated_for_every_schema_entry():
     assert set(cypher.VOLUNTEER_EDGE_PRUNE) == set(cypher.VOLUNTEER_EDGE_MERGE)
     assert set(cypher.VOLUNTEER_EDGE_MERGE) == set(cypher.VOLUNTEER_RELS)
@@ -116,12 +138,12 @@ def test_push_writes_the_whole_demo_graph_including_teams(demo_graph, monkeypatc
     driver = FakeDriver()
     monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
     counts = aura.push(Settings(_env_file=None), demo_graph)
-    assert counts == {"nodes": 68, "relationships": 138}
+    assert counts == {"nodes": 80, "relationships": 173}
     statements = [q for q, _ in driver.queries]
     assert statements[0].startswith("MATCH (n {dvn_scope: $scope}) DETACH DELETE n")
-    assert any("MERGE (a)-[:ON_TEAM]->(b)" in q for q in statements)
+    assert any("MERGE (a)-[r:ON_TEAM]->(b)" in q for q in statements)
     merged = sum(len(p["rows"]) for q, p in driver.queries if "MERGE (a)-[" in q)
-    assert merged == 138
+    assert merged == 173
     assert all(p["scope"] == aura.SCOPE for _, p in driver.queries)
 
 

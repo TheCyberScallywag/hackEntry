@@ -7,7 +7,7 @@
       {% for name in row.team %}<span class="chip ok">{{ name }}</span>
       {% else %}<span class="chip gap">Nobody yet</span>{% endfor %}
     </td><td>
-      {% for c in row.candidates %}<span class="chip" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}{% if c.status != "candidate" %} · {{ c.status_label }}{% endif %}</span>
+      {% for c in row.candidates %}<span class="chip" title="Matches {{ c.matched_names|join(', ') }}{% if c.optional_names %}; also offers {{ c.optional_names|join(', ') }}{% endif %}">{{ c.name }}{% if c.preferred %} ★{% endif %}{% if c.experience %} <span class="muted" title="{{ c.experience.summary }}">· done this before</span>{% endif %}{% if c.status != "candidate" %} · {{ c.status_label }}{% endif %}</span>
       {% else %}{% if not row.team %}<span class="chip gap">Coverage gap: no eligible volunteer</span>{% else %}<span class="muted">—</span>{% endif %}{% endfor %}
     </td><td>
       {% for c in row.close %}<span class="chip" title="Offers {{ c.via_names|join(', ') }}">{{ c.name }} <span class="muted">via {{ c.via_names|join(', ') }}</span></span>
@@ -16,4 +16,4 @@
   {% endfor %}
   </tbody>
 </table>
-<p class="muted">A skill counts as covered once someone who offers it is on the team. ★ prefers this project's cause. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill; the project lead chooses who to invite. Close lists volunteers who do not have the skill but offer a related one or one in the same skill area: they are not candidates and cannot be invited for it, but they may be worth a conversation.</p>
+<p class="muted">A skill counts as covered once someone who offers it is on the team. ★ prefers this project's cause. “Done this before” marks earlier work on the same kind of cause: this organisation's own record, and a summary of work elsewhere only where the volunteer has chosen to share it. Candidates are opted-in volunteers who have and offer the skill and have excluded neither the cause nor any required skill; the project lead chooses who to invite. Close lists volunteers who do not have the skill but offer a related one or one in the same skill area: they are not candidates and cannot be invited for it, but they may be worth a conversation.</p>

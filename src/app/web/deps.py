@@ -51,6 +51,10 @@ MESSAGES = {
     "suspended": "Suspended from the team. Reinstate them when you are ready.",
     "reinstated": "Reinstated. They are back on the team.",
     "lead_set": "Project lead assigned.",
+    "completed": "Project completed. It is now part of its team's history; rate them below.",
+    "rated": "Rating saved. The volunteer has been told and can see it on their profile.",
+    "sharing_saved": "Saved. Only the organisations you ticked can see a summary of your work "
+    "elsewhere.",
     "flow_saved": "Team onboarding saved.",
     "read": "Notifications marked as read.",
     "step_done": "Step completed.",

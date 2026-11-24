@@ -50,7 +50,9 @@ def _group(rels: list[dict]) -> dict[tuple[str, str, str], list[dict]]:
         shape = (r["from_label"], r["type"], r["to_label"])
         if cypher.RELATIONSHIPS.get(r["type"]) != (r["from_label"], r["to_label"]):
             raise ValueError("unexpected relationship {}-{}->{}".format(*shape))
-        by_type.setdefault(shape, []).append({"a": r["from_id"], "b": r["to_id"]})
+        by_type.setdefault(shape, []).append(
+            {"a": r["from_id"], "b": r["to_id"], "props": r["props"]}
+        )
     return by_type
 
 
@@ -75,7 +77,8 @@ def push(settings: Settings, graph: GraphStore) -> dict[str, int]:
         for (src, rel, dst), rows in by_type.items():
             driver.execute_query(
                 f"UNWIND $rows AS row MATCH (a:{src} {{id: row.a, dvn_scope: $scope}}) "
-                f"MATCH (b:{dst} {{id: row.b, dvn_scope: $scope}}) MERGE (a)-[:{rel}]->(b)",
+                f"MATCH (b:{dst} {{id: row.b, dvn_scope: $scope}}) MERGE (a)-[r:{rel}]->(b) "
+                "SET r += row.props",
                 rows=rows, scope=SCOPE, database_=db,
             )  # fmt: skip
     return {"nodes": len(nodes), "relationships": len(rels)}

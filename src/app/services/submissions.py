@@ -33,6 +33,7 @@ PROJECT_STATES = {
     "rejected": "Rejected",
     "approved": "Approved (activating…)",
     "published": "Active",
+    "completed": "Completed",
     "withdrawn": "Withdrawn",
 }
 REVIEW_ACTIONS = ("changes_requested", "rejected", "approved")

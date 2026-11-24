@@ -14,6 +14,14 @@ Graph model (no passwords, emails, sessions or review notes; volunteers are opaq
     (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation) only while opted in AND vetted (active)
     (:Volunteer)-[:ON_TEAM]->(:Project)              on the team: accepted, not suspended
     (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
+                                                     HAS_SKILL.level: 1-4, as they see it
+    (:Volunteer)-[:HAD_ENGAGEMENT]->(:Engagement)-[:ON_PROJECT]->(:Project)
+                                                     one spell on a team: role, outcome (none
+                                                     while it lasts), readiness 1-4 once rated
+    (:Engagement)-[:DEMONSTRATED {level}]->(:Skill)  what the lead side saw them do
+    (:Volunteer)-[:SHARES_HISTORY_WITH]->(:Organisation)
+                                                     consent: this organisation may read a
+                                                     summary of engagements elsewhere
     (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
     (:Organisation)-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
     (:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
@@ -47,6 +55,7 @@ LABELS = (
     "SkillArea",
     "Volunteer",
     "OnboardingStep",
+    "Engagement",
 )
 VOLUNTEER_RELS = {
     "VOLUNTEERS_WITH": "Organisation",
@@ -55,6 +64,7 @@ VOLUNTEER_RELS = {
     "EXCLUDES_SKILL": "Skill",
     "PREFERS_CAUSE": "Cause",
     "EXCLUDES_CAUSE": "Cause",
+    "SHARES_HISTORY_WITH": "Organisation",
 }
 PROJECT_RELS = {
     "SERVES_CAUSE": "Cause",
@@ -70,6 +80,9 @@ RELATIONSHIPS: dict[str, tuple[str, str]] = {
     "BROADER": ("SkillArea", "SkillArea"),
     "RELATED_TO": ("Skill", "Skill"),
     "ON_TEAM": ("Volunteer", "Project"),
+    "HAD_ENGAGEMENT": ("Volunteer", "Engagement"),
+    "ON_PROJECT": ("Engagement", "Project"),
+    "DEMONSTRATED": ("Engagement", "Skill"),
     "HAS_ONBOARDING_STEP": ("Organisation", "OnboardingStep"),
     "HAS_TEAM_STEP": ("Project", "OnboardingStep"),
     "NEXT_STEP": ("OnboardingStep", "OnboardingStep"),
@@ -97,7 +110,22 @@ INDEXES = {
         "FOR (s:Skill) ON EACH [s.name, s.alt_labels]"
     ),
 }
-SCHEMA = (*CONSTRAINTS.values(), *INDEXES.values())
+# The one scale, 1 to 4, is compared by number in queries, so it must be a number.
+TYPE_CONSTRAINTS = {
+    "has_skill_level": (
+        "CREATE CONSTRAINT has_skill_level IF NOT EXISTS "
+        "FOR ()-[r:HAS_SKILL]-() REQUIRE r.level IS :: INTEGER"
+    ),
+    "demonstrated_level": (
+        "CREATE CONSTRAINT demonstrated_level IF NOT EXISTS "
+        "FOR ()-[r:DEMONSTRATED]-() REQUIRE r.level IS :: INTEGER"
+    ),
+    "engagement_readiness": (
+        "CREATE CONSTRAINT engagement_readiness IF NOT EXISTS "
+        "FOR (e:Engagement) REQUIRE e.readiness IS :: INTEGER"
+    ),
+}
+SCHEMA = (*CONSTRAINTS.values(), *TYPE_CONSTRAINTS.values(), *INDEXES.values())
 
 SHOW_CONSTRAINTS = """
 SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, properties
@@ -199,12 +227,63 @@ VOLUNTEER_EDGE_MERGE = {
     rel: _edge_merge("Volunteer", rel, label) for rel, label in VOLUNTEER_RELS.items()
 }
 
+# The level a volunteer gives a skill they have. Set after the HAS_SKILL edges are merged; a row
+# with a null level clears it.
+VOLUNTEER_SKILL_LEVELS = """
+MATCH (v:Volunteer {id: $id})
+UNWIND $rows AS row
+MATCH (v)-[h:HAS_SKILL]->(:Skill {id: row.skill})
+SET h.level = row.level
+"""
+
 # ------------------------------------------------------------------ project reconcile
+# `status` is 'published' while the project is live and 'completed' once its lead side has marked
+# it done. A completed project stays in the graph as history: every matching read filters on
+# 'published', so it matches nobody. A withdrawn one is removed.
 PROJECT_UPSERT = """
 MATCH (o:Organisation {id: $org})
 MERGE (p:Project {id: $id})
-SET p.title = $title, p.summary = $summary, p.revision = $revision, p.status = 'published'
+SET p.title = $title, p.summary = $summary, p.revision = $revision, p.status = $status
 MERGE (o)-[:OWNS_PROJECT]->(p)
+"""
+
+# The project's engagements (app.services.engagements): who was on its team, in which role, how
+# it ended and, once rated, how it went. Reconciled with the project: gone ones are removed, the
+# rest upserted, and the skills the lead side saw are cleared and merged again.
+PROJECT_ENGAGEMENTS_PRUNE = """
+MATCH (e:Engagement)-[:ON_PROJECT]->(:Project {id: $id})
+WHERE NOT e.id IN $ids
+DETACH DELETE e
+"""
+
+PROJECT_ENGAGEMENTS_UPSERT = """
+MATCH (p:Project {id: $id})
+UNWIND $rows AS row
+MATCH (v:Volunteer {id: row.volunteer})
+MERGE (e:Engagement {id: row.id})
+SET e.role = row.role, e.outcome = row.outcome, e.readiness = row.readiness
+MERGE (v)-[:HAD_ENGAGEMENT]->(e)
+MERGE (e)-[:ON_PROJECT]->(p)
+"""
+
+PROJECT_DEMONSTRATED_CLEAR = """
+MATCH (:Project {id: $id})<-[:ON_PROJECT]-(:Engagement)-[r:DEMONSTRATED]->(:Skill)
+DELETE r
+"""
+
+PROJECT_DEMONSTRATED_MERGE = """
+UNWIND $rows AS row
+MATCH (e:Engagement {id: row.engagement})
+MATCH (s:Skill {id: row.skill})
+MERGE (e)-[d:DEMONSTRATED]->(s)
+SET d.level = row.level
+"""
+
+# Run before PROJECT_REMOVE: a withdrawn project takes its engagements out of the graph with it.
+# They stay in SQLite.
+PROJECT_ENGAGEMENTS_REMOVE = """
+MATCH (e:Engagement)-[:ON_PROJECT]->(:Project {id: $id})
+DETACH DELETE e
 """
 
 PROJECT_EDGE_PRUNE = {
@@ -515,6 +594,34 @@ ORDER BY preferred DESC, size(projects) DESC, org, skill, cause
 LIMIT $limit
 """
 
+# ------------------------------------------------------------------ participation history
+# Has this volunteer done this kind of work before? For one project: each volunteer of its
+# organisation with engagements on OTHER projects whose cause is in the same theme.
+#
+# What may be read is decided by the shape of the graph. An engagement on the organisation's own
+# project is the organisation's own record. One on another organisation's project is reachable
+# only through (v)-[:SHARES_HISTORY_WITH]->(o), an edge that exists only while the volunteer has
+# switched sharing on for this organisation. Either way only counts and the best rating come
+# back, never which organisation or project.
+CANDIDATE_EXPERIENCE = """
+MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
+      -[:IN_THEME]->(t:CauseTheme)
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
+MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
+MATCH (v)-[:HAD_ENGAGEMENT]->(e:Engagement)-[:ON_PROJECT]->(past:Project)
+      -[:SERVES_CAUSE]->(pc:Cause)-[:IN_THEME]->(t)
+MATCH (po:Organisation)-[:OWNS_PROJECT]->(past)
+WHERE past <> p AND (po = o OR (v)-[:SHARES_HISTORY_WITH]->(o))
+RETURN p.id AS project, v.id AS volunteer, t.name AS theme,
+       count(DISTINCT e) AS engagements,
+       count(DISTINCT CASE WHEN pc = c THEN e END) AS same_cause,
+       count(DISTINCT CASE WHEN po <> o THEN e END) AS elsewhere,
+       count(DISTINCT CASE WHEN e.role = 'lead' THEN e END) AS led,
+       max(e.readiness) AS best_readiness
+ORDER BY project, volunteer
+LIMIT $limit
+"""
+
 # ------------------------------------------------------------------ the skills ontology
 # "Close" means adjacent in the ontology: the two skills are RELATED_TO each other, or sit in the
 # same area. It never makes anyone eligible: it is shown beside the candidates, not among them.
@@ -572,6 +679,7 @@ LIMIT $limit
 # The judges' query: organisation -> approved project -> cause and skills -> eligible volunteer.
 INSPECT = """
 MATCH (o:Organisation)-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
+WHERE p.status = 'published'
 MATCH (p)-[:REQUIRES_SKILL]->(s:Skill)
 OPTIONAL MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
 WHERE (v)-[:HAS_SKILL]->(s) AND (v)-[:OFFERS_SKILL]->(s)
@@ -608,7 +716,7 @@ LIMIT $limit
 ALL_RELATIONSHIPS = """
 MATCH (a)-[r]->(b)
 RETURN labels(a)[0] AS from_label, a.id AS from_id, type(r) AS type,
-       labels(b)[0] AS to_label, b.id AS to_id
+       labels(b)[0] AS to_label, b.id AS to_id, properties(r) AS props
 ORDER BY from_label, from_id, type, to_label, to_id
 LIMIT $limit
 """

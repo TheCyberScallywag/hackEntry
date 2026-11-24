@@ -175,6 +175,42 @@ def lead_reinstate(
     return redirect(f"/o/{org_id}/projects/{project_id}", "reinstated")
 
 
+@router.post("/o/{org_id}/projects/{project_id}/complete")
+def complete(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
+    """The lead side marks the project as done; its team's time on it becomes history."""
+    services.engagements.complete_project(
+        rt.db, session.user_id, org_id, project_id, expected_version=to_int(form.get("version"))
+    )
+    drain(rt)
+    return redirect(f"/o/{org_id}/history", "completed")
+
+
+@router.get("/o/{org_id}/history")
+def history(org: Org, request: Request, rt: RT, session: User):
+    """Completed projects the user acts for as lead side, with their teams and ratings."""
+    return render(
+        request, "org_history.html", session, org=org,
+        projects=services.engagements.project_history(rt.db, session.user_id, org["id"]),
+        levels=services.engagements.LEVELS,
+    )  # fmt: skip
+
+
+@router.post("/o/{org_id}/history/{engagement_id}/rate")
+def rate(org_id: str, engagement_id: str, rt: RT, session: User, form: UserForm):
+    skills = {
+        key.removeprefix("skill:"): to_int(value)
+        for key, value in form.items()
+        if key.startswith("skill:") and value
+    }
+    services.engagements.rate(
+        rt.db, session.user_id, engagement_id, readiness=to_int(form.get("readiness")),
+        skills=skills, note=str(form.get("note", "")),
+        private_note=str(form.get("private_note", "")),
+    )  # fmt: skip
+    drain(rt)
+    return redirect(f"/o/{org_id}/history", "rated")
+
+
 @router.post("/o/{org_id}/projects/{project_id}/lead")
 def assign_lead(org_id: str, project_id: str, rt: RT, session: User, form: UserForm):
     """A team coordinator or org admin hands the project to a lead."""

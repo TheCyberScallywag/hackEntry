@@ -1,5 +1,5 @@
 {
-  "_comment": "Disposable, fictional demo data. The organisations are illustrative: no endorsement or live partnership is implied, and names are configurable with ORG_NAMES. Every person and project is invented. Demo accounts are seeded only by `python -m app.cli reset --demo`, which refuses to run with APP_ENV=production. Statuses: every person is an active, vetted volunteer unless `status` says otherwise; Nia is still in screening.",
+  "_comment": "Disposable, fictional demo data. The organisations are illustrative: no endorsement or live partnership is implied, and names are configurable with ORG_NAMES. Every person and project is invented. Demo accounts are seeded only by `python -m app.cli reset --demo`, which refuses to run with APP_ENV=production. Statuses: every person is an active, vetted volunteer unless `status` says otherwise; Nia is still in screening. `levels` is how far a person says they can go with a skill, 1 (needs support) to 4 (could lead a project). `history` is finished work: completed projects with who was on the team, in which role, and how the lead side rated them on the same scale. Asha lets DataKind UK see a summary of what she did elsewhere; nobody else shares.",
   "organisations": [
     {
       "key": "datakind-uk",
@@ -34,7 +34,15 @@
       "causes": {
         "homelessness": "prefer",
         "food-security": "prefer"
-      }
+      },
+      "levels": {
+        "data-analysis": 3,
+        "cooking": 3,
+        "active-listening": 2
+      },
+      "shares_history_with": [
+        "datakind-uk"
+      ]
     },
     {
       "key": "bryn",
@@ -50,6 +58,10 @@
       },
       "causes": {
         "environment": "prefer"
+      },
+      "levels": {
+        "carpentry": 4,
+        "van-driving": 3
       }
     },
     {
@@ -64,7 +76,12 @@
         "literacy-tutoring": "offers",
         "bookkeeping": "offers"
       },
-      "causes": {}
+      "causes": {},
+      "levels": {
+        "bookkeeping": 3,
+        "welsh-translation": 4,
+        "literacy-tutoring": 3
+      }
     },
     {
       "key": "dev",
@@ -80,6 +97,10 @@
       "causes": {
         "food-security": "prefer",
         "environment": "exclude"
+      },
+      "levels": {
+        "bookkeeping": 3,
+        "data-analysis": 2
       }
     },
     {
@@ -96,6 +117,10 @@
       },
       "causes": {
         "homelessness": "prefer"
+      },
+      "levels": {
+        "cooking": 4,
+        "van-driving": 2
       }
     },
     {
@@ -112,6 +137,10 @@
       },
       "causes": {
         "education": "prefer"
+      },
+      "levels": {
+        "first-aid": 3,
+        "fundraising": 2
       }
     },
     {
@@ -131,6 +160,10 @@
         "cyber-scallywags": [
           "org_admin"
         ]
+      },
+      "levels": {
+        "data-analysis": 4,
+        "fundraising": 3
       }
     },
     {
@@ -138,7 +171,8 @@
       "display_name": "Rhiannon",
       "email": "rhiannon@datakind.uk",
       "volunteers_with": [
-        "datakind-uk"],
+        "datakind-uk"
+      ],
       "skills": {},
       "causes": {},
       "org_roles": {
@@ -371,6 +405,92 @@
           "title": "Intro call with the project lead",
           "description": "A short call to agree what you will take on. The lead will get in touch to arrange it.",
           "completed_by": "lead"
+        }
+      ]
+    }
+  ],
+  "history": [
+    {
+      "key": "shelter-meal-rota",
+      "org": "cyber-scallywags",
+      "lead": "gwen",
+      "reviewer": "kofi",
+      "title": "Shelter Meal Rota",
+      "summary": "A rota of volunteer cooks and drivers so a fictional night shelter had a hot meal every evening through the winter.",
+      "cause": "homelessness",
+      "required": [
+        "cooking",
+        "van-driving"
+      ],
+      "optional": [
+        "fundraising"
+      ],
+      "started": "2026-01-12T09:00:00+00:00",
+      "completed": "2026-03-27T17:00:00+00:00",
+      "team": [
+        {
+          "volunteer": "gwen",
+          "role": "lead",
+          "readiness": 4,
+          "rated_by": "kofi",
+          "skills": {
+            "cooking": 4,
+            "van-driving": 2
+          },
+          "note": "Ran the rota from start to finish and kept everyone informed."
+        },
+        {
+          "volunteer": "asha",
+          "role": "contributor",
+          "readiness": 3,
+          "rated_by": "gwen",
+          "skills": {
+            "cooking": 3
+          },
+          "note": "Reliable in the kitchen and showed two new volunteers the ropes."
+        }
+      ]
+    },
+    {
+      "key": "food-parcel-survey",
+      "org": "datakind-uk",
+      "lead": "cerys",
+      "reviewer": "rhiannon",
+      "title": "Food Parcel Survey",
+      "summary": "Counted and charted a year of parcel requests so a fictional food bank could see when demand peaks.",
+      "cause": "food-security",
+      "required": [
+        "data-analysis"
+      ],
+      "optional": [
+        "bookkeeping"
+      ],
+      "started": "2026-04-06T09:00:00+00:00",
+      "completed": "2026-06-19T17:00:00+00:00",
+      "team": [
+        {
+          "volunteer": "cerys",
+          "role": "lead",
+          "readiness": 4,
+          "rated_by": "rhiannon",
+          "skills": {
+            "bookkeeping": 3
+          },
+          "note": "Scoped the survey well and delivered it on time."
+        },
+        {
+          "volunteer": "asha",
+          "role": "contributor",
+          "readiness": 3,
+          "rated_by": "cerys",
+          "skills": {
+            "data-analysis": 3
+          },
+          "note": "Did the analysis independently and explained it clearly to the food bank."
+        },
+        {
+          "volunteer": "dev",
+          "role": "contributor"
         }
       ]
     }

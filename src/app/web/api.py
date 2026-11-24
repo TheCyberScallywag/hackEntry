@@ -145,10 +145,60 @@ def put_profile(body: m.ProfileIn, request: Request, session: Api) -> m.Profile:
     services.update_profile(
         rt.db, session.user_id,
         display_name=body.display_name, skills=body.skills, causes=body.causes,
-        expected_version=body.version,
+        expected_version=body.version, levels=body.levels,
     )  # fmt: skip
     drain(rt)
     return _profile(rt, session.user_id)
+
+
+@router.get("/me/history", tags=["me"])
+def my_history(request: Request, session: Api) -> m.History:
+    """What I have done: every spell on a team, each rating about me and who gave it, and which
+    of my organisations may see a summary of my work elsewhere."""
+    history = services.engagements.my_history(_rt(request).db, session.user_id)
+    return history | {"levels": {str(k): v for k, v in history["levels"].items()}}
+
+
+@router.put("/orgs/{org_id}/history-sharing", tags=["me"])
+def share_history(org_id: str, body: m.SharingIn, request: Request, session: Api) -> m.SharingOut:
+    """Let one of my organisations see a summary of what I did with others, or stop."""
+    rt = _rt(request)
+    services.engagements.set_share_history(rt.db, session.user_id, org_id, share=body.share)
+    drain(rt)
+    return {"share_history": body.share}
+
+
+@router.post("/orgs/{org_id}/projects/{sid}/complete", tags=["projects"])
+def complete_project(
+    org_id: str, sid: str, body: m.VersionIn, request: Request, session: Api
+) -> m.SubmissionStateOut:
+    """The lead side marks an active project as done. It stays as history."""
+    rt = _rt(request)
+    services.engagements.complete_project(
+        rt.db, session.user_id, org_id, sid, expected_version=body.version
+    )
+    drain(rt)
+    return {"state": "completed"}
+
+
+@router.get("/orgs/{org_id}/history", tags=["projects"])
+def org_history(org_id: str, request: Request, session: Api) -> list[m.CompletedProject]:
+    """Completed projects I act for as lead side, with their teams and ratings."""
+    return services.engagements.project_history(_rt(request).db, session.user_id, org_id)
+
+
+@router.post("/engagements/{engagement_id}/rating", tags=["projects"])
+def rate_engagement(
+    engagement_id: str, body: m.RatingIn, request: Request, session: Api
+) -> m.RatedOut:
+    """The lead side says how a volunteer's time on a project went. The volunteer sees it."""
+    rt = _rt(request)
+    services.engagements.rate(
+        rt.db, session.user_id, engagement_id, readiness=body.readiness, skills=body.skills,
+        note=body.note, private_note=body.private_note,
+    )  # fmt: skip
+    drain(rt)
+    return {"readiness": body.readiness}
 
 
 @router.post("/me/vetting", tags=["me"])
@@ -293,6 +343,7 @@ def org_coverage(org_id: str, request: Request, session: Api) -> m.Coverage:
                                 "preferred_cause": c["preferred"],
                                 "status": c["status"],
                                 "status_label": c["status_label"],
+                                "experience": c["experience"],
                             }  # fmt: skip
                             for c in row["candidates"]
                         ],

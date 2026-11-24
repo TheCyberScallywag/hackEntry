@@ -28,6 +28,7 @@
       {{ item("/o/" ~ active.id ~ "/review", "Review queue") }}
       {{ item("/o/" ~ active.id ~ "/coverage", "Coverage") }}
       {% endif %}
+      {% if active.team_coordinator %}{{ item("/o/" ~ active.id ~ "/history", "Completed projects") }}{% endif %}
       {% if active.org_admin %}{{ item("/o/" ~ active.id ~ "/volunteers", "Volunteers") }}{% endif %}
       {% if orgs|length > 1 %}
       <p class="menu-head">Switch to</p>

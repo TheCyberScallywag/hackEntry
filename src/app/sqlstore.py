@@ -73,6 +73,9 @@ CREATE TABLE IF NOT EXISTS memberships (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     org_id     TEXT NOT NULL REFERENCES organisations(id),
     opted_in   INTEGER NOT NULL CHECK (opted_in IN (0, 1)),
+    -- The volunteer lets this organisation see a summary of what they did with others
+    -- (app.services.engagements). Off unless they switch it on; never set by anyone else.
+    share_history INTEGER NOT NULL DEFAULT 0 CHECK (share_history IN (0, 1)),
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, org_id)
 );
@@ -122,7 +125,11 @@ CREATE TABLE IF NOT EXISTS profile_skills (
     has      INTEGER NOT NULL CHECK (has IN (0, 1)),
     offers   INTEGER NOT NULL CHECK (offers IN (0, 1)),
     excluded INTEGER NOT NULL CHECK (excluded IN (0, 1)),
+    -- How far the volunteer says they can go with the skill, 1 (needs support) to 4 (could
+    -- lead a project): app.services.engagements.LEVELS. Their own view; NULL: not said.
+    level    INTEGER CHECK (level BETWEEN 1 AND 4),
     CHECK (NOT (excluded AND offers)),
+    CHECK (level IS NULL OR has = 1),
     PRIMARY KEY (user_id, skill_id)
 );
 
@@ -141,7 +148,7 @@ CREATE TABLE IF NOT EXISTS submissions (
     -- 'draft' is private to the author and edited in place until they submit it for review.
     state             TEXT NOT NULL CHECK (state IN (
                           'draft', 'submitted', 'changes_requested', 'rejected',
-                          'approved', 'published', 'withdrawn')),
+                          'approved', 'published', 'completed', 'withdrawn')),
     current_revision  INTEGER NOT NULL,
     version           INTEGER NOT NULL DEFAULT 1,   -- bumped on every transition
     approved_revision INTEGER,
@@ -150,6 +157,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     published_at      TEXT,
     withdrawn_by      TEXT REFERENCES users(id),
     withdrawn_at      TEXT,
+    completed_by      TEXT REFERENCES users(id),        -- the lead side marked the work done
+    completed_at      TEXT,
     created_at        TEXT NOT NULL,
     updated_at        TEXT NOT NULL
 );
@@ -207,7 +216,7 @@ CREATE TABLE IF NOT EXISTS placements (
     volunteer_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     state             TEXT NOT NULL CHECK (state IN (
                           'eligible', 'onboarding', 'team', 'suspended', 'declined', 'lapsed',
-                          'removed', 'left')),
+                          'removed', 'left', 'completed')),
     volunteer_said    TEXT CHECK (volunteer_said IN ('yes', 'no')),
     volunteer_said_at TEXT,
     lead_said         TEXT CHECK (lead_said IN ('yes', 'no')),
@@ -225,6 +234,42 @@ CREATE TABLE IF NOT EXISTS placements (
     PRIMARY KEY (project_id, volunteer_id)
 );
 CREATE INDEX IF NOT EXISTS placements_volunteer ON placements(volunteer_id, state);
+
+-- One spell on a project's team: what a volunteer did, as history. Opened when their placement
+-- reaches the team and closed when it ends or the project is completed
+-- (app.services.engagements.sync), so a volunteer who rejoins has two. The lead side may rate an
+-- engagement that has ended: `readiness` and each skill's `level` use one scale, 1 (needs
+-- support) to 4 (could lead a project). The volunteer sees the rating, who gave it and the note
+-- written for them. `private_note` stays here and is never projected to the graph.
+CREATE TABLE IF NOT EXISTS engagements (
+    id                 TEXT PRIMARY KEY,
+    project_id         TEXT NOT NULL REFERENCES submissions(id),
+    volunteer_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role               TEXT NOT NULL CHECK (role IN ('contributor', 'lead')),
+    started_at         TEXT NOT NULL,
+    ended_at           TEXT,
+    outcome            TEXT CHECK (outcome IN ('completed', 'left', 'removed', 'withdrawn')),
+    readiness          INTEGER CHECK (readiness BETWEEN 1 AND 4),
+    rated_by           TEXT REFERENCES users(id) ON DELETE SET NULL,
+    rated_at           TEXT,
+    note_for_volunteer TEXT NOT NULL DEFAULT '',
+    private_note       TEXT NOT NULL DEFAULT '',
+    CHECK ((ended_at IS NULL) = (outcome IS NULL)),
+    CHECK (readiness IS NULL OR ended_at IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS engagements_project ON engagements(project_id);
+CREATE INDEX IF NOT EXISTS engagements_volunteer ON engagements(volunteer_id);
+-- At most one open engagement per volunteer and project.
+CREATE UNIQUE INDEX IF NOT EXISTS engagements_open ON engagements(project_id, volunteer_id)
+    WHERE ended_at IS NULL;
+
+-- The skills the lead side saw the volunteer use in an engagement, and how far they went.
+CREATE TABLE IF NOT EXISTS engagement_skills (
+    engagement_id TEXT NOT NULL REFERENCES engagements(id) ON DELETE CASCADE,
+    skill_id      TEXT NOT NULL REFERENCES skills(id),
+    level         INTEGER NOT NULL CHECK (level BETWEEN 1 AND 4),
+    PRIMARY KEY (engagement_id, skill_id)
+);
 
 -- Every change to a placement: who did it (NULL: the system), what, and any reason given.
 CREATE TABLE IF NOT EXISTS placement_events (
@@ -439,7 +484,7 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class SchemaOutdated(RuntimeError):

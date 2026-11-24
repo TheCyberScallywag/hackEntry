@@ -14,6 +14,7 @@ SKILL_STATES = {
     "offers": "Have and offer",
     "exclude": "Exclude from matching",
 }
+HAVE = ("has", "offers")  # the states in which a level means something
 CAUSE_STANCES = {"neutral": "No preference", "prefer": "Prefer", "exclude": "Exclude"}
 
 
@@ -33,6 +34,9 @@ class Profile:
     version: int
     skills: dict[str, str] = field(default_factory=dict)  # skill_id -> SKILL_STATES
     causes: dict[str, str] = field(default_factory=dict)  # cause_id -> CAUSE_STANCES
+    # skill_id -> 1..4 (app.services.engagements.LEVELS): how far they say they can go with a
+    # skill they have. Only skills with a level appear.
+    levels: dict[str, int] = field(default_factory=dict)
 
 
 def get_profile(db: Database, user_id: str) -> Profile:
@@ -44,10 +48,12 @@ def get_profile(db: Database, user_id: str) -> Profile:
             raise NotFound("user")
         profile = Profile(user["display_name"], user["profile_version"])
         for r in conn.execute(
-            "SELECT skill_id, has, offers, excluded FROM profile_skills WHERE user_id = ?",
+            "SELECT skill_id, has, offers, excluded, level FROM profile_skills WHERE user_id = ?",
             (user_id,),
         ):
             profile.skills[r["skill_id"]] = skill_state(r["has"], r["offers"], r["excluded"])
+            if r["level"]:
+                profile.levels[r["skill_id"]] = r["level"]
         for r in conn.execute(
             "SELECT cause_id, stance FROM profile_causes WHERE user_id = ?", (user_id,)
         ):
@@ -63,7 +69,10 @@ def update_profile(
     skills: dict[str, str],
     causes: dict[str, str],
     expected_version: int,
+    levels: dict[str, int] | None = None,
 ) -> None:
+    """`levels` None leaves the levels as they are (a client that does not know about them
+    changes nothing); a level is kept only for a skill the volunteer has."""
     catalogue = get_catalogue()
     display_name = display_name.strip()
     if not 1 <= len(display_name) <= 60:
@@ -72,7 +81,20 @@ def update_profile(
         raise Invalid("Unknown skill or skill state.")
     if set(causes) - catalogue.cause_ids or set(causes.values()) - set(CAUSE_STANCES):
         raise Invalid("Unknown cause or cause preference.")
+    if levels is not None and (
+        set(levels) - catalogue.skill_ids or any(v not in (1, 2, 3, 4) for v in levels.values())
+    ):
+        raise Invalid("Unknown skill, or a level that is not between 1 and 4.")
     with db.tx() as conn:
+        if levels is None:
+            levels = {
+                r["skill_id"]: r["level"]
+                for r in conn.execute(
+                    "SELECT skill_id, level FROM profile_skills WHERE user_id = ? "
+                    "AND level IS NOT NULL",
+                    (user_id,),
+                )
+            }
         updated = conn.execute(
             "UPDATE users SET display_name = ?, profile_version = profile_version + 1 "
             "WHERE id = ? AND profile_version = ?",
@@ -82,10 +104,10 @@ def update_profile(
             raise Conflict("Your profile changed in another tab. Reload and try again.")
         conn.execute("DELETE FROM profile_skills WHERE user_id = ?", (user_id,))
         conn.executemany(
-            "INSERT INTO profile_skills (user_id, skill_id, has, offers, excluded) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO profile_skills (user_id, skill_id, has, offers, excluded, level) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             [
-                (user_id, sid, *skill_flags(st))
+                (user_id, sid, *skill_flags(st), levels.get(sid) if st in HAVE else None)
                 for sid, st in sorted(skills.items())
                 if st != "none"
             ],

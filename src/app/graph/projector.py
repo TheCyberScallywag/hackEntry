@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from app.graph import cypher
 from app.graph.store import GraphError, GraphStore, Tx
 from app.notify import notify
-from app.services import teams
+from app.services import engagements, teams
 from app.sqlstore import Database, now, prune
 
 log = logging.getLogger(__name__)
@@ -275,8 +275,18 @@ class Projector:
                     (user_id,),
                 )
             ] if user["status"] == "active" else []  # fmt: skip
+            # Consent as an edge: only organisations the volunteer is with, and chose.
+            sharing = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT org_id FROM memberships WHERE user_id = ? AND opted_in = 1 "
+                    "AND share_history = 1",
+                    (user_id,),
+                )
+            ] if user["status"] == "active" else []  # fmt: skip
             skills = conn.execute(
-                "SELECT skill_id, has, offers, excluded FROM profile_skills WHERE user_id = ?",
+                "SELECT skill_id, has, offers, excluded, level FROM profile_skills "
+                "WHERE user_id = ?",
                 (user_id,),
             ).fetchall()
             causes = conn.execute(
@@ -289,17 +299,25 @@ class Projector:
             "EXCLUDES_SKILL": [s["skill_id"] for s in skills if s["excluded"]],
             "PREFERS_CAUSE": [c["cause_id"] for c in causes if c["stance"] == "prefer"],
             "EXCLUDES_CAUSE": [c["cause_id"] for c in causes if c["stance"] == "exclude"],
+            "SHARES_HISTORY_WITH": sharing,
         }
+        levels = [
+            {"skill": s["skill_id"], "level": s["level"]}
+            for s in skills
+            if s["has"] and not s["excluded"]
+        ]
         with self.graph.write() as tx:
             tx.run(cypher.VOLUNTEER_UPSERT, {"id": user_id})
             for rel in cypher.VOLUNTEER_RELS:
                 params = {"id": user_id, "targets": sorted(targets[rel])}
                 tx.run(cypher.VOLUNTEER_EDGE_PRUNE[rel], params)
                 tx.run(cypher.VOLUNTEER_EDGE_MERGE[rel], params)
+            tx.run(cypher.VOLUNTEER_SKILL_LEVELS, {"id": user_id, "rows": levels})
 
     def _project_project(self, submission_id: str) -> None:
         with self.db.tx() as conn:
             teams.ensure_lead_on_team(conn, submission_id)  # the lead needs no second yes
+            engagements.sync(conn, submission_id)  # history follows the team
         with self.db.read() as conn:
             sub = conn.execute(
                 "SELECT id, org_id, state, approved_revision FROM submissions WHERE id = ?",
@@ -308,7 +326,8 @@ class Projector:
             if sub is None:
                 raise ValueError(f"submission {submission_id} not found")
             live = sub["state"] in ("approved", "published") and sub["approved_revision"]
-            if live:
+            kept = live or sub["state"] == "completed"  # a completed project stays, as history
+            if kept:
                 rev = conn.execute(
                     "SELECT title, summary, cause_id FROM submission_revisions "
                     "WHERE submission_id = ? AND revision = ?",
@@ -328,11 +347,31 @@ class Projector:
                     )
                 ]
                 flow = self._workflow(conn, sub["org_id"], submission_id)
-        if not live:
+                history = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT id, volunteer_id AS volunteer, role, outcome, readiness "
+                        "FROM engagements WHERE project_id = ? ORDER BY id",
+                        (submission_id,),
+                    )
+                ]
+                shown = [
+                    dict(r)
+                    for r in conn.execute(
+                        "SELECT k.engagement_id AS engagement, k.skill_id AS skill, k.level "
+                        "FROM engagement_skills k JOIN engagements e ON e.id = k.engagement_id "
+                        "WHERE e.project_id = ? ORDER BY k.engagement_id, k.skill_id",
+                        (submission_id,),
+                    )
+                ]
+        if not kept:
             with self.graph.write() as tx:
                 tx.run(cypher.PROJECT_STEPS_REMOVE, {"id": submission_id})
+                tx.run(cypher.PROJECT_ENGAGEMENTS_REMOVE, {"id": submission_id})
                 tx.run(cypher.PROJECT_REMOVE, {"id": submission_id})
             return
+        if not live:  # completed: nobody is on its team or in its onboarding any more
+            team, flow = [], {"enabled": False, "steps": [], "ids": [], "edges": {}}
         targets = {
             "SERVES_CAUSE": [rev["cause_id"]],
             "REQUIRES_SKILL": [s["skill_id"] for s in skills if s["required"]],
@@ -350,6 +389,10 @@ class Projector:
             for statement in cypher.PROJECT_STEP_EDGES_CLEAR.values():
                 tx.run(statement, key)
             self._merge_workflow_edges(tx, flow)
+            tx.run(cypher.PROJECT_ENGAGEMENTS_PRUNE, key | {"ids": [e["id"] for e in history]})
+            tx.run(cypher.PROJECT_ENGAGEMENTS_UPSERT, key | {"rows": history})
+            tx.run(cypher.PROJECT_DEMONSTRATED_CLEAR, key)
+            tx.run(cypher.PROJECT_DEMONSTRATED_MERGE, {"rows": shown})
         if sub["state"] == "approved":
             stamp = now()
             with self.db.tx() as conn:
@@ -439,6 +482,7 @@ class Projector:
                 "title": rev["title"],
                 "summary": rev["summary"],
                 "revision": sub["approved_revision"],
+                "status": "completed" if sub["state"] == "completed" else "published",
             },
         )
         for rel, ids in targets.items():
