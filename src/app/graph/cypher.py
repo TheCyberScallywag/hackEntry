@@ -3,19 +3,33 @@ is a bound parameter. Verified against Relate 1.0.1 (tests/test_projection.py an
 tests/test_matching.py) and written in the Neo4j 5 dialect so the same text runs on AuraDB for
 the parity check.
 
-Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs):
+Graph model (no passwords, emails, sessions or review notes; volunteers are opaque IDs)::
 
     (:Organisation)-[:OWNS_PROJECT]->(:Project)-[:SERVES_CAUSE]->(:Cause)
+    (:Cause)-[:IN_THEME]->(:CauseTheme)              causes that are alike share a theme
+    (:Skill)-[:IN_AREA]->(:SkillArea)-[:BROADER]->(:SkillArea)   two levels of skill area
+    (:Skill)-[:RELATED_TO]->(:Skill)                 adjacent skills; stored once, read both ways
     (:Project)-[:REQUIRES_SKILL]->(:Skill)          required skill
     (:Project)-[:BENEFITS_FROM_SKILL]->(:Skill)     optional skill
     (:Volunteer)-[:VOLUNTEERS_WITH]->(:Organisation) only while opted in AND vetted (active)
     (:Volunteer)-[:ON_TEAM]->(:Project)              on the team: accepted, not suspended
     (:Volunteer)-[:HAS_SKILL|OFFERS_SKILL|EXCLUDES_SKILL]->(:Skill)
+                                                     HAS_SKILL.level: 1-4, as they see it
+    (:Volunteer)-[:HAD_ENGAGEMENT]->(:Engagement)-[:ON_PROJECT]->(:Project)
+                                                     one spell on a team: role, outcome (none
+                                                     while it lasts), readiness 1-4 once rated
+    (:Engagement)-[:DEMONSTRATED {level}]->(:Skill)  what the lead side saw them do
+    (:Volunteer)-[:WANTS_TO_LEARN]->(:Skill)         a wish, never a reason to be matched
+    (:Volunteer)-[:SHARES_HISTORY_WITH]->(:Organisation)
+                                                     consent: this organisation may read a
+                                                     summary of engagements elsewhere
     (:Volunteer)-[:PREFERS_CAUSE|EXCLUDES_CAUSE]->(:Cause)
     (:Organisation)-[:HAS_ONBOARDING_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
     (:Project)-[:HAS_TEAM_STEP]->(:OnboardingStep)-[:NEXT_STEP]->(:OnboardingStep)
     (:Volunteer)-[:AT_STEP]->(:OnboardingStep)        the step they have reached
     (:Volunteer)-[:COMPLETED_STEP]->(:OnboardingStep)
+
+Every label has a uniqueness constraint on `id` (CONSTRAINTS below), applied by the projector.
 
 An organisation's onboarding workflow is in the graph as it stands (`onboarding_enabled` on the
 organisation says whether it is switched on), without its email templates: the assistants read
@@ -33,7 +47,17 @@ from typing import Any
 # ------------------------------------------------------------------ schema
 # The one definition of the graph's shape: relationship type -> (source label, target label).
 # The reconcile statements below, the projector and the AuraDB push are all derived from it.
-LABELS = ("Organisation", "Project", "Cause", "Skill", "Volunteer", "OnboardingStep")
+LABELS = (
+    "Organisation",
+    "Project",
+    "Cause",
+    "CauseTheme",
+    "Skill",
+    "SkillArea",
+    "Volunteer",
+    "OnboardingStep",
+    "Engagement",
+)
 VOLUNTEER_RELS = {
     "VOLUNTEERS_WITH": "Organisation",
     "HAS_SKILL": "Skill",
@@ -41,6 +65,8 @@ VOLUNTEER_RELS = {
     "EXCLUDES_SKILL": "Skill",
     "PREFERS_CAUSE": "Cause",
     "EXCLUDES_CAUSE": "Cause",
+    "SHARES_HISTORY_WITH": "Organisation",
+    "WANTS_TO_LEARN": "Skill",
 }
 PROJECT_RELS = {
     "SERVES_CAUSE": "Cause",
@@ -51,13 +77,72 @@ RELATIONSHIPS: dict[str, tuple[str, str]] = {
     **{rel: ("Volunteer", label) for rel, label in VOLUNTEER_RELS.items()},
     **{rel: ("Project", label) for rel, label in PROJECT_RELS.items()},
     "OWNS_PROJECT": ("Organisation", "Project"),
+    "IN_THEME": ("Cause", "CauseTheme"),
+    "IN_AREA": ("Skill", "SkillArea"),
+    "BROADER": ("SkillArea", "SkillArea"),
+    "RELATED_TO": ("Skill", "Skill"),
     "ON_TEAM": ("Volunteer", "Project"),
+    "HAD_ENGAGEMENT": ("Volunteer", "Engagement"),
+    "ON_PROJECT": ("Engagement", "Project"),
+    "DEMONSTRATED": ("Engagement", "Skill"),
     "HAS_ONBOARDING_STEP": ("Organisation", "OnboardingStep"),
     "HAS_TEAM_STEP": ("Project", "OnboardingStep"),
     "NEXT_STEP": ("OnboardingStep", "OnboardingStep"),
     "AT_STEP": ("Volunteer", "OnboardingStep"),
     "COMPLETED_STEP": ("Volunteer", "OnboardingStep"),
 }
+
+
+# Declared schema: every node is found by its `id`, so each label has a uniqueness constraint (and
+# with it an index). A duplicate would be counted twice by every match, silently; with the
+# constraint the write is refused instead. `Project.status` is filtered on by every read.
+# Each statement is idempotent; the projector applies them before it first writes
+# (Projector.ensure_schema), so a store made before they existed gains them on the next start.
+CONSTRAINTS = {
+    f"{label.lower()}_id": (
+        f"CREATE CONSTRAINT {label.lower()}_id IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE"
+    )
+    for label in LABELS
+}
+INDEXES = {
+    "project_status": "CREATE INDEX project_status IF NOT EXISTS FOR (p:Project) ON (p.status)",
+    # A skill is found by its name or any of its other names (FIND_SKILLS).
+    "skill_text": (
+        "CREATE FULLTEXT INDEX skill_text IF NOT EXISTS "
+        "FOR (s:Skill) ON EACH [s.name, s.alt_labels]"
+    ),
+}
+# The one scale, 1 to 4, is compared by number in queries, so it must be a number.
+TYPE_CONSTRAINTS = {
+    "has_skill_level": (
+        "CREATE CONSTRAINT has_skill_level IF NOT EXISTS "
+        "FOR ()-[r:HAS_SKILL]-() REQUIRE r.level IS :: INTEGER"
+    ),
+    "demonstrated_level": (
+        "CREATE CONSTRAINT demonstrated_level IF NOT EXISTS "
+        "FOR ()-[r:DEMONSTRATED]-() REQUIRE r.level IS :: INTEGER"
+    ),
+    "engagement_readiness": (
+        "CREATE CONSTRAINT engagement_readiness IF NOT EXISTS "
+        "FOR (e:Engagement) REQUIRE e.readiness IS :: INTEGER"
+    ),
+}
+SCHEMA = (*CONSTRAINTS.values(), *TYPE_CONSTRAINTS.values(), *INDEXES.values())
+
+SHOW_CONSTRAINTS = """
+SHOW CONSTRAINTS YIELD name, type, labelsOrTypes, properties
+RETURN name, type, labelsOrTypes AS labels, properties
+ORDER BY name
+LIMIT $limit
+"""
+
+SHOW_INDEXES = """
+SHOW INDEXES YIELD name, type, state, labelsOrTypes, properties
+WHERE type <> 'LOOKUP'
+RETURN name, type, state, labelsOrTypes AS labels, properties
+ORDER BY name
+LIMIT $limit
+"""
 
 
 def _edge_prune(source: str, rel: str, target: str) -> str:
@@ -78,17 +163,54 @@ MERGE (n)-[:{rel}]->(t)
 
 
 # ------------------------------------------------------------------ catalogue + organisations
+# The catalogue is reconciled as a whole (Projector._project_catalogue): nodes are upserted, areas
+# and themes that are gone are removed, and the ontology's own edges are cleared and merged
+# again, so a replay changes nothing. Causes and skills are never removed: profiles and
+# projects point at them.
+UPSERT_CAUSE_THEMES = """
+UNWIND $rows AS row
+MERGE (t:CauseTheme {id: row.id})
+SET t.name = row.name
+"""
+
 UPSERT_CAUSES = """
 UNWIND $rows AS row
 MERGE (c:Cause {id: row.id})
 SET c.name = row.name
 """
 
+UPSERT_SKILL_AREAS = """
+UNWIND $rows AS row
+MERGE (a:SkillArea {id: row.id})
+SET a.name = row.name
+"""
+
 UPSERT_SKILLS = """
 UNWIND $rows AS row
 MERGE (s:Skill {id: row.id})
-SET s.name = row.name, s.category = row.category
+SET s.name = row.name, s.category = row.category, s.kind = row.kind,
+    s.alt_labels = row.alt_labels
 """
+
+CATALOGUE_PRUNE = {
+    "CauseTheme": "MATCH (n:CauseTheme) WHERE NOT n.id IN $ids DETACH DELETE n",
+    "SkillArea": "MATCH (n:SkillArea) WHERE NOT n.id IN $ids DETACH DELETE n",
+}
+
+CATALOGUE_RELS = ("IN_THEME", "IN_AREA", "BROADER", "RELATED_TO")
+CATALOGUE_EDGES_CLEAR = {
+    rel: f"MATCH (:{RELATIONSHIPS[rel][0]})-[r:{rel}]->(:{RELATIONSHIPS[rel][1]}) DELETE r"
+    for rel in CATALOGUE_RELS
+}
+CATALOGUE_EDGES_MERGE = {
+    rel: f"""
+UNWIND $rows AS row
+MATCH (a:{RELATIONSHIPS[rel][0]} {{id: row.a}})
+MATCH (b:{RELATIONSHIPS[rel][1]} {{id: row.b}})
+MERGE (a)-[:{rel}]->(b)
+"""
+    for rel in CATALOGUE_RELS
+}
 
 UPSERT_ORGANISATION = """
 MERGE (o:Organisation {id: $id})
@@ -107,12 +229,63 @@ VOLUNTEER_EDGE_MERGE = {
     rel: _edge_merge("Volunteer", rel, label) for rel, label in VOLUNTEER_RELS.items()
 }
 
+# The level a volunteer gives a skill they have. Set after the HAS_SKILL edges are merged; a row
+# with a null level clears it.
+VOLUNTEER_SKILL_LEVELS = """
+MATCH (v:Volunteer {id: $id})
+UNWIND $rows AS row
+MATCH (v)-[h:HAS_SKILL]->(:Skill {id: row.skill})
+SET h.level = row.level
+"""
+
 # ------------------------------------------------------------------ project reconcile
+# `status` is 'published' while the project is live and 'completed' once its lead side has marked
+# it done. A completed project stays in the graph as history: every matching read filters on
+# 'published', so it matches nobody. A withdrawn one is removed.
 PROJECT_UPSERT = """
 MATCH (o:Organisation {id: $org})
 MERGE (p:Project {id: $id})
-SET p.title = $title, p.summary = $summary, p.revision = $revision, p.status = 'published'
+SET p.title = $title, p.summary = $summary, p.revision = $revision, p.status = $status
 MERGE (o)-[:OWNS_PROJECT]->(p)
+"""
+
+# The project's engagements (app.services.engagements): who was on its team, in which role, how
+# it ended and, once rated, how it went. Reconciled with the project: gone ones are removed, the
+# rest upserted, and the skills the lead side saw are cleared and merged again.
+PROJECT_ENGAGEMENTS_PRUNE = """
+MATCH (e:Engagement)-[:ON_PROJECT]->(:Project {id: $id})
+WHERE NOT e.id IN $ids
+DETACH DELETE e
+"""
+
+PROJECT_ENGAGEMENTS_UPSERT = """
+MATCH (p:Project {id: $id})
+UNWIND $rows AS row
+MATCH (v:Volunteer {id: row.volunteer})
+MERGE (e:Engagement {id: row.id})
+SET e.role = row.role, e.outcome = row.outcome, e.readiness = row.readiness
+MERGE (v)-[:HAD_ENGAGEMENT]->(e)
+MERGE (e)-[:ON_PROJECT]->(p)
+"""
+
+PROJECT_DEMONSTRATED_CLEAR = """
+MATCH (:Project {id: $id})<-[:ON_PROJECT]-(:Engagement)-[r:DEMONSTRATED]->(:Skill)
+DELETE r
+"""
+
+PROJECT_DEMONSTRATED_MERGE = """
+UNWIND $rows AS row
+MATCH (e:Engagement {id: row.engagement})
+MATCH (s:Skill {id: row.skill})
+MERGE (e)-[d:DEMONSTRATED]->(s)
+SET d.level = row.level
+"""
+
+# Run before PROJECT_REMOVE: a withdrawn project takes its engagements out of the graph with it.
+# They stay in SQLite.
+PROJECT_ENGAGEMENTS_REMOVE = """
+MATCH (e:Engagement)-[:ON_PROJECT]->(:Project {id: $id})
+DETACH DELETE e
 """
 
 PROJECT_EDGE_PRUNE = {
@@ -394,6 +567,122 @@ ORDER BY project
 LIMIT $limit
 """
 
+# ------------------------------------------------------------------ across organisations
+# "Where am I needed?" The one read that leaves the volunteer's own organisations: organisations
+# they have NOT joined, with a published project that requires a skill they have and offer, that
+# nobody on that project's team covers yet. Their exclusions apply exactly as in MATCH_CANDIDATES:
+# an excluded cause or an excluded required skill removes the project.
+#
+# It returns organisations, skills and causes, never a person: the only volunteer in the pattern
+# besides the asker is the anonymous team member inside NOT EXISTS. The project IDs are for the
+# caller's freshness check against SQLite and are not shown.
+NEEDED_ELSEWHERE = """
+MATCH (v:Volunteer {id: $volunteer})
+MATCH (o:Organisation)-[:OWNS_PROJECT]->(p:Project)-[:REQUIRES_SKILL]->(s:Skill)
+WHERE p.status = 'published'
+  AND NOT (v)-[:VOLUNTEERS_WITH]->(o)
+  AND (v)-[:HAS_SKILL]->(s) AND (v)-[:OFFERS_SKILL]->(s)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+  AND NOT EXISTS {
+    MATCH (t:Volunteer)-[:ON_TEAM]->(p)
+    WHERE (t)-[:HAS_SKILL]->(s) AND (t)-[:OFFERS_SKILL]->(s)
+  }
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+WHERE NOT (v)-[:EXCLUDES_CAUSE]->(c)
+WITH o, s, c, p, EXISTS { MATCH (v)-[:PREFERS_CAUSE]->(c) } AS preferred
+ORDER BY p.id
+RETURN o.id AS org, s.id AS skill, c.id AS cause, preferred, collect(DISTINCT p.id) AS projects
+ORDER BY preferred DESC, size(projects) DESC, org, skill, cause
+LIMIT $limit
+"""
+
+# ------------------------------------------------------------------ participation history
+# Has this volunteer done this kind of work before? For one project: each volunteer of its
+# organisation with engagements on OTHER projects whose cause is in the same theme.
+#
+# What may be read is decided by the shape of the graph. An engagement on the organisation's own
+# project is the organisation's own record. One on another organisation's project is reachable
+# only through (v)-[:SHARES_HISTORY_WITH]->(o), an edge that exists only while the volunteer has
+# switched sharing on for this organisation. Either way only counts and the best rating come
+# back, never which organisation or project.
+CANDIDATE_EXPERIENCE = """
+MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
+      -[:IN_THEME]->(t:CauseTheme)
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
+MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
+MATCH (v)-[:HAD_ENGAGEMENT]->(e:Engagement)-[:ON_PROJECT]->(past:Project)
+      -[:SERVES_CAUSE]->(pc:Cause)-[:IN_THEME]->(t)
+MATCH (po:Organisation)-[:OWNS_PROJECT]->(past)
+WHERE past <> p AND (po = o OR (v)-[:SHARES_HISTORY_WITH]->(o))
+RETURN p.id AS project, v.id AS volunteer, t.name AS theme,
+       count(DISTINCT e) AS engagements,
+       count(DISTINCT CASE WHEN pc = c THEN e END) AS same_cause,
+       count(DISTINCT CASE WHEN po <> o THEN e END) AS elsewhere,
+       count(DISTINCT CASE WHEN e.role = 'lead' THEN e END) AS led,
+       max(e.readiness) AS best_readiness
+ORDER BY project, volunteer
+LIMIT $limit
+"""
+
+# ------------------------------------------------------------------ the skills ontology
+# "Close" means adjacent in the ontology: the two skills are RELATED_TO each other, or sit in the
+# same area. It never makes anyone eligible: it is shown beside the candidates, not among them.
+#
+# Volunteers of the organisation who do not have a required skill but offer one close to it.
+# The hard rules still apply: no excluded cause, no excluded required skill. Only offered skills
+# count as the way in, because offering is the volunteer's consent to be matched on a skill.
+CLOSE_CANDIDATES = """
+MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:REQUIRES_SKILL]->(s:Skill)
+WHERE p.status = 'published' AND ($project = '' OR p.id = $project)
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
+WHERE NOT (v)-[:HAS_SKILL]->(s)
+  AND NOT (v)-[:EXCLUDES_CAUSE]->(c)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+MATCH (v)-[:OFFERS_SKILL]->(near:Skill)
+WHERE (near)-[:RELATED_TO]-(s)
+   OR EXISTS { MATCH (near)-[:IN_AREA]->(:SkillArea)<-[:IN_AREA]-(s) }
+WITH p, s, v, near ORDER BY near.id
+WITH p, s, v, collect(DISTINCT near.id) AS via,
+     EXISTS { MATCH (v)-[:WANTS_TO_LEARN]->(s) } AS wants_to_learn
+RETURN p.id AS project, s.id AS skill, v.id AS volunteer, via, wants_to_learn
+ORDER BY project, skill, wants_to_learn DESC, volunteer
+LIMIT $limit
+"""
+
+# Where could I learn it? Published projects in the volunteer's own organisations that use a
+# skill they want to learn, with how many people on the team say they can guide others in it
+# (HAS_SKILL.level 3 or 4). A number, never who. It does not make them a candidate.
+LEARNING_OPPORTUNITIES = """
+MATCH (v:Volunteer {id: $volunteer})-[:WANTS_TO_LEARN]->(s:Skill)
+MATCH (v)-[:VOLUNTEERS_WITH]->(o:Organisation)-[:OWNS_PROJECT]->(p:Project)
+WHERE o.id IN $orgs AND p.status = 'published'
+  AND (p)-[:REQUIRES_SKILL|BENEFITS_FROM_SKILL]->(s)
+  AND NOT EXISTS { MATCH (p)-[:REQUIRES_SKILL]->(:Skill)<-[:EXCLUDES_SKILL]-(v) }
+MATCH (p)-[:SERVES_CAUSE]->(c:Cause)
+WHERE NOT (v)-[:EXCLUDES_CAUSE]->(c)
+RETURN o.id AS org, p.id AS project, p.title AS title, s.id AS skill,
+       COUNT {
+         MATCH (m:Volunteer)-[:ON_TEAM]->(p), (m)-[h:HAS_SKILL]->(s)
+         WHERE h.level >= 3 AND m <> v
+       } AS mentors,
+       EXISTS { MATCH (v)-[:ON_TEAM]->(p) } AS on_team
+ORDER BY mentors DESC, title, project, skill
+LIMIT $limit
+"""
+
+# A skill found by words from its name or its other names, with where it sits in the ontology.
+# `$query` is a full-text query; the caller builds it from plain words (app.catalogue.text_query).
+FIND_SKILLS = """
+CALL db.index.fulltext.queryNodes('skill_text', $query) YIELD node, score
+MATCH (node)-[:IN_AREA]->(a:SkillArea)-[:BROADER]->(top:SkillArea)
+RETURN node.id AS skill, node.name AS name, node.kind AS kind, a.name AS area,
+       top.name AS broader_area, score,
+       COLLECT { MATCH (node)-[:RELATED_TO]-(r:Skill) RETURN r.id ORDER BY r.id } AS related
+ORDER BY score DESC, skill
+LIMIT $limit
+"""
+
 # ------------------------------------------------------------------ browse + inspection
 BROWSE_PROJECTS = """
 MATCH (o:Organisation {id: $org})-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
@@ -415,6 +704,7 @@ LIMIT $limit
 # The judges' query: organisation -> approved project -> cause and skills -> eligible volunteer.
 INSPECT = """
 MATCH (o:Organisation)-[:OWNS_PROJECT]->(p:Project)-[:SERVES_CAUSE]->(c:Cause)
+WHERE p.status = 'published'
 MATCH (p)-[:REQUIRES_SKILL]->(s:Skill)
 OPTIONAL MATCH (v:Volunteer)-[:VOLUNTEERS_WITH]->(o)
 WHERE (v)-[:HAS_SKILL]->(s) AND (v)-[:OFFERS_SKILL]->(s)
@@ -441,6 +731,33 @@ ORDER BY type
 LIMIT $limit
 """
 
+# The admin console's picture of the graph: which label is joined to which, and how often.
+GRAPH_MODEL = """
+MATCH (a)-[r]->(b)
+RETURN labels(a)[0] AS source, type(r) AS type, labels(b)[0] AS target,
+       count(r) AS relationships
+ORDER BY source, type, target
+LIMIT $limit
+"""
+
+# The nodes of the chosen labels, and the relationships that run between two of them.
+VIEW_NODES = """
+MATCH (n)
+WHERE labels(n)[0] IN $labels
+RETURN labels(n)[0] AS label, n.id AS id, properties(n) AS props
+ORDER BY label, id
+LIMIT $limit
+"""
+
+VIEW_RELATIONSHIPS = """
+MATCH (a)-[r]->(b)
+WHERE labels(a)[0] IN $labels AND labels(b)[0] IN $labels
+RETURN labels(a)[0] AS from_label, a.id AS from_id, type(r) AS type,
+       labels(b)[0] AS to_label, b.id AS to_id, properties(r) AS props
+ORDER BY from_label, from_id, type, to_label, to_id
+LIMIT $limit
+"""
+
 ALL_NODES = """
 MATCH (n)
 RETURN labels(n)[0] AS label, n.id AS id, properties(n) AS props
@@ -451,7 +768,7 @@ LIMIT $limit
 ALL_RELATIONSHIPS = """
 MATCH (a)-[r]->(b)
 RETURN labels(a)[0] AS from_label, a.id AS from_id, type(r) AS type,
-       labels(b)[0] AS to_label, b.id AS to_id
+       labels(b)[0] AS to_label, b.id AS to_id, properties(r) AS props
 ORDER BY from_label, from_id, type, to_label, to_id
 LIMIT $limit
 """

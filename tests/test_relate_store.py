@@ -76,7 +76,12 @@ def test_bundled_demo_graph_matches_a_fresh_build(tmp_path):
     build_bundle(fresh)
     bundled_copy = tmp_path / "bundled.rl"
     shutil.copyfile(BUNDLED_GRAPH, bundled_copy)  # never open the committed file for writing
-    for statement in (cypher.ALL_NODES, cypher.ALL_RELATIONSHIPS):
+    for statement in (
+        cypher.ALL_NODES,
+        cypher.ALL_RELATIONSHIPS,
+        cypher.SHOW_CONSTRAINTS,
+        cypher.SHOW_INDEXES,
+    ):
         assert GraphStore(bundled_copy).read(statement) == GraphStore(fresh).read(statement)
 
 
@@ -89,7 +94,7 @@ def test_relate_cli_reads_the_bundled_store():
          "MATCH (n) RETURN count(n) AS nodes"],
         capture_output=True, text=True, check=True,
     )  # fmt: skip
-    assert '"nodes":49' in result.stdout.replace(" ", "")
+    assert '"nodes":80' in result.stdout.replace(" ", "")
 
 
 def test_a_limit_parameter_cannot_hide_truncation(tmp_path):

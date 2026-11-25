@@ -3,6 +3,7 @@
 reset --demo          wipe the runtime stores and reseed the disposable demo
 bundle [--out PATH]   rebuild the committed read-only graph (data/demo.rl) from data/fixtures
 inspect [--store P]   the sample graph inspection query (org -> project -> skill -> volunteers)
+schema [--store P]    the graph's declared constraints and indexes
 matches --org KEY     ranked candidates for one organisation, straight from Relate
 status | drain        projection outbox status / project pending items now
 grant-reviewer        give an existing account the reviewer role (operator only)
@@ -111,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     inspect = sub.add_parser("inspect")
     inspect.add_argument("--store", type=Path)
     inspect.add_argument("--json", action="store_true")
+    schema = sub.add_parser("schema")
+    schema.add_argument("--store", type=Path)
     matches = sub.add_parser("matches")
     matches.add_argument("--org", required=True, help="organisation key, e.g. datakind-uk")
     matches.add_argument("--store", type=Path)
@@ -159,6 +162,11 @@ def main(argv: list[str] | None = None) -> int:
                             for v in row["eligible_volunteers"]
                         ] or ["— coverage gap —"]
                 print(json.dumps(rows, indent=2) if args.json else _table(rows))
+            case "schema":
+                with store(args.store).reader() as tx:
+                    constraints = tx.read(cypher.SHOW_CONSTRAINTS)
+                    indexes = tx.read(cypher.SHOW_INDEXES)
+                print(_table(constraints), _table(indexes), sep="\n\n")
             case "matches":
                 org_id = stable_id("org", args.org)  # a seeded organisation's ID
                 if not args.store and settings.sqlite_path.exists():

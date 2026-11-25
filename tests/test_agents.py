@@ -87,6 +87,25 @@ def test_onboarding_saves_a_profile_only_after_the_volunteer_approves(web: Web):
     }  # fmt: skip
 
 
+def test_an_assistant_can_look_a_skill_up_by_the_words_someone_used(web: Web):
+    """`find_skills` asks the graph: full text over each skill's name and other names, with
+    where the skill sits in the ontology. `list_skills` carries the same neighbours."""
+    ffion, _ = signed_up(web)
+    model = use(
+        web,
+        call("find_skills", words="I do Excel dashboards"),
+        call("find_skills", words="juggling ~*"),
+        call("list_skills"),
+        final(**ADVICE, ready_for_vetting=False),
+    )
+    ok(ffion.post("/agents/volunteer-onboarding", {"message": "I do Excel dashboards."}))
+    found, nothing, listed = model.tool_results()[:3]
+    assert "data-analysis" in found and "data-visualisation" in found
+    assert "Digital and data" in found and "dashboards" in found
+    assert "skill_id" not in nothing  # nothing matched, and the odd characters did no harm
+    assert "also_known_as" in listed and "broader_area" in listed and "related" in listed
+
+
 def test_onboarding_changes_nothing_when_the_volunteer_says_no(web: Web):
     ffion, ffion_id = signed_up(web)
     model = use(
@@ -322,6 +341,21 @@ def test_shortlist_can_only_recommend_the_graphs_candidates(web: Web):
     assert "@" not in picture  # display names only
 
 
+def test_shortlist_sees_earlier_work_from_the_graph(web: Web):
+    """The lead's assistant is told who has done this kind of work before: the organisation's
+    own record, and a summary from elsewhere only where the volunteer shares it."""
+    model = use(
+        web,
+        call("project_picture"),
+        final(summary="Nobody to add for now.", recommendations=[],
+              still_uncovered=["Spreadsheet and data analysis", "Bookkeeping"]),
+    )  # fmt: skip
+    ok(as_(web, "cerys").post("/agents/match-shortlist", {"project_id": FOOD_BANK}))
+    picture = model.tool_results()[0]
+    assert "3 earlier projects on poverty and basic needs, 2 with another organisation" in picture
+    assert "Shelter Meal Rota" not in picture and "Cyber Scallywags" not in picture
+
+
 def test_shortlist_names_the_gap_the_model_left_out(web: Web):
     cerys = as_(web, "cerys")
     use(web, final(summary="Nobody to invite yet.", recommendations=[], still_uncovered=[]))
@@ -376,6 +410,27 @@ def test_explainer_explains_exactly_the_graphs_matches(web: Web):
     assert f"Explain every match; these are missing: ['{FOOD_BANK}']" in said[-2]
     assert "p_invented is not a match from my_matches" in said[-1]
     assert run["output"]["matches"][0]["title"] == "Food Bank Demand Dashboard"
+
+
+def test_explainer_can_ask_where_else_the_volunteer_is_needed(web: Web):
+    """The one tool that crosses organisations. The validator holds the answer to what the
+    graph returned: an organisation or a skill it did not name is sent back."""
+    farah = as_(web, "farah")
+    real = {"organisation": "Cyber Scallywags", "skill_needed": "First aid",
+            "why": "They need first aid, which you offer."}  # fmt: skip
+    answer = {"summary": "No matches here yet.", "matches": [], "blocked": [], "next_steps": []}
+    model = use(
+        web,
+        call("my_matches"),
+        call("where_else_am_i_needed"),
+        final(**answer, elsewhere=[real | {"organisation": "InterLinkRCT"}]),
+        final(**answer, elsewhere=[real]),
+    )
+    run = ok(farah.post("/agents/match-explainer", {"org_id": DK}))
+    said = model.tool_results()
+    assert "Cyber Scallywags" in said[1] and "First aid" in said[1] and "u_" not in said[1]
+    assert "InterLinkRCT needing First aid is not something" in said[-1]
+    assert run["output"]["elsewhere"] == [real]
 
 
 def test_explainer_is_for_the_organisations_own_volunteers(web: Web):

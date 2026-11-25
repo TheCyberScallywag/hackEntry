@@ -71,7 +71,7 @@ The split is deliberate:
 
 | File | What it is | Who writes it |
 |---|---|---|
-| `data/demo.rl` | The bundled demo graph: 49 nodes and 97 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
+| `data/demo.rl` | The bundled demo graph: 80 nodes and 176 relationships. Committed, read-only (mode 444). Packaged into the wheel as `app/demo.rl`. | `uv run task bundle` only |
 | `var/graph.rl` (or `/data/graph.rl` in Compose) | The writable store the running application uses. Git-ignored. | The projector |
 
 On a first start with an empty data directory, `runtime.seed_demo` copies `data/demo.rl` to
@@ -93,12 +93,21 @@ The location is set by `DATA_DIR` (default `var`). The row bound for reads is `G
 flowchart LR
   O((Organisation)) -- OWNS_PROJECT --> P((Project))
   P -- SERVES_CAUSE --> C((Cause))
+  C -- IN_THEME --> CT((CauseTheme))
+  S -- IN_AREA --> SA((SkillArea))
+  SA -- BROADER --> SA
+  S -- RELATED_TO --> S
   P -- REQUIRES_SKILL --> S((Skill))
   P -- BENEFITS_FROM_SKILL --> S
   V((Volunteer<br/>opaque id)) -- "VOLUNTEERS_WITH" --> O
   V -- "HAS_SKILL / OFFERS_SKILL / EXCLUDES_SKILL" --> S
   V -- "PREFERS_CAUSE / EXCLUDES_CAUSE" --> C
   V -- "ON_TEAM" --> P
+  V -- HAD_ENGAGEMENT --> E((Engagement))
+  E -- ON_PROJECT --> P
+  E -- "DEMONSTRATED {level}" --> S
+  V -- SHARES_HISTORY_WITH --> O
+  V -- WANTS_TO_LEARN --> S
   O -- HAS_ONBOARDING_STEP --> T((OnboardingStep))
   P -- HAS_TEAM_STEP --> T
   T -- NEXT_STEP --> T
@@ -108,10 +117,13 @@ flowchart LR
 | Node | Properties | Comes from (SQLite) |
 |---|---|---|
 | `Organisation` | `id`, `name`, `onboarding_enabled` | `organisations`, `onboarding_workflows` |
-| `Project` | `id`, `title`, `summary`, `revision`, `status` (always `published`), `onboarding_enabled` | The approved revision of a `submissions` row, `onboarding_workflows` |
+| `Project` | `id`, `title`, `summary`, `revision`, `status` (`published` while live, `completed` once its lead side marks it done), `onboarding_enabled` | The approved revision of a `submissions` row, `onboarding_workflows` |
 | `Cause` | `id`, `name` | `causes` (the shared catalogue) |
-| `Skill` | `id`, `name`, `category` | `skills` (the shared catalogue) |
+| `CauseTheme` | `id`, `name` | `cause_themes` |
+| `Skill` | `id`, `name`, `category` (its area's name), `kind`, `alt_labels` | `skills` (the shared catalogue) |
+| `SkillArea` | `id`, `name` | `skill_areas` |
 | `Volunteer` | `id` only | `users.id` |
+| `Engagement` | `id`, `role` (`contributor` or `lead`), `outcome` (none while it lasts), `readiness` (1 to 4, once rated). No names, notes or dates | `engagements` |
 | `OnboardingStep` | `id`, `title`, `description`, `position`, `completed_by`, `sends_email` | `onboarding_steps` |
 
 | Relationship | Meaning | Exists when |
@@ -120,12 +132,20 @@ flowchart LR
 | `SERVES_CAUSE` | The project's one cause | As above |
 | `REQUIRES_SKILL` | A skill the project needs | As above |
 | `BENEFITS_FROM_SKILL` | An optional skill | As above |
+| `IN_THEME` | The theme a cause belongs to; causes that are alike share one | Always, from the catalogue |
+| `IN_AREA` | The second-level area a skill sits in; exactly one | As above |
+| `BROADER` | A second-level area's top-level area | As above |
+| `RELATED_TO` | Two adjacent skills. Stored once per pair and read in both directions | As above |
 | `VOLUNTEERS_WITH` | The volunteer can be matched in this organisation | They are opted in **and** their account is `active` (vetted) |
-| `HAS_SKILL` | The volunteer has the skill | Profile state is "have" or "have and offer" |
+| `HAS_SKILL` | The volunteer has the skill. `level` (1 to 4) is how far they say they can go with it | Profile state is "have" or "have and offer" |
 | `OFFERS_SKILL` | The volunteer is willing to be matched on it | Profile state is "have and offer" |
 | `EXCLUDES_SKILL` | Never match me on a project that requires this | Profile state is "exclude" |
 | `PREFERS_CAUSE` / `EXCLUDES_CAUSE` | The volunteer's stance on a cause | Profile stance is "prefer" or "exclude" |
 | `ON_TEAM` | The volunteer is on the project's team | The lead side invited the volunteer and the volunteer said yes; with the project's team onboarding switched on, also once the lead side has accepted them. Not while suspended from the team. A lead is on their own team automatically |
+| `HAD_ENGAGEMENT`, `ON_PROJECT` | One spell of a volunteer on a project's team | From the moment they are on the team; kept after it ends and after the project is completed. Removed if the project is withdrawn |
+| `DEMONSTRATED` | A skill the lead side saw the volunteer use, with `level` 1 to 4 | The engagement has ended and been rated |
+| `WANTS_TO_LEARN` | A skill the volunteer wants to get better at. A wish: no matching read looks at it | They ticked it on their profile and have not excluded the skill |
+| `SHARES_HISTORY_WITH` | The volunteer lets this organisation see a summary of their work with others | They volunteer with it, are vetted, and switched sharing on. Off by default |
 | `HAS_ONBOARDING_STEP` | A step of the organisation's own onboarding workflow | The organisation has the step, whether or not the workflow is switched on |
 | `HAS_TEAM_STEP` | A step of a project's team onboarding | As above, for the project |
 | `NEXT_STEP` | The order of the steps | Between consecutive steps of one workflow |
@@ -136,12 +156,82 @@ Two rules are enforced by the shape of the graph itself, not by a filter in the 
 
 - A volunteer who has not been vetted has no `VOLUNTEERS_WITH` relationship, so no matching query
   can reach them.
-- A project that is not approved and published is not in the graph at all.
+- A project that is not approved and published is not in the graph at all. A completed one
+  stays, as history, with `status = 'completed'`; every matching read asks for `'published'`.
+- Another organisation can read a volunteer's history only through a `SHARES_HISTORY_WITH`
+  relationship, which exists only while the volunteer has switched sharing on for it.
 
 This model is defined once, as `LABELS` and `RELATIONSHIPS` in `src/app/graph/cypher.py`. The
 statements that write the graph, the projector and the AuraDB push are all generated from or
 checked against that one definition. A test asserts that it lists exactly the relationship types
 found in `data/demo.rl`.
+
+### Participation history
+
+The graph has a past. Each spell on a team is an `Engagement`; a completed project keeps its
+place in the graph; and the lead side can say how an ended engagement went.
+
+One scale is used twice, and the two uses are kept apart because they are different kinds of
+evidence:
+
+| Level | Label | On `HAS_SKILL.level` | On `Engagement.readiness` and `DEMONSTRATED.level` |
+|---|---|---|---|
+| 1 | Needs support | The volunteer's own view of a skill | The lead side's view of the work |
+| 2 | Works independently | | |
+| 3 | Can guide others | | |
+| 4 | Could lead a project | | |
+
+Engagements are never written by hand. `app.services.engagements.sync` derives them from the
+placements whenever a project is projected, so the history cannot disagree with who was on the
+team. Their IDs depend only on whose spell on which project it is, so a rebuilt graph is equal
+to the one before.
+
+What protects the volunteer:
+
+- They see every rating about them, who gave it, and the note written for them. Nobody rates
+  their own work.
+- The lead's private note stays in SQLite. The graph holds a role, an outcome and a number.
+- An organisation always has its own record. A summary of work **elsewhere** (counts and the
+  best rating, never which organisation or project) is readable only through
+  `SHARES_HISTORY_WITH`. `CANDIDATE_EXPERIENCE` cannot reach it without that edge.
+
+### The skills ontology
+
+The catalogue (`data/fixtures/catalogue.json`) is a small ontology, in the manner of SKOS: a skill
+has one area, areas have one broader area, adjacent skills are related, and a skill has other
+names. Causes are grouped into themes the same way. It gives each skill neighbours, so the graph
+can say "close" as well as "yes" or "no".
+
+| Rule | Why |
+|---|---|
+| A skill sits in exactly one second-level area | Overlap is said with `RELATED_TO`, not with a second parent |
+| Areas are their own label | `REQUIRES_SKILL` can only ever point at a real skill |
+| `RELATED_TO` is stored once per pair, in alphabetical order | One fact, one edge; queries match it without a direction |
+| An ID never changes once published | Profiles and projects point at it |
+
+`load_catalogue` refuses a file that breaks one of these, at start-up. **Close never means
+eligible.** The matching rules in section 7 are untouched; `CLOSE_CANDIDATES` lists, beside the
+candidates, volunteers who lack a required skill but *offer* a related one or one in the same
+area, with the same hard exclusions. `FIND_SKILLS` is a full-text search over each skill's name
+and other names; the assistants use it to turn the words someone typed into a catalogue skill.
+
+### Constraints and indexes
+
+Every node is found by its `id`, so every label has a uniqueness constraint on it, which also
+gives it an index. Without one, a duplicate node would be counted twice by every match and nothing
+would say so; with it, Relate refuses the write. `Project.status` has a range index, because
+every read filters on it. `Skill.name` and `Skill.alt_labels` have a full-text index, `skill_text`.
+`HAS_SKILL.level`, `DEMONSTRATED.level` and `Engagement.readiness` must be integers
+(`TYPE_CONSTRAINTS`): the one scale is compared by number.
+
+The statements are `CONSTRAINTS` and `INDEXES` in `src/app/graph/cypher.py`. They are idempotent
+(`IF NOT EXISTS`), and the projector applies them once per process before it first writes
+(`Projector.ensure_schema`), so a store made before they existed gains them on the next start. If
+they cannot be applied, nothing is projected and the outbox items stay pending with the reason.
+
+```bash
+uv run python -m app.cli schema --store data/demo.rl    # constraints, then indexes
+```
 
 ## 5. The adapter: how the application talks to Relate
 
@@ -264,6 +354,12 @@ Relate. Until then it is "Approved (activating…)" and no one is matched to it.
 
 ## 7. The queries, and what each one is for
 
+Every read but one starts from organisations the caller already belongs to. The exception is
+`NEEDED_ELSEWHERE`, which answers the question a spreadsheet per organisation cannot: where,
+across the whole network, is a skill I offer still needed? It reveals nothing about any other
+volunteer, and nothing about a project that the showcase does not already show every signed-in
+user, except that the skill is not yet covered on its team.
+
 Every statement the application runs is in `src/app/graph/cypher.py`. These are the read
 statements.
 
@@ -274,8 +370,15 @@ statements.
 | `EXCLUDED_FOR_VOLUNTEER` | Which projects the volunteer's own exclusions hide, and why | `matching.volunteer_matches` | "Hidden by your exclusions" on *My matches*; `excluded` in the matches API. Shown to that volunteer only. |
 | `OPTIONAL_SKILLS_EXCLUDED` | Optional skills left out of a match because the volunteer excluded them | `matching.volunteer_matches` | The explanation on a match |
 | `BROWSE_PROJECTS` | An organisation's published projects (or one of them) with their skills | `matching.browse`, `matching.project`, `matching.project_coverage` | Web *Projects* and project detail; `GET /orgs/{org}/projects` |
+| `NEEDED_ELSEWHERE` | Organisations the volunteer has **not** joined, with a published project that requires a skill they offer and has nobody on its team covering it. Their exclusions apply as in matching. Returns organisations, skills and causes, never a person | `matching.needed_elsewhere`; the match explainer's `where_else_am_i_needed` tool | *Where you are needed* on web *Find organisations*; `GET /me/needed` |
+| `CANDIDATE_EXPERIENCE` | For each volunteer of the organisation: earlier engagements on causes of the project's theme, how many were elsewhere (only if shared), how many they led, and the best rating | `matching.project_coverage`; the shortlist assistant's `project_picture` | *Done this before* on a candidate on web *Coverage* and the project page; `experience` in `GET /orgs/{org}/coverage` |
+| `LEARNING_OPPORTUNITIES` | Published projects in the volunteer's own organisations that use a skill they want to learn, with how many people on the team say they can guide it (a number, never who) | `matching.learning_opportunities` | *Where you could learn* on web *My matches*; `GET /me/learning` |
+| `CLOSE_CANDIDATES` | Volunteers who lack a required skill but offer one related to it or in the same skill area, those who want to learn it first | `matching.project_coverage` | The *Close* column on web *Coverage* and the project page; `close` in `GET /orgs/{org}/coverage` |
+| `FIND_SKILLS` | Catalogue skills matching plain words, by name or other name, with area and related skills | The assistants' `find_skills` tool | Volunteer onboarding, project scoping and review assistants |
 | `INSPECT` | Organisation → project → cause → skill → eligible volunteers | `cli inspect`, `GET /admin/graph` | `uv run task inspect`; admin console *System* section |
 | `COUNT_LABELS`, `COUNT_RELATIONSHIPS` | How many nodes and relationships of each kind | `GET /admin/graph` | Admin console *System* section |
+| `GRAPH_MODEL` | Which label is joined to which, by which relationship, and how often | `GET /admin/graph/view` | Admin console *Graph* section, *Model* |
+| `VIEW_NODES`, `VIEW_RELATIONSHIPS` | The nodes of the chosen labels and the relationships between them. Past the row bound the answer is `too_large`, never a cut-short graph | `GET /admin/graph/view` | Admin console *Graph* section, *Nodes* |
 | `ALL_NODES`, `ALL_RELATIONSHIPS` | The whole graph | `aura.push`, tests | The optional AuraDB push; the bundle drift test |
 
 ### The matching query
@@ -376,10 +479,12 @@ the team covers it.
 |---|---|---|
 | Task | `uv run task inspect` | The `INSPECT` table for the bundled `data/demo.rl` |
 | Application CLI | `uv run python -m app.cli inspect [--store PATH] [--json]` | The same, for any store; the default is the writable one |
+| Application CLI | `uv run python -m app.cli schema [--store PATH]` | The constraints and indexes declared on the store |
 | Application CLI | `uv run python -m app.cli matches --org datakind-uk [--store PATH]` | Ranked candidates for one organisation |
 | Application CLI | `uv run python -m app.cli status` / `drain` | Outbox status; project pending rows now |
 | Admin console | *System* section (system admins) | Node and relationship counts, the inspection table, projection health, *Replay outbox now* |
-| JSON API | `GET /api/v1/admin/graph`, `GET /api/v1/admin/projection` | The same data as the console |
+| Admin console | *Graph* section (system admins) | The graph drawn. *Model*: each kind of node and relationship, with how many there are. *Nodes*: every node of the kinds chosen and the relationships between them; click one for its properties. Volunteers are named from SQLite, for the admin only. Tables of the same rows sit under the drawing. |
+| JSON API | `GET /api/v1/admin/graph`, `GET /api/v1/admin/graph/view`, `GET /api/v1/admin/projection` | The same data as the console |
 | Relate CLI | `relate --database data/demo.rl --read-only --mode table "<cypher>"` | Any query you like |
 
 With the Relate command-line tool installed:
@@ -426,6 +531,11 @@ All of these are exercised by the test suite against Relate 1.0.1.
 | `OPTIONAL MATCH`, `collect(DISTINCT ...)` | Optional skills; lists of matched skills |
 | List comprehension, `[r IN required WHERE NOT r IN matched]` | The skills still needed |
 | `labels(n)`, `type(r)`, `properties(n)` | Counts, the export and the schema test |
+| `COUNT { MATCH ... }` | How many team members can guide a skill |
+| Relationship properties, `CASE` inside `count(DISTINCT ...)`, `max()` | Skill levels; counting engagements by kind and the best rating |
+| `REQUIRE r.level IS :: INTEGER` (property type constraints on nodes and relationships) | The one scale is compared by number, so nothing else can be stored |
+| `CREATE FULLTEXT INDEX`, `db.index.fulltext.queryNodes`, `COLLECT { ... }` | Finding a skill by any of its names, with its related skills |
+| `CREATE CONSTRAINT ... REQUIRE n.id IS UNIQUE`, `CREATE INDEX`, `SHOW CONSTRAINTS`, `SHOW INDEXES` | The declared schema and its inspection |
 | Named parameters (`$name`), `ORDER BY`, `LIMIT $limit` | Every statement |
 
 Not used: Relate's in-memory and directory stores, and the binding's optional pandas and Arrow

@@ -322,7 +322,7 @@ in-process, so roles, states and version checks are enforced in one place
 | projects | `GET/POST /submissions`, `POST /submissions/drafts`, `PUT /submissions/{id}/draft`, `POST /submissions/{id}/submit`, `GET/DELETE /submissions/{id}`, `POST /submissions/{id}/revisions`, `GET /orgs/{org}/submissions`, `POST /orgs/{org}/submissions/{id}/decision`, `POST /orgs/{org}/projects/{id}/withdraw`, `PUT /orgs/{org}/projects/{id}/lead` |
 | placements | `GET /placements`, `POST /placements/{project}/answer`, `POST /placements/{project}/leave`, `GET /projects/{project}/placements`, `POST /projects/{project}/placements/{volunteer}/answer`, `POST /projects/{project}/placements/{volunteer}/accept`, `POST /projects/{project}/placements/{volunteer}/suspend`, `POST /projects/{project}/placements/{volunteer}/reinstate`, `POST /projects/{project}/placements/{volunteer}/remove` |
 | moderation | `GET /moderation/volunteers?status=`, `GET /moderation/volunteers/{user}`, `POST /moderation/volunteers/{user}/decision` |
-| admin | `GET /admin/users`, `PUT/DELETE /admin/users/{user}/system-roles/{role}`, `PUT/DELETE /admin/orgs/{org}/roles/{user}/{role}`, `POST /admin/orgs`, `GET /admin/projection`, `POST /admin/projection/replay`, `GET /admin/graph` |
+| admin | `GET /admin/users`, `PUT/DELETE /admin/users/{user}/system-roles/{role}`, `PUT/DELETE /admin/orgs/{org}/roles/{user}/{role}`, `POST /admin/orgs`, `GET /admin/projection`, `POST /admin/projection/replay`, `GET /admin/graph`, `GET /admin/graph/view` |
 | onboarding | `GET /me/onboarding`, `POST /orgs/{org}/onboarding/steps/{step}/complete`, `GET/PUT /orgs/{org}/onboarding`, `POST /orgs/{org}/onboarding/steps`, `PUT/DELETE /orgs/{org}/onboarding/steps/{step}`, `POST /orgs/{org}/onboarding/steps/{step}/move`, `POST /orgs/{org}/onboarding/templates`, `PUT/DELETE /orgs/{org}/onboarding/templates/{template}`, `POST /orgs/{org}/onboarding/templates/preview`, `POST /orgs/{org}/onboarding/templates/{template}/test`, `GET /orgs/{org}/onboarding/volunteers`, `POST /orgs/{org}/onboarding/volunteers/{user}/steps/{step}/complete`, `GET /orgs/{org}/onboarding/emails`; and for a project's team onboarding, under `/orgs/{org}/projects/{project}/onboarding`: `GET/PUT` on it, `POST /steps`, `PUT/DELETE /steps/{step}`, `POST /steps/{step}/move`, `POST /steps/{step}/complete`, `GET /volunteers`, `POST /volunteers/{user}/steps/{step}/complete` |
 | assistants | `GET /agents`, `POST /agents/volunteer-onboarding`, `POST /agents/project-scoping`, `POST /agents/project-review`, `POST /agents/match-shortlist`, `POST /agents/match-explainer`, `POST /agents/audit`, `POST /agents/runs/{run}/approval`, `GET /agents/runs`, `GET /agents/runs/{run}` |
 | audit | `GET /admin/audit/events`, `GET /admin/audit/rbac`, `GET /admin/audit/usage`, `GET /admin/audit/checks` |
@@ -452,9 +452,9 @@ relate --database data/demo.rl --read-only --mode table \
   "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS nodes ORDER BY label"
 ```
 
-The bundled store has 49 nodes (5 causes, 15 skills, 3 organisations,
-4 projects, 8 onboarding steps and 14 volunteer IDs, of which Sam, Mo, Nicole, Zoe and Ella have
-no edges and Nia, still in screening, has no membership edge) and 97 relationships, including
+The bundled store has 80 nodes (5 causes in 3 themes, 15 skills in 16 skill areas, 3 organisations,
+4 active and 2 completed projects, 10 engagements, 8 onboarding steps and 14 volunteer IDs, of which Sam, Mo, Nicole, Zoe and Ella have
+no edges and Nia, still in screening, has no membership edge) and 176 relationships, including
 five `ON_TEAM`. `uv run python -m app.cli matches --org datakind-uk --store data/demo.rl`
 prints the ranked candidates for one organisation: Dev, Asha, then Cerys.
 

@@ -58,6 +58,7 @@ STATE_LABELS = {
     "lapsed": "No longer eligible",
     "removed": "Removed",
     "left": "Left the team",
+    "completed": "Project completed",
 }
 INVITED_LABEL = "Invited: awaiting the volunteer's answer"
 REOPENABLE = ("declined", "left", "removed")
@@ -634,15 +635,17 @@ def end_team_membership(
 
 
 def for_volunteer(db: Database, user_id: str) -> list[dict]:
-    """My invitations, teams and history. A match the lead has not acted on is not listed:
-    being a candidate asks nothing of the volunteer (their matches page shows the fit)."""
+    """My invitations, teams and places that ended. A match the lead has not acted on is not
+    listed: being a candidate asks nothing of the volunteer (their matches page shows the fit).
+    Neither is a place on a project that was completed: finished work is their history
+    (app.services.engagements.my_history), with how it went."""
     with db.read() as conn:
         rows = conn.execute(
             "SELECT p.*, s.title, o.name AS org_name, s.org_id FROM placements p "
             "JOIN submission_current s ON s.id = p.project_id "
             "JOIN organisations o ON o.id = s.org_id WHERE p.volunteer_id = ? "
             "AND CASE p.state WHEN 'eligible' THEN p.lead_said = 'yes' WHEN 'team' THEN 1 "
-            "    ELSE p.invited_at IS NOT NULL END "
+            "    WHEN 'completed' THEN 0 ELSE p.invited_at IS NOT NULL END "
             "ORDER BY CASE p.state WHEN 'eligible' THEN 0 WHEN 'onboarding' THEN 1 "
             "WHEN 'team' THEN 2 WHEN 'suspended' THEN 3 ELSE 4 END, "
             "p.updated_at DESC",

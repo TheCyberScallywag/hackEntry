@@ -9,7 +9,9 @@ import pytest
 
 from app.config import BUNDLED_GRAPH, Settings
 from app.graph import aura, cypher
-from app.graph.store import GraphStore
+from app.graph.projector import Projector
+from app.graph.store import GraphError, GraphStore
+from app.sqlstore import enqueue
 from tests.conftest import CS, DK
 
 SHAPES = "MATCH (a)-[r]->(b) RETURN DISTINCT labels(a)[0] AS a, type(r) AS t, labels(b)[0] AS b"
@@ -57,6 +59,72 @@ def test_schema_covers_exactly_what_the_demo_graph_contains(demo_graph: GraphSto
     assert labels == set(cypher.LABELS)
 
 
+def test_every_label_has_a_uniqueness_constraint_in_the_bundled_graph(demo_graph: GraphStore):
+    found = {r["name"]: r for r in demo_graph.read(cypher.SHOW_CONSTRAINTS)}
+    assert set(found) == set(cypher.CONSTRAINTS) | set(cypher.TYPE_CONSTRAINTS)
+    unique = [found[name] for name in cypher.CONSTRAINTS]
+    assert {r["labels"][0] for r in unique} == set(cypher.LABELS)
+    assert all(
+        r["type"] == "NODE_PROPERTY_UNIQUENESS" and r["properties"] == ["id"] for r in unique
+    )
+    # The one scale is compared by number, so the graph refuses anything else.
+    assert {found[n]["type"] for n in cypher.TYPE_CONSTRAINTS} == {
+        "NODE_PROPERTY_TYPE",
+        "RELATIONSHIP_PROPERTY_TYPE",
+    }
+    indexes = {r["name"]: r for r in demo_graph.read(cypher.SHOW_INDEXES)}
+    assert set(cypher.INDEXES) <= set(indexes)  # each constraint also owns an index
+    assert all(r["state"] == "ONLINE" for r in indexes.values())
+
+
+def test_a_duplicate_id_is_refused(demo_graph: GraphStore):
+    with pytest.raises(GraphError, match="uniqueness"), demo_graph.write() as tx:
+        tx.run("CREATE (:Skill {id: 'python'})")
+    assert demo_graph.read("MATCH (s:Skill {id: 'python'}) RETURN count(s) AS n") == [{"n": 1}]
+
+
+def test_a_store_made_before_the_schema_gains_it_on_the_next_drain(rt, tmp_path):
+    old = GraphStore(tmp_path / "old.rl")
+    with old.write() as tx:
+        tx.run("CREATE (:Skill {id: 'python', name: 'Python programming'})")
+    assert old.read(cypher.SHOW_CONSTRAINTS) == []
+    projector = Projector(rt.db, old)
+    assert projector.drain().failed == 0  # nothing is pending: the schema is still declared
+    declared = set(cypher.CONSTRAINTS) | set(cypher.TYPE_CONSTRAINTS)
+    assert {r["name"] for r in old.read(cypher.SHOW_CONSTRAINTS)} == declared
+    projector.ensure_schema()  # idempotent
+    assert len(old.read(cypher.SHOW_CONSTRAINTS)) == len(declared)
+
+
+def test_a_store_whose_schema_cannot_be_declared_is_not_written_to(rt, tmp_path):
+    bad = GraphStore(tmp_path / "bad.rl")
+    with bad.write() as tx:  # two skills with one id: the constraint cannot be created
+        tx.run("CREATE (:Skill {id: 'python'}), (:Skill {id: 'python'})")
+    with rt.db.tx() as conn:
+        enqueue(conn, "catalogue", "catalogue")
+    projector = Projector(rt.db, bad)
+    assert projector.drain(ignore_backoff=True).failed == 1
+    status = projector.status()
+    assert status.pending == 1 and status.items[0]["last_error"]
+    assert bad.read("MATCH (n) RETURN count(n) AS n") == [{"n": 2}]
+
+
+def test_a_level_that_is_not_a_number_is_refused(demo_graph: GraphStore):
+    with pytest.raises(GraphError), demo_graph.write() as tx:
+        tx.run("MATCH (:Volunteer)-[h:HAS_SKILL]->(:Skill) WITH h LIMIT 1 SET h.level = 'high'")
+    with pytest.raises(GraphError), demo_graph.write() as tx:
+        tx.run("MATCH (e:Engagement) WITH e LIMIT 1 SET e.readiness = 'good'")
+
+
+def test_push_carries_relationship_properties(demo_graph, monkeypatch):
+    driver = FakeDriver()
+    monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
+    aura.push(Settings(_env_file=None), demo_graph)
+    [(query, params)] = [(q, p) for q, p in driver.queries if "[r:HAS_SKILL]" in q]
+    assert "SET r += row.props" in query
+    assert {row["props"].get("level") for row in params["rows"]} >= {2, 3, 4}
+
+
 def test_reconcile_statements_are_generated_for_every_schema_entry():
     assert set(cypher.VOLUNTEER_EDGE_PRUNE) == set(cypher.VOLUNTEER_EDGE_MERGE)
     assert set(cypher.VOLUNTEER_EDGE_MERGE) == set(cypher.VOLUNTEER_RELS)
@@ -70,12 +138,12 @@ def test_push_writes_the_whole_demo_graph_including_teams(demo_graph, monkeypatc
     driver = FakeDriver()
     monkeypatch.setattr(aura, "_driver", lambda _settings: driver)
     counts = aura.push(Settings(_env_file=None), demo_graph)
-    assert counts == {"nodes": 49, "relationships": 97}
+    assert counts == {"nodes": 80, "relationships": 176}
     statements = [q for q, _ in driver.queries]
     assert statements[0].startswith("MATCH (n {dvn_scope: $scope}) DETACH DELETE n")
-    assert any("MERGE (a)-[:ON_TEAM]->(b)" in q for q in statements)
+    assert any("MERGE (a)-[r:ON_TEAM]->(b)" in q for q in statements)
     merged = sum(len(p["rows"]) for q, p in driver.queries if "MERGE (a)-[" in q)
-    assert merged == 97
+    assert merged == 176
     assert all(p["scope"] == aura.SCOPE for _, p in driver.queries)
 
 

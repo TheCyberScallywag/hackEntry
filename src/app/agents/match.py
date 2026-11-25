@@ -35,6 +35,9 @@ class Candidate(BaseModel):
     required_skills_covered: list[str]
     optional_skills_offered: list[str]
     can_invite: bool
+    # Earlier work on the same theme of cause, from the graph: this organisation's own record,
+    # plus a summary of work elsewhere only if the volunteer shares it. Empty: none on record.
+    earlier_work: str = ""
 
 
 class ProjectPicture(BaseModel):
@@ -66,6 +69,12 @@ def _picture(deps: AgentDeps) -> ProjectPicture:
         )
         if on_team & set(row["team"])
     }
+    earlier = {
+        r["volunteer"]: matching.experience(r)["summary"]
+        for r in deps.graph.read(
+            cypher.CANDIDATE_EXPERIENCE, {"org": deps.org_id or "", "project": deps.subject_id}
+        )
+    }
     return ProjectPicture(
         title=project["title"],
         summary=project["summary"],
@@ -83,6 +92,7 @@ def _picture(deps: AgentDeps) -> ProjectPicture:
                 required_skills_covered=r["matched_skills"],
                 optional_skills_offered=r["optional_skills"],
                 can_invite=r["status"] == "candidate" and r["can_decide"],
+                earlier_work=earlier.get(r["volunteer_id"], ""),
             )
             for r in rows
         ],
@@ -120,7 +130,10 @@ shortlist_agent: Agent[AgentDeps, Shortlist | DeferredToolRequests] = Agent(
         "Recommend from people whose can_invite is true. Prefer the smallest set that covers "
         "the skills in not_yet_covered; break ties by the ranked order. Do not recommend "
         "someone who adds nothing the team lacks unless nobody does. For each, say which "
-        "skills they bring and why them. List in still_uncovered any required skill that "
+        "skills they bring and why them. earlier_work is evidence, not a rule: between two "
+        "people who cover the same skills, mention it and prefer the one who has done this "
+        "kind of work before; never hold its absence against someone. "
+        "List in still_uncovered any required skill that "
         "nobody on the team or your shortlist covers: that is a gap the lead needs to know "
         "about, not something to paper over.\n"
         "Call invite only when the lead asks you to invite someone, and only for the people "
@@ -285,6 +298,20 @@ class BlockedNote(BaseModel):
     why: str = Field(min_length=8)
 
 
+class ElsewhereInfo(BaseModel):
+    organisation: str
+    skill_needed: str
+    cause: str
+    prefers_cause: bool
+    projects: int
+
+
+class ElsewhereNote(BaseModel):
+    organisation: str
+    skill_needed: str
+    why: str = Field(min_length=8)
+
+
 class MatchExplanation(BaseModel):
     """A volunteer's matches in one organisation, explained to them."""
 
@@ -292,6 +319,11 @@ class MatchExplanation(BaseModel):
     matches: list[MatchNote] = Field(default_factory=list)
     blocked: list[BlockedNote] = Field(
         default_factory=list, description="Projects their own exclusions rule out"
+    )
+    elsewhere: list[ElsewhereNote] = Field(
+        default_factory=list,
+        description="Organisations they have not joined that need a skill they offer "
+        "(where_else_am_i_needed)",
     )
     next_steps: list[str] = Field(
         default_factory=list, description="Things they could do; never 'lift an exclusion'"
@@ -313,7 +345,10 @@ explainer_agent: Agent[AgentDeps, MatchExplanation] = Agent(
         "suggest lifting one. If results are withheld, say why in the summary and return no "
         "matches. If there are no matches, say so honestly and suggest next steps such as "
         "adding skills they have but did not list, or joining another organisation.\n\n"
-        + HOUSE_RULES
+        "where_else_am_i_needed asks the graph which organisations they have not joined need a "
+        "skill they offer. Use it when they have few matches or ask what else they could do, "
+        "and list what it returns under elsewhere. Joining is their choice, and it is not an "
+        "invitation. It never returns a person, so name none.\n\n" + HOUSE_RULES
     ),
     toolsets=[self_tools],
     capabilities=[guard, online("match_explainer")],
@@ -328,6 +363,28 @@ def my_matches(ctx: Ctx) -> MatchPicture:
     """The volunteer's matches in this organisation, as the graph decided them, and the projects
     their own exclusions rule out."""
     return _matches(ctx.deps)
+
+
+def _elsewhere(deps: AgentDeps) -> list[ElsewhereInfo]:
+    result = matching.needed_elsewhere(deps.db, deps.graph, deps.actor_id)
+    return [
+        ElsewhereInfo(
+            organisation=o["org_name"],
+            skill_needed=o["skill_name"],
+            cause=o["cause_name"],
+            prefers_cause=o["preferred"],
+            projects=o["projects"],
+        )
+        for o in result.opportunities
+    ]
+
+
+@explainer_agent.tool
+def where_else_am_i_needed(ctx: Ctx) -> list[ElsewhereInfo]:
+    """Organisations across the network that the volunteer has NOT joined, with a project that
+    needs a skill they offer and has nobody on its team covering it yet. Their exclusions are
+    already applied. Organisations, skills and causes only. Empty: nothing to suggest."""
+    return _elsewhere(ctx.deps)
 
 
 @explainer_agent.output_validator
@@ -346,6 +403,14 @@ def _only_real_matches(ctx: Ctx, explanation: MatchExplanation) -> MatchExplanat
                     "tool returned."
                 )
             note.title = known[note.project_id]
+    if explanation.elsewhere:
+        real = {(e.organisation, e.skill_needed) for e in _elsewhere(ctx.deps)}
+        for note in explanation.elsewhere:
+            if (note.organisation, note.skill_needed) not in real:
+                raise ModelRetry(
+                    f"{note.organisation} needing {note.skill_needed} is not something "
+                    "where_else_am_i_needed returned. List only what the tool returned."
+                )
     if missing := sorted(set(matches) - {m.project_id for m in explanation.matches}):
         raise ModelRetry(f"Explain every match; these are missing: {missing}.")
     return explanation

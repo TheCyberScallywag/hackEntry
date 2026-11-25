@@ -28,6 +28,7 @@ def orgs_page(request: Request, rt: RT, session: User):
     return render(
         request, "orgs.html", session,
         directory=[{**o, "profile": profile_for(o)} for o in directory],
+        needed=matching.needed_elsewhere(rt.db, rt.graph, session.user_id),
     )  # fmt: skip
 
 

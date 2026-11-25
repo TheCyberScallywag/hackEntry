@@ -24,8 +24,9 @@ from pydantic_ai.models import Model, infer_model
 from pydantic_ai.models.fallback import FallbackModel
 
 from app import audit, services
-from app.catalogue import get_catalogue
+from app.catalogue import get_catalogue, text_query
 from app.config import Settings
+from app.graph import cypher
 from app.graph.store import GraphError, GraphStore
 from app.sqlstore import Database
 
@@ -140,7 +141,11 @@ def _domain_errors(ctx: Ctx, *, call, tool_def, args, error: Exception):
 class SkillInfo(BaseModel):
     skill_id: str
     name: str
-    category: str
+    category: str  # the skill area it sits in
+    broader_area: str = ""
+    kind: str = ""  # technical | practical | interpersonal | professional | language
+    also_known_as: list[str] = []
+    related: list[str] = []  # IDs of adjacent skills: close to this one, never a substitute
 
 
 class CauseInfo(BaseModel):
@@ -153,9 +158,43 @@ catalogue_tools: FunctionToolset[AgentDeps] = FunctionToolset()
 
 @catalogue_tools.tool_plain
 def list_skills() -> list[SkillInfo]:
-    """Every skill in the shared catalogue. These are the only valid skill IDs."""
+    """Every skill in the shared catalogue, with its area, its other names and the skills
+    adjacent to it. These are the only valid skill IDs."""
+    cat = get_catalogue()
+    areas = {a.id: a for a in cat.areas}
     return [
-        SkillInfo(skill_id=s.id, name=s.name, category=s.category) for s in get_catalogue().skills
+        SkillInfo(
+            skill_id=s.id,
+            name=s.name,
+            category=s.category,
+            broader_area=areas[areas[s.area].parent].name,
+            kind=s.kind,
+            also_known_as=list(s.alt_labels),
+            related=list(cat.related_to(s.id)),
+        )
+        for s in cat.skills
+    ]
+
+
+@catalogue_tools.tool
+def find_skills(ctx: Ctx, words: str) -> list[SkillInfo]:
+    """Catalogue skills that match plain words someone used, such as "excel" or "dashboards",
+    best match first. Searches each skill's name and its other names in the graph. Empty: no
+    catalogue skill matches, so say so; never invent a skill ID."""
+    query = text_query(words)
+    if not query:
+        return []
+    return [
+        SkillInfo(
+            skill_id=row["skill"],
+            name=row["name"],
+            category=row["area"],
+            broader_area=row["broader_area"],
+            kind=row["kind"],
+            also_known_as=list(get_catalogue().skill(row["skill"]).alt_labels),
+            related=row["related"],
+        )
+        for row in ctx.deps.graph.read(cypher.FIND_SKILLS, {"query": query})
     ]
 
 
@@ -172,6 +211,7 @@ class ProfileInfo(BaseModel):
     can_submit_for_vetting: bool
     skills: dict[str, str]  # skill_id -> none | has | offers | exclude (unset skills left out)
     causes: dict[str, str]  # cause_id -> prefer | exclude
+    wants_to_learn: list[str] = []  # skill IDs; a wish, never a reason to be matched
     volunteers_with: list[str]  # organisation names
 
 
@@ -186,6 +226,7 @@ def read_profile(deps: AgentDeps) -> ProfileInfo:
         can_submit_for_vetting=actor.status in services.SUBMITTABLE,
         skills=profile.skills,
         causes=profile.causes,
+        wants_to_learn=profile.learning,
         volunteers_with=[o["name"] for o in orgs if o["opted_in"]],
     )
 

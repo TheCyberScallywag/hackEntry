@@ -17,11 +17,12 @@ Interactive docs: /api/docs (OpenAPI at /api/openapi.json).
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app import audit, auth, matching, notify, placements, profile_view, services
 from app.graph import cypher
+from app.graph.store import GraphTruncated
 from app.web import schemas as m
 from app.web.deps import drain, require_signup
 
@@ -145,10 +146,60 @@ def put_profile(body: m.ProfileIn, request: Request, session: Api) -> m.Profile:
     services.update_profile(
         rt.db, session.user_id,
         display_name=body.display_name, skills=body.skills, causes=body.causes,
-        expected_version=body.version,
+        expected_version=body.version, levels=body.levels, learning=body.learning,
     )  # fmt: skip
     drain(rt)
     return _profile(rt, session.user_id)
+
+
+@router.get("/me/history", tags=["me"])
+def my_history(request: Request, session: Api) -> m.History:
+    """What I have done: every spell on a team, each rating about me and who gave it, and which
+    of my organisations may see a summary of my work elsewhere."""
+    history = services.engagements.my_history(_rt(request).db, session.user_id)
+    return history | {"levels": {str(k): v for k, v in history["levels"].items()}}
+
+
+@router.put("/orgs/{org_id}/history-sharing", tags=["me"])
+def share_history(org_id: str, body: m.SharingIn, request: Request, session: Api) -> m.SharingOut:
+    """Let one of my organisations see a summary of what I did with others, or stop."""
+    rt = _rt(request)
+    services.engagements.set_share_history(rt.db, session.user_id, org_id, share=body.share)
+    drain(rt)
+    return {"share_history": body.share}
+
+
+@router.post("/orgs/{org_id}/projects/{sid}/complete", tags=["projects"])
+def complete_project(
+    org_id: str, sid: str, body: m.VersionIn, request: Request, session: Api
+) -> m.SubmissionStateOut:
+    """The lead side marks an active project as done. It stays as history."""
+    rt = _rt(request)
+    services.engagements.complete_project(
+        rt.db, session.user_id, org_id, sid, expected_version=body.version
+    )
+    drain(rt)
+    return {"state": "completed"}
+
+
+@router.get("/orgs/{org_id}/history", tags=["projects"])
+def org_history(org_id: str, request: Request, session: Api) -> list[m.CompletedProject]:
+    """Completed projects I act for as lead side, with their teams and ratings."""
+    return services.engagements.project_history(_rt(request).db, session.user_id, org_id)
+
+
+@router.post("/engagements/{engagement_id}/rating", tags=["projects"])
+def rate_engagement(
+    engagement_id: str, body: m.RatingIn, request: Request, session: Api
+) -> m.RatedOut:
+    """The lead side says how a volunteer's time on a project went. The volunteer sees it."""
+    rt = _rt(request)
+    services.engagements.rate(
+        rt.db, session.user_id, engagement_id, readiness=body.readiness, skills=body.skills,
+        note=body.note, private_note=body.private_note,
+    )  # fmt: skip
+    drain(rt)
+    return {"readiness": body.readiness}
 
 
 @router.post("/me/vetting", tags=["me"])
@@ -196,6 +247,47 @@ def leave(org_id: str, request: Request, session: Api) -> m.MembershipOut:
     services.set_membership(rt.db, session.user_id, org_id, opted_in=False)
     drain(rt)
     return {"opted_in": False}
+
+
+@router.get("/me/learning", tags=["me"])
+def learning(request: Request, session: Api) -> list[m.LearningOpportunity]:
+    """Projects in my organisations that use a skill I want to learn, and how many people on
+    each team can guide it. A number, never who."""
+    rt = _rt(request)
+    return [
+        {
+            "org_id": o["org"],
+            "organisation": o["org_name"],
+            "project": o["project"],
+            "title": o["title"],
+            "skill": o["skill_name"],
+            "mentors": o["mentors"],
+            "on_team": o["on_team"],
+        }
+        for o in matching.learning_opportunities(rt.db, rt.graph, session.user_id)
+    ]
+
+
+@router.get("/me/needed", tags=["me"])
+def needed_elsewhere(request: Request, session: Api) -> m.Needed:
+    """Organisations I have not joined that need a skill I offer, across the whole network.
+    Organisations, skills and causes only: never another volunteer."""
+    rt = _rt(request)
+    result = matching.needed_elsewhere(rt.db, rt.graph, session.user_id)
+    return {
+        "withheld": result.withheld.reason if result.withheld else None,
+        "opportunities": [
+            {
+                "org_id": o["org"],
+                "organisation": o["org_name"],
+                "skill": o["skill_name"],
+                "cause": o["cause_name"],
+                "preferred_cause": o["preferred"],
+                "projects": o["projects"],
+            }
+            for o in result.opportunities
+        ],
+    }
 
 
 @router.get("/orgs/{org_id}/matches", tags=["organisations"])
@@ -271,8 +363,18 @@ def org_coverage(org_id: str, request: Request, session: Api) -> m.Coverage:
                                 "preferred_cause": c["preferred"],
                                 "status": c["status"],
                                 "status_label": c["status_label"],
+                                "experience": c["experience"],
                             }  # fmt: skip
                             for c in row["candidates"]
+                        ],
+                        "close": [
+                            {
+                                "volunteer": c["volunteer"],
+                                "name": c["name"],
+                                "via": c["via_names"],
+                                "wants_to_learn": c["wants_to_learn"],
+                            }  # fmt: skip
+                            for c in row["close"]
                         ],
                     }
                     for row in p["per_skill"]
@@ -624,3 +726,64 @@ def graph_overview(request: Request, session: Api) -> m.GraphOverview:
     for row in inspect:
         row["eligible_volunteers"] = [names.get(v, v) for v in row["eligible_volunteers"]]
     return {"labels": labels, "relationships": rels, "inspect": inspect}
+
+
+def _caption(label: str, props: dict, names: dict[str, str]) -> str:
+    """What a node is called on the admin's picture of the graph. A volunteer is an opaque ID
+    in the graph; the name comes from SQLite, for the system admin only."""
+    if label == "Volunteer":
+        return names.get(props["id"], props["id"])
+    if label == "Engagement":
+        return " · ".join(str(props[k]) for k in ("role", "outcome") if props.get(k))
+    return str(props.get("name") or props.get("title") or props["id"])
+
+
+@router.get("/admin/graph/view", tags=["admin"])
+def graph_view(
+    request: Request, session: Api, label: Annotated[list[str] | None, Query()] = None
+) -> m.GraphView:
+    """The graph as nodes and relationships, for the admin console to draw: the model (which
+    label is joined to which) and the nodes of the chosen labels, every label when none is
+    chosen. A choice with more rows than the store's bound comes back empty and `too_large`."""
+    rt = _rt(request)
+    services.require_admin(rt.db, session.user_id)
+    if unknown := sorted(set(label or ()) - set(cypher.LABELS)):
+        raise services.Invalid(f"Unknown label: {', '.join(unknown)}")
+    shown = [name for name in cypher.LABELS if not label or name in label]
+    too_large = False
+    with rt.graph.reader() as tx:
+        labels = tx.read(cypher.COUNT_LABELS)
+        model = tx.read(cypher.GRAPH_MODEL)
+        try:
+            nodes = tx.read(cypher.VIEW_NODES, {"labels": shown})
+            rels = tx.read(cypher.VIEW_RELATIONSHIPS, {"labels": shown})
+        except GraphTruncated:
+            nodes, rels, too_large = [], [], True
+    with rt.db.read() as conn:
+        names = dict(conn.execute("SELECT id, display_name FROM users").fetchall())
+    return {
+        "labels": labels,
+        "model": model,
+        "shown": shown,
+        "nodes": [
+            {
+                "key": f"{n['label']}:{n['id']}",
+                "label": n["label"],
+                "id": n["id"],
+                "caption": _caption(n["label"], n["props"], names),
+                "props": n["props"],
+            }
+            for n in nodes
+        ],
+        "edges": [
+            {
+                "source": f"{r['from_label']}:{r['from_id']}",
+                "target": f"{r['to_label']}:{r['to_id']}",
+                "type": r["type"],
+                "props": r["props"],
+            }
+            for r in rels
+        ],
+        "too_large": too_large,
+        "max_rows": rt.graph.max_rows,
+    }

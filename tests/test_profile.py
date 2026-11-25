@@ -25,13 +25,14 @@ def test_web_profile_has_the_mobile_sections_and_skill_type_sub_accordions(web: 
         "causes",
         "active",
         "past",
+        "history",
     ]
     categories = list(dict.fromkeys(s.category for s in get_catalogue().skills))
     assert re.findall(r'data-category="([^"]+)"', html) == categories
     for label in [*SKILL_STATES.values(), *CAUSE_STANCES.values()]:
         assert f">{label}</option>" in html
     assert "3 offered · 0 excluded" in html  # Skills header, as on mobile
-    assert 'Technology</span><span class="note">1 offered' in html  # per-type header
+    assert 'Data</span><span class="note">1 offered' in html  # per-type header
 
 
 def test_web_and_api_show_the_same_profile(web: Web):

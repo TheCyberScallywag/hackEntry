@@ -326,6 +326,7 @@ def test_only_system_admins_manage_roles_organisations_and_projection(web: Web):
         assert c.get("/admin/users").status_code == 403
         assert c.put(f"/admin/users/{USERS['gwen']}/system-roles/moderator").status_code == 403
         assert c.get("/admin/projection").status_code == 403
+        assert c.get("/admin/graph/view").status_code == 403
     users = sam.get("/admin/users").json()
     assert {u["display_name"]: u["system_roles"] for u in users}["Mo"] == ["moderator"]
     assert sam.put(f"/admin/users/{USERS['gwen']}/system-roles/moderator").status_code == 200

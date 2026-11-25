@@ -40,7 +40,7 @@ export interface Placement {
   title: string;
   org_id: string;
   org_name: string;
-  state: 'eligible' | 'onboarding' | 'team' | 'suspended' | 'declined' | 'lapsed' | 'removed' | 'left';
+  state: 'eligible' | 'onboarding' | 'team' | 'suspended' | 'declined' | 'lapsed' | 'removed' | 'left' | 'completed';
   state_label: string;
   volunteer_said: 'yes' | 'no' | null;
   lead_said: 'yes' | 'no' | null;
@@ -74,7 +74,7 @@ export interface Matches {
 export interface Submission {
   id: string;
   title: string;
-  state: 'draft' | 'submitted' | 'changes_requested' | 'rejected' | 'approved' | 'published' | 'withdrawn';
+  state: 'draft' | 'submitted' | 'changes_requested' | 'rejected' | 'approved' | 'published' | 'completed' | 'withdrawn';
   state_label: string;
   org_name: string;
   current_revision: number;

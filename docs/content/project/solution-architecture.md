@@ -362,8 +362,8 @@ flowchart LR
   V -- "AT_STEP / COMPLETED_STEP" --> T
 ```
 
-The bundled demo graph has **49 nodes and 97 relationships**: 3 organisations,
-5 causes, 15 skills, 4 active projects, 8 onboarding steps and 14 volunteer IDs.
+The bundled demo graph has **80 nodes and 176 relationships**: 3 organisations,
+5 causes in 3 themes, 15 skills in 16 skill areas, 4 active and 2 completed projects, 10 engagements, 8 onboarding steps and 14 volunteer IDs.
 
 ### 5.4 Matching rules (implemented in Cypher)
 
@@ -808,7 +808,7 @@ graph busy or assistants not configured, 429 assistant quota used, 502 assistant
 | **onboarding** | `GET /me/onboarding` · `POST /orgs/{org}/onboarding/steps/{step}/complete` · `GET/PUT /orgs/{org}/onboarding` · `POST /orgs/{org}/onboarding/steps` · `PUT/DELETE /orgs/{org}/onboarding/steps/{step}` · `POST .../steps/{step}/move` · `POST /orgs/{org}/onboarding/templates` · `PUT/DELETE .../templates/{template}` · `POST .../templates/preview` · `POST .../templates/{template}/test` · `GET /orgs/{org}/onboarding/volunteers` · `POST .../volunteers/{uid}/steps/{step}/complete` · `GET /orgs/{org}/onboarding/emails`; and the same steps and volunteers routes for a project's team onboarding under `/orgs/{org}/projects/{pid}/onboarding` |
 | **assistants** | `GET /agents` · `POST /agents/volunteer-onboarding` · `POST /agents/project-scoping` · `POST /agents/project-review` · `POST /agents/match-shortlist` · `POST /agents/match-explainer` · `POST /agents/audit` · `POST /agents/runs/{run}/approval` · `GET /agents/runs` · `GET /agents/runs/{run}` |
 | **audit** | `GET /admin/audit/events` · `GET /admin/audit/rbac` · `GET /admin/audit/usage` · `GET /admin/audit/checks` |
-| **admin** | `GET /admin/users` · `PUT/DELETE /admin/users/{uid}/system-roles/{role}` · `PUT/DELETE /admin/orgs/{org}/roles/{uid}/{role}` · `POST /admin/orgs` · `GET /admin/projection` · `POST /admin/projection/replay` · `GET /admin/graph` |
+| **admin** | `GET /admin/users` · `PUT/DELETE /admin/users/{uid}/system-roles/{role}` · `PUT/DELETE /admin/orgs/{org}/roles/{uid}/{role}` · `POST /admin/orgs` · `GET /admin/projection` · `POST /admin/projection/replay` · `GET /admin/graph` · `GET /admin/graph/view` |
 
 All paths are prefixed with `/api/v1`.
 

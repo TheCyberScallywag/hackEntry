@@ -1,0 +1,474 @@
+<!doctype html>
+<!-- The admin console's drawing of the Relate graph (app.admin.main.graph_tab embeds it).
+     Self-contained: no script or font is fetched. The graph arrives as JSON in #payload and
+     every value from it is written with textContent or canvas text, never as markup. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relate graph</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbf8ef; --card: #ffffff; --text: #0b1730; --muted: #4f5a73; --border: #e0dccf;
+    --edge: #8d96a8;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s0: #8d96a8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #090f22; --card: #0e1a36; --text: #fff7e3; --muted: #a8b3cc; --border: #22325a;
+      --edge: #6f7c9a;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s0: #6f7c9a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; gap: 8px; padding: 2px;
+  }
+  .bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  button, input {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 9px;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; }
+  .chip[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
+  .chip svg { flex: none; }
+  .chip small, .hint { color: var(--muted); }
+  #search { width: 170px; }
+  .spacer { flex: 1; }
+  .main { flex: 1; min-height: 0; display: flex; gap: 8px; }
+  .stage {
+    flex: 1; min-width: 0; position: relative; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  #canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #canvas.dragging { cursor: grabbing; }
+  #tip {
+    position: absolute; pointer-events: none; display: none; max-width: 260px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.18);
+  }
+  #tip small { color: var(--muted); display: block; }
+  aside {
+    width: 290px; flex: none; overflow: auto; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  }
+  aside h2 { font-size: 15px; margin: 0 0 2px; overflow-wrap: anywhere; }
+  aside h3 {
+    font-size: 11px; margin: 14px 0 4px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  aside .kind { color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li button {
+    width: 100%; text-align: left; border: 0; border-radius: 4px; padding: 3px 4px;
+    background: none; overflow-wrap: anywhere;
+  }
+  li button:hover { background: var(--bg); }
+  li code { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (max-width: 720px) {
+    .main { flex-direction: column; }
+    aside { width: auto; max-height: 40%; }
+  }
+</style>
+</head>
+<body>
+<div class="bar" id="legend" role="group" aria-label="Show or hide a kind of node"></div>
+<div class="bar">
+  <input id="search" type="search" placeholder="Find by name" aria-label="Find a node by name">
+  <button id="zoom-out" aria-label="Zoom out">−</button>
+  <button id="zoom-in" aria-label="Zoom in">+</button>
+  <button id="fit">Fit</button>
+  <span class="hint" id="summary"></span>
+  <span class="spacer"></span>
+  <span class="hint">Drag to move · Ctrl or ⌘ + scroll to zoom · click a node for detail</span>
+</div>
+<div class="main">
+  <div class="stage">
+    <canvas id="canvas" role="img" aria-label="The graph as nodes and relationships. The same rows are in the tables below."></canvas>
+    <div id="tip"></div>
+  </div>
+  <aside id="detail" aria-live="polite"></aside>
+</div>
+<script id="payload" type="application/json">__PAYLOAD__</script>
+<script>
+"use strict";
+(() => {
+  const P = JSON.parse(document.getElementById("payload").textContent);
+  const MODEL = P.mode === "model";
+  // Hue says which family a node belongs to, shape tells the members of a family apart (and
+  // keeps two kinds apart for a reader who cannot separate their hues).
+  const KINDS = {
+    Organisation: ["--s1", "square"], Project: ["--s2", "circle"], Volunteer: ["--s3", "circle"],
+    OnboardingStep: ["--s4", "square"], Cause: ["--s5", "circle"], CauseTheme: ["--s5", "diamond"],
+    Engagement: ["--s6", "triangle"], Skill: ["--s7", "circle"], SkillArea: ["--s7", "diamond"],
+  };
+  const kind = (label) => KINDS[label] || ["--s0", "circle"];
+  const root = document.documentElement;
+  const scheme = matchMedia("(prefers-color-scheme: dark)");
+  let C = {};
+  function readColours() {
+    const theme = (P.theme || {})[scheme.matches ? "dark" : "light"] || {};
+    for (const [name, value] of Object.entries(theme)) {
+      if (/^#[0-9a-f]{6}$/i.test(value)) root.style.setProperty("--" + name, value);
+    }
+    const css = getComputedStyle(root);
+    C = {};
+    for (const name of ["bg", "card", "text", "muted", "border", "edge",
+                        "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"]) {
+      C[name] = css.getPropertyValue("--" + name).trim();
+    }
+  }
+
+  // ---------------------------------------------------------------- the graph
+  const nodes = P.nodes.map((n, i) => ({
+    ...n, i, degree: 0, links: [],
+    x: 34 * Math.sqrt(i + 1) * Math.cos(i * 2.39996),
+    y: 34 * Math.sqrt(i + 1) * Math.sin(i * 2.39996),
+    vx: 0, vy: 0, held: false,
+  }));
+  const byKey = new Map(nodes.map((n) => [n.key, n]));
+  const pairs = new Map();
+  const edges = [];
+  for (const e of P.edges) {
+    const a = byKey.get(e.source), b = byKey.get(e.target);
+    if (!a || !b) continue;
+    const edge = { ...e, a, b, slot: 0, of: 1 };
+    const id = a.i < b.i ? a.i + ":" + b.i : b.i + ":" + a.i;
+    if (!pairs.has(id)) pairs.set(id, []);
+    pairs.get(id).push(edge);
+    edges.push(edge);
+    a.degree++; a.links.push(edge);
+    if (b !== a) { b.degree++; b.links.push(edge); }
+  }
+  for (const group of pairs.values()) group.forEach((e, k) => { e.slot = k; e.of = group.length; });
+  const biggest = Math.max(1, ...nodes.map((n) => n.size || 0));
+  for (const n of nodes) {
+    n.r = MODEL ? 9 + 9 * Math.sqrt((n.size || 0) / biggest) : 6 + Math.min(7, Math.sqrt(n.degree));
+  }
+  const hidden = new Set();
+  const shown = (n) => !hidden.has(n.label);
+  const SPRING = MODEL ? 330 : 110, PUSH = MODEL ? 60000 : 5200;
+
+  function tick(heat) {
+    const live = nodes.filter(shown);
+    for (let i = 0; i < live.length; i++) {
+      const a = live[i];
+      for (let j = i + 1; j < live.length; j++) {
+        const b = live[j];
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 1) { dx = (i % 2 ? 1 : -1) * 0.5; dy = 0.5; d2 = 1; }
+        const f = PUSH / d2 / Math.sqrt(d2);
+        a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
+      }
+      a.vx -= a.x * 0.012; a.vy -= a.y * 0.012;
+    }
+    for (const e of edges) {
+      if (e.a === e.b || !shown(e.a) || !shown(e.b)) continue;
+      const dx = e.b.x - e.a.x, dy = e.b.y - e.a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - SPRING) * 0.035 / d / Math.sqrt(Math.max(1, Math.min(e.a.degree, e.b.degree)) / 2 + 0.5);
+      e.a.vx += dx * f; e.a.vy += dy * f; e.b.vx -= dx * f; e.b.vy -= dy * f;
+    }
+    for (const n of live) {
+      n.vx *= 0.8; n.vy *= 0.8;
+      if (n.held) continue;
+      const v = Math.sqrt(n.vx * n.vx + n.vy * n.vy), cap = 40;
+      const s = (v > cap ? cap / v : 1) * heat;
+      n.x += n.vx * s; n.y += n.vy * s;
+    }
+  }
+
+  // ---------------------------------------------------------------- the view
+  const canvas = document.getElementById("canvas"), ctx = canvas.getContext("2d");
+  const tip = document.getElementById("tip"), detail = document.getElementById("detail");
+  let W = 0, H = 0, k = 1, tx = 0, ty = 0, heat = 0, queued = false;
+  let hover = null, picked = null, query = "", moved = false;  // moved: the reader set the view
+  const sx = (x) => x * k + tx, sy = (y) => y * k + ty;
+
+  function fit() {
+    const live = nodes.filter(shown);
+    if (!live.length || !W) return;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const n of live) {
+      x0 = Math.min(x0, n.x - n.r); x1 = Math.max(x1, n.x + n.r);
+      y0 = Math.min(y0, n.y - n.r); y1 = Math.max(y1, n.y + n.r);
+    }
+    const pad = 46;
+    k = Math.min(2.2, (W - 2 * pad) / Math.max(1, x1 - x0), (H - 2 * pad) / Math.max(1, y1 - y0));
+    k = Math.max(0.05, k);
+    tx = W / 2 - ((x0 + x1) / 2) * k; ty = H / 2 - ((y0 + y1) / 2) * k;
+    draw();
+  }
+  function zoom(factor, cx = W / 2, cy = H / 2) {
+    const next = Math.max(0.05, Math.min(6, k * factor));
+    tx = cx - (cx - tx) * (next / k); ty = cy - (cy - ty) * (next / k); k = next;
+    draw();
+  }
+  function warm(to = 1) {
+    heat = Math.max(heat, to);
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(function frame() {
+      tick(heat); heat *= 0.97; draw();
+      if (heat > 0.02) requestAnimationFrame(frame); else { heat = 0; queued = false; }
+    });
+  }
+
+  function shape(c, name, x, y, r) {
+    c.beginPath();
+    if (name === "square") c.roundRect(x - r * 0.9, y - r * 0.9, r * 1.8, r * 1.8, r * 0.3);
+    else if (name === "diamond") {
+      c.moveTo(x, y - r * 1.2); c.lineTo(x + r * 1.2, y); c.lineTo(x, y + r * 1.2); c.lineTo(x - r * 1.2, y);
+      c.closePath();
+    } else if (name === "triangle") {
+      c.moveTo(x, y - r * 1.25); c.lineTo(x + r * 1.15, y + r * 0.85); c.lineTo(x - r * 1.15, y + r * 0.85);
+      c.closePath();
+    } else c.arc(x, y, r, 0, Math.PI * 2);
+  }
+  function text(label, x, y, colour, size = 11, weight = "") {
+    ctx.font = `${weight} ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.strokeStyle = C.card;
+    ctx.strokeText(label, x, y); ctx.fillStyle = colour; ctx.fillText(label, x, y);
+  }
+  const short = (s, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+  const edgeName = (e) => (MODEL ? `${e.type} ×${e.props.relationships}` : e.type);
+
+  function near(n) {  // the nodes one step from n, with n
+    const set = new Set([n]);
+    for (const e of n.links) if (shown(e.a) && shown(e.b)) { set.add(e.a); set.add(e.b); }
+    return set;
+  }
+  function draw() {
+    if (!W) return;
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const focus = hover || picked;
+    const lit = focus ? near(focus) : null;
+    const named = MODEL || (focus && focus.links.length <= 6);  // more than that: read the panel
+    const found = query ? new Set(nodes.filter((n) => n.caption.toLowerCase().includes(query))) : null;
+    const dim = (n) => (lit && !lit.has(n)) || (found && !found.has(n) && !(lit && lit.has(n)));
+    const live = nodes.filter(shown);
+    const names = MODEL || live.length <= 45 || k >= 1.25;
+    const labels = [];
+    for (const e of edges) {
+      if (!shown(e.a) || !shown(e.b)) continue;
+      const strong = focus && (e.a === focus || e.b === focus);
+      ctx.globalAlpha = strong ? 1 : focus || found ? 0.12 : MODEL ? 0.7 : 0.45;
+      ctx.strokeStyle = ctx.fillStyle = strong ? C.text : C.edge;
+      ctx.lineWidth = strong ? 1.6 : 1;
+      const ax = sx(e.a.x), ay = sy(e.a.y), bx = sx(e.b.x), by = sy(e.b.y);
+      if (e.a === e.b) {  // a relationship from a kind to itself: a loop above the node
+        const r = (12 + e.slot * 9) * Math.max(0.6, Math.min(k, 1.4)), top = ay - e.a.r * k;
+        ctx.beginPath(); ctx.arc(ax, top - r * 0.8, r, 0, Math.PI * 2); ctx.stroke();
+        if (MODEL || (strong && named)) labels.push([edgeName(e), ax, top - r * 1.8, strong]);
+        continue;
+      }
+      const flip = e.a.i < e.b.i ? 1 : -1;  // one side of the pair, whichever way the edge runs
+      const bend = (e.slot - (e.of - 1) / 2) * (MODEL ? 44 : 26) * flip;
+      const dx = bx - ax, dy = by - ay, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const cx = (ax + bx) / 2 - (dy / d) * bend, cy = (ay + by) / 2 + (dx / d) * bend;
+      const ex = bx - cx, ey = by - cy, ed = Math.sqrt(ex * ex + ey * ey) || 1;
+      const stop = e.b.r * k * 1.15 + 2;
+      const px = bx - (ex / ed) * stop, py = by - (ey / ed) * stop;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo(cx, cy, px, py); ctx.stroke();
+      const head = strong ? 7 : 5;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - (ex / ed) * head - (ey / ed) * head * 0.5, py - (ey / ed) * head + (ex / ed) * head * 0.5);
+      ctx.lineTo(px - (ex / ed) * head + (ey / ed) * head * 0.5, py - (ey / ed) * head - (ex / ed) * head * 0.5);
+      ctx.closePath(); ctx.fill();
+      if (MODEL || (strong && named)) {  // parallel relationships carry their names at different points
+        const t = e.of > 1 ? 0.3 + (0.4 * e.slot) / (e.of - 1) : 0.5, u = 1 - t;
+        labels.push([edgeName(e), u * u * ax + 2 * u * t * cx + t * t * bx,
+                     u * u * ay + 2 * u * t * cy + t * t * by, strong]);
+      }
+    }
+    for (const n of live) {
+      const [colour, form] = kind(n.label);
+      const x = sx(n.x), y = sy(n.y), r = Math.max(3, n.r * k);
+      ctx.globalAlpha = dim(n) ? 0.16 : 1;
+      shape(ctx, form, x, y, r);
+      ctx.fillStyle = C[colour.slice(2)]; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = n === picked ? C.text : C.card; ctx.stroke();
+      if (n === picked) { shape(ctx, form, x, y, r + 4); ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
+    ctx.globalAlpha = 1;
+    for (const [label, x, y, strong] of labels) {
+      if (strong || !focus) text(label, x, y, strong ? C.text : C.muted, 10);
+    }
+    for (const n of live) {
+      const wanted = lit ? lit.has(n) : found ? found.has(n) : names;
+      if (!wanted) continue;
+      const r = Math.max(3, n.r * k);
+      text(short(n.caption), sx(n.x), sy(n.y) + r * 1.25 + 9, C.text, 11, n === focus ? "600" : "");
+    }
+  }
+
+  // ---------------------------------------------------------------- the detail panel
+  const el = (tag, content, parent) => {
+    const node = document.createElement(tag);
+    if (content !== undefined) node.textContent = content;
+    if (parent) parent.append(node);
+    return node;
+  };
+  const plain = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "object" && v ? JSON.stringify(v) : String(v));
+  function swatch(label, size = 14) {
+    const c = document.createElement("canvas"), d = devicePixelRatio || 1;
+    c.width = c.height = size * d; c.style.width = c.style.height = size + "px";
+    c.setAttribute("aria-hidden", "true");
+    const g = c.getContext("2d"), [colour, form] = kind(label);
+    g.scale(d, d); shape(g, form, size / 2, size / 2, size / 2 - (form === "circle" ? 1 : 2.4));
+    g.fillStyle = C[colour.slice(2)]; g.fill();
+    return c;
+  }
+  function describe() {
+    detail.replaceChildren();
+    if (!picked) {
+      el("h2", MODEL ? "The model" : "The graph", detail);
+      el("p", MODEL
+        ? "Each shape is a kind of node, sized by how many there are. Each arrow is a kind of relationship, with how many there are. Click a kind to list what it is joined to."
+        : "Each shape is one node. Click a node to see its properties and every relationship it has. Click a kind in the row above to hide it.", detail).className = "hint";
+      return;
+    }
+    el("h2", picked.caption, detail);
+    const sub = el("div", undefined, detail);
+    sub.className = "kind"; sub.append(swatch(picked.label), picked.label);
+    const props = Object.entries(picked.props || {});
+    if (props.length) {
+      el("h3", "Properties", detail);
+      const dl = el("dl", undefined, detail);
+      for (const [name, value] of props.sort()) { el("dt", name, dl); el("dd", plain(value), dl); }
+    }
+    const links = picked.links.filter((e) => shown(e.a) && shown(e.b));
+    el("h3", `Relationships (${links.length})`, detail);
+    const ul = el("ul", undefined, detail);
+    for (const e of links) {
+      const out = e.a === picked, other = out ? e.b : e.a;
+      const b = el("button", undefined, el("li", undefined, ul));
+      const extra = MODEL ? ` ×${e.props.relationships}`
+        : Object.keys(e.props || {}).length ? " " + plain(e.props) : "";
+      el("code", `${out ? "→" : "←"} ${e.type}${extra}`, b);
+      b.append(" " + other.caption);
+      b.addEventListener("click", () => pick(other));
+    }
+  }
+  function pick(n) { picked = n; describe(); draw(); }
+
+  // ---------------------------------------------------------------- the legend
+  const legend = document.getElementById("legend");
+  function buildLegend() {
+    legend.replaceChildren();
+    const counts = new Map();
+    for (const n of nodes) counts.set(n.label, (counts.get(n.label) || 0) + (MODEL ? n.size || 0 : 1));
+    for (const [label, count] of counts) {
+      const b = el("button", undefined, legend);
+      b.className = "chip"; b.setAttribute("aria-pressed", String(!hidden.has(label)));
+      b.append(swatch(label), label);
+      el("small", String(count), b);
+      b.addEventListener("click", () => {
+        hidden.has(label) ? hidden.delete(label) : hidden.add(label);
+        if (picked && !shown(picked)) picked = null;
+        buildLegend(); describe(); warm(0.5);
+      });
+    }
+    const live = nodes.filter(shown).length;
+    const lines = edges.filter((e) => shown(e.a) && shown(e.b)).length;
+    document.getElementById("summary").textContent = MODEL
+      ? `${live} kinds of node, ${lines} kinds of relationship`
+      : `${live} nodes, ${lines} relationships`;
+  }
+
+  // ---------------------------------------------------------------- pointer and keys
+  function at(event) {
+    const box = canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top;
+    let best = null, bestD = Infinity;
+    for (const n of nodes) {
+      if (!shown(n)) continue;
+      const d = Math.hypot(sx(n.x) - x, sy(n.y) - y) - Math.max(3, n.r * k);
+      if (d < 7 && d < bestD) { best = n; bestD = d; }
+    }
+    return { node: best, x, y };
+  }
+  let drag = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    const hit = at(event);
+    drag = { node: hit.node, x: hit.x, y: hit.y, moved: false };
+    if (hit.node) hit.node.held = true;
+    canvas.setPointerCapture(event.pointerId); canvas.classList.add("dragging");
+  });
+  canvas.addEventListener("pointermove", (event) => {
+    const hit = at(event);
+    if (drag) {
+      const dx = hit.x - drag.x, dy = hit.y - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+      if (drag.node) { drag.node.x += dx / k; drag.node.y += dy / k; warm(0.25); }
+      else { tx += dx; ty += dy; moved = true; draw(); }
+      drag.x = hit.x; drag.y = hit.y;
+      tip.style.display = "none";
+      return;
+    }
+    if (hit.node !== hover) { hover = hit.node; draw(); }
+    if (!hover) { tip.style.display = "none"; return; }
+    tip.replaceChildren(hover.caption);
+    el("small", MODEL ? `${hover.size} nodes` : hover.label, tip);
+    tip.style.display = "block";
+    tip.style.left = Math.min(hit.x + 14, W - tip.offsetWidth - 6) + "px";
+    tip.style.top = Math.min(hit.y + 14, H - tip.offsetHeight - 6) + "px";
+  });
+  const release = () => {
+    if (!drag) return;
+    if (drag.node) drag.node.held = false;
+    if (!drag.moved) pick(drag.node);
+    drag = null; canvas.classList.remove("dragging");
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("pointerleave", () => { hover = null; tip.style.display = "none"; draw(); });
+  canvas.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;  // a plain scroll moves the page
+    event.preventDefault();
+    const box = canvas.getBoundingClientRect();
+    moved = true;
+    zoom(Math.exp(-event.deltaY * 0.01), event.clientX - box.left, event.clientY - box.top);
+  }, { passive: false });
+  document.getElementById("zoom-in").addEventListener("click", () => { moved = true; zoom(1.3); });
+  document.getElementById("zoom-out").addEventListener("click", () => { moved = true; zoom(1 / 1.3); });
+  document.getElementById("fit").addEventListener("click", () => { moved = false; fit(); });
+  document.getElementById("search").addEventListener("input", (event) => {
+    query = event.target.value.trim().toLowerCase(); draw();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && picked) pick(null);
+  });
+
+  // ---------------------------------------------------------------- start
+  function resize() {
+    const box = canvas.getBoundingClientRect(), first = !W;
+    W = box.width; H = box.height;
+    canvas.width = Math.round(W * devicePixelRatio); canvas.height = Math.round(H * devicePixelRatio);
+    if (W && !moved) fit(); else draw();
+  }
+  readColours();
+  for (let i = 0, h = 1; i < 320; i++, h *= 0.99) tick(h);  // settled before the first frame
+  buildLegend(); describe();
+  new ResizeObserver(resize).observe(canvas);
+  scheme.addEventListener("change", () => { readColours(); buildLegend(); describe(); draw(); });
+  window.relateGraph = { nodes, edges, pick, fit };
+})();
+</script>
+</body>
+</html>

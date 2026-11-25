@@ -22,12 +22,30 @@ Generated from the commit messages by `uv run task changelog` (git-cliff, cliff.
 ### Added
 
 - Cloudflare tunnel to application. (#27)
+- uniqueness constraints and indexes on the graph
+- skills ontology in the catalogue and the graph
+- where am I needed, a query that crosses organisations
+- participation history, readiness ratings and skill levels
+- learning goals on the profile and in the graph
+- a Graph section in the admin console that draws the Relate graph
+
+### Fixed
+
+- graph model docstring broke the docs build
 
 ### Changed
 
 - Removed renamed "Data Volunteer Network" to "Volunteer Netw… (#7)
 - Added Contributor section (#23)
 - Refactored the project onboarding flow to allow for a draft… (#26)
+- matching and placement. (#29)
+- Added agents and toggle for adding new volunteers
+- datakind refs and docs
+
+### Documentation
+
+- graph model recommendations
+- record what was built from the graph model recommendations
 
 ### Chores
 

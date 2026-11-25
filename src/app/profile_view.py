@@ -7,8 +7,10 @@
     Active projects   own suggestions in progress or published, plus published projects matched
     Past projects     own suggestions that were rejected or withdrawn
 
-There is no "volunteer joined a project" record, so active/past are derived from suggestions and
-current matches. The labels are sent with the data, so the mobile app does not keep a copy.
+Active and past projects are the volunteer's suggestions and current matches. What they have
+actually done on teams is their history (app.services.engagements.my_history), shown below the
+profile form on the web and served at GET /api/v1/me/history. The labels are sent with the data,
+so the mobile app does not keep a copy.
 """
 
 from app import matching, services
@@ -61,6 +63,8 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
             "name": s.name,
             "category": s.category,
             "state": profile.skills.get(s.id, "none"),
+            "level": profile.levels.get(s.id),
+            "wants_to_learn": s.id in profile.learning,
         }
         for s in cat.skills
     ]
@@ -74,6 +78,7 @@ def overview(db: Database, graph: GraphStore, user_id: str) -> dict:
         "skills": skills,
         "skill_groups": groups,
         "skill_states": SKILL_STATES,
+        "levels": {str(k): v for k, v in services.engagements.LEVELS.items()},
         "cause_stances": CAUSE_STANCES,
         "causes": [
             {"id": c.id, "name": c.name, "stance": profile.causes.get(c.id, "neutral")}

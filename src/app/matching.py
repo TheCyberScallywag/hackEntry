@@ -33,6 +33,12 @@ class VolunteerMatches:
 
 
 @dataclass
+class Needed:
+    withheld: Withheld | None = None
+    opportunities: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class ProjectCoverage:
     withheld: Withheld | None = None
     projects: list[dict] = field(default_factory=list)
@@ -141,6 +147,123 @@ def volunteer_matches(
     )
 
 
+def needed_elsewhere(db: Database, graph: GraphStore, user_id: str) -> Needed:
+    """Organisations the volunteer has not joined that need a skill they offer, for a cause
+    they have not excluded (cypher.NEEDED_ELSEWHERE). Anyone may ask about themselves; nothing
+    about any other person is returned, and nothing a signed-in user cannot already see in the
+    showcase except that the skill is not yet covered on the team."""
+    with db.read() as conn:
+        status = services.load_actor(conn, user_id).status
+        if status != "active":
+            label = services.VOLUNTEER_STATUS_LABELS[status].lower()
+            return Needed(
+                withheld=Withheld(
+                    f"Your account is {label}. Once a moderator has approved it, this shows "
+                    "where else your skills are needed."
+                )
+            )
+        org_names = dict(conn.execute("SELECT id, name FROM organisations").fetchall())
+        if reason := _volunteer_pending(conn, user_id, sorted(org_names)):
+            return Needed(withheld=Withheld(reason))
+    rows = graph.read(cypher.NEEDED_ELSEWHERE, {"volunteer": user_id})
+    with db.read() as conn:
+        fresh = services.published_state(conn, sorted({p for r in rows for p in r["projects"]}))
+        joined = {
+            r[0]
+            for r in conn.execute(
+                "SELECT org_id FROM memberships WHERE user_id = ? AND opted_in = 1", (user_id,)
+            )
+        }
+    cat = get_catalogue()
+    found = []
+    for r in rows:
+        projects = [p for p in r["projects"] if p in fresh]
+        if not projects or r["org"] in joined or r["org"] not in org_names:
+            continue  # withdrawn or joined since the graph was written: fail closed
+        found.append(
+            {
+                "org": r["org"],
+                "org_name": org_names[r["org"]],
+                "skill": r["skill"],
+                "skill_name": cat.skill_name(r["skill"]),
+                "cause": r["cause"],
+                "cause_name": cat.cause_name(r["cause"]),
+                "preferred": r["preferred"],
+                "projects": len(projects),
+            }
+        )
+    return Needed(opportunities=found)
+
+
+def learning_opportunities(
+    db: Database, graph: GraphStore, user_id: str, org_ids: list[str] | None = None
+) -> list[dict]:
+    """Published projects in the volunteer's own organisations that use a skill they want to
+    learn, and how many people on each team say they can guide others in it. Empty while their
+    account is not active or a projection is pending: this is a suggestion, not a decision, so
+    it simply waits.
+
+    `org_ids` is for a caller that has just had an answer from `volunteer_matches` for this
+    volunteer and passes the organisations it asked about: the same checks need not run twice.
+    The graph still decides membership, through VOLUNTEERS_WITH."""
+    if org_ids is None:
+        with db.read() as conn:
+            org_ids = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT org_id FROM memberships WHERE user_id = ? AND opted_in = 1 "
+                    "ORDER BY org_id",
+                    (user_id,),
+                )
+            ]
+            if services.load_actor(conn, user_id).status != "active" or _volunteer_pending(
+                conn, user_id, org_ids
+            ):
+                return []
+    if not org_ids:
+        return []
+    rows = graph.read(cypher.LEARNING_OPPORTUNITIES, {"volunteer": user_id, "orgs": org_ids})
+    if not rows:
+        return []
+    with db.read() as conn:
+        fresh = services.published_state(conn, sorted({r["project"] for r in rows}))
+        org_names = dict(conn.execute("SELECT id, name FROM organisations").fetchall())
+    cat = get_catalogue()
+    return [
+        {
+            **r,
+            "org_name": org_names.get(r["org"], r["org"]),
+            "skill_name": cat.skill_name(r["skill"]),
+        }
+        for r in rows
+        if r["project"] in fresh
+    ]
+
+
+def experience(row: dict) -> dict:
+    """One CANDIDATE_EXPERIENCE row as the screens and the assistant show it."""
+    levels = services.engagements.LEVELS
+    best = row["best_readiness"]
+    parts = [f"{row['engagements']} earlier project{'s' if row['engagements'] != 1 else ''}"
+             f" on {row['theme'].lower()}"]  # fmt: skip
+    if row["elsewhere"]:
+        parts.append(f"{row['elsewhere']} with another organisation")
+    if row["led"]:
+        parts.append(f"led {row['led']}")
+    if best:
+        parts.append(f"rated up to “{levels[best]}”")
+    return {
+        "theme": row["theme"],
+        "engagements": row["engagements"],
+        "same_cause": row["same_cause"],
+        "elsewhere": row["elsewhere"],
+        "led": row["led"],
+        "best_readiness": best,
+        "best_readiness_label": levels[best] if best else None,
+        "summary": ", ".join(parts),
+    }
+
+
 def _explain(
     row: dict, org_names: dict, optional_excluded: list[str], status: str | None = None
 ) -> dict:
@@ -180,7 +303,8 @@ def project_coverage(
 ) -> ProjectCoverage:
     """For an organisation's reviewers: per required skill, who on the team covers it and which
     candidates could. `gaps` are skills no candidate can cover; `team_gaps` are skills nobody on
-    the team covers yet, read from the ON_TEAM edges."""
+    the team covers yet, read from the ON_TEAM edges. `close` lists volunteers who lack the skill
+    but offer an adjacent one (CLOSE_CANDIDATES): people to talk to, not candidates."""
     with db.read() as conn:
         services.check_access(conn, reviewer_id, org_id, role="reviewer")
         if reason := _org_pending(conn, org_id, project_id):
@@ -193,6 +317,11 @@ def project_coverage(
         )
         gaps = tx.read(cypher.COVERAGE_GAPS, scope)
         on_team = tx.read(cypher.TEAM_COVERAGE, scope)
+        close = tx.read(cypher.CLOSE_CANDIDATES, scope)
+        earlier = {
+            (r["project"], r["volunteer"]): experience(r)
+            for r in tx.read(cypher.CANDIDATE_EXPERIENCE, scope)
+        }
     with db.read() as conn:
         fresh = services.published_state(conn, [p["project"] for p in projects])
         names = dict(
@@ -217,6 +346,7 @@ def project_coverage(
             "per_skill": defaultdict(list),
             "gaps": [],
             "team_by_skill": {},
+            "close_by_skill": defaultdict(list),
         }
     for r in rows:
         entry = by_project.get(r["project"])
@@ -233,6 +363,9 @@ def project_coverage(
             "optional_names": [cat.skill_name(s) for s in sorted(r["optional_matched"])],
             "remaining_names": [cat.skill_name(s) for s in sorted(r["remaining"])],
             "coverage": r["coverage"],
+            # Earlier work on the same theme of cause: the organisation's own record, plus a
+            # summary of work elsewhere if the volunteer shares it. None: nothing to show.
+            "experience": earlier.get((r["project"], r["volunteer"])),
         }
         entry["candidates"].append(candidate)
         for skill in sorted(r["matched"]):
@@ -248,14 +381,29 @@ def project_coverage(
                 for v in t["team"]
                 if v in names and statuses.get((t["project"], v)) == "team"
             ]
+    for c in close:
+        entry = by_project.get(c["project"])
+        if entry is None or c["volunteer"] not in names:
+            continue  # the same fail-closed rule as for candidates
+        entry["close_by_skill"][c["skill"]].append(
+            {
+                "volunteer": c["volunteer"],
+                "name": names[c["volunteer"]],
+                "via_names": [cat.skill_name(s) for s in c["via"]],
+                "wants_to_learn": c["wants_to_learn"],
+            }
+        )
     for entry in by_project.values():
         team_by_skill = entry.pop("team_by_skill")
+        close_by_skill = entry.pop("close_by_skill")
         entry["per_skill"] = [
             {
                 "skill": cat.skill_name(s),
                 "team": team_by_skill.get(s, []),
                 # Someone already on the team is not also listed as a candidate.
                 "candidates": [c for c in entry["per_skill"].get(s, []) if c["status"] != "team"],
+                # Not eligible: they lack this skill but offer one next to it in the ontology.
+                "close": close_by_skill.get(s, []),
             }
             for s in sorted(entry["required"])
         ]

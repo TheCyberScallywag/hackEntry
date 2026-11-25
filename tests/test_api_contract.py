@@ -52,7 +52,7 @@ def test_every_route_declares_a_response_model(schema: dict):
                 if "$ref" not in item:
                     untyped.append(f"{method.upper()} {path}")
     assert untyped == []
-    assert len(api.router.routes) == 53  # a new route must be added to the calls below
+    assert len(api.router.routes) == 61  # a new route must be added to the calls below
     assert len(onboarding_api.router.routes) == 25
 
 
@@ -97,6 +97,8 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
 
     # ---- organisations
     ok(asha.get("/orgs"), "GET", "/orgs")
+    ok(asha.get("/me/needed"), "GET", "/me/needed")
+    ok(asha.get("/me/learning"), "GET", "/me/learning")
     ok(asha.get(f"/orgs/{CS}/matches"), "GET", "/orgs/{org_id}/matches")
     ok(asha.get(f"/orgs/{DK}/projects"), "GET", "/orgs/{org_id}/projects")
     ok(rhiannon.get(f"/orgs/{DK}/coverage"), "GET", "/orgs/{org_id}/coverage")
@@ -193,6 +195,8 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
     ok(sam.post("/admin/projection/replay"), "POST", "/admin/projection/replay")
     graph = ok(sam.get("/admin/graph"), "GET", "/admin/graph")
     assert {r["type"] for r in graph["relationships"]} >= {"OWNS_PROJECT", "VOLUNTEERS_WITH"}
+    view = ok(sam.get("/admin/graph/view"), "GET", "/admin/graph/view")
+    assert {e["type"] for e in view["model"]} >= {"OWNS_PROJECT", "VOLUNTEERS_WITH"}
 
     # ---- organisations' onboarding workflows
     kofi, base = as_(web, "kofi"), f"/orgs/{CS}/onboarding"
@@ -275,6 +279,21 @@ def test_every_route_answers_in_the_shape_it_declares(web: Web):
     assert ok(rhiannon.post(f"{team}/reinstate"), "POST", member + "/reinstate") == {
         "state": "team"
     }
+    # ---- history
+    history = ok(asha.get("/me/history"), "GET", "/me/history")
+    assert {e["title"] for e in history["engagements"]} >= {"Shelter Meal Rota"}
+    assert ok(asha.put(f"/orgs/{CS}/history-sharing", {"share": True}),
+              "PUT", "/orgs/{org_id}/history-sharing") == {"share_history": True}  # fmt: skip
+    done = ok(rhiannon.get(f"/orgs/{DK}/history"), "GET", "/orgs/{org_id}/history")
+    unrated = next(e for e in done[0]["engagements"] if e["readiness"] is None)
+    assert ok(rhiannon.post(f"/engagements/{unrated['id']}/rating", {"readiness": 2}),
+              "POST", "/engagements/{engagement_id}/rating") == {"readiness": 2}  # fmt: skip
+    with web.rt.db.read() as conn:
+        version = conn.execute(
+            "SELECT version FROM submissions WHERE id = ?", (FOOD_BANK,)
+        ).fetchone()[0]
+    finished = rhiannon.post(f"/orgs/{DK}/projects/{FOOD_BANK}/complete", {"version": version})
+    assert ok(finished, "POST", "/orgs/{org_id}/projects/{sid}/complete") == {"state": "completed"}
     ok(asha.delete("/session"), "DELETE", "/session", 204)
 
     declared = {
